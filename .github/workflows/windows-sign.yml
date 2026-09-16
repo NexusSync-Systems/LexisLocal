@@ -1,0 +1,71 @@
+name: Windows build + Azure Artifact Signing
+
+# Sestaví Windows instalátor (Electron / electron-builder → NSIS, x64) a podepíše
+# ho přes Azure Artifact Signing (Trusted Signing) s ověřením přes OIDC (žádný
+# certifikát ani .pfx v repu — službě stačí federované přihlášení azure/login).
+#
+# Spouští se ručně (Run workflow). Ostrý release pro macOS+Windows dělá
+# samostatný release.yml; tenhle workflow řeší jen podepsaný Windows artefakt.
+on:
+  workflow_dispatch:
+
+jobs:
+  build-sign-windows:
+    # Azure Artifact Signing action běží POUZE na Windows (používá nativní nástroje).
+    runs-on: windows-latest
+    permissions:
+      id-token: write    # NUTNÉ: bez toho azure/login nedostane federovaný OIDC token
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # Stejně jako v release.yml — LexisLocal vyžaduje --legacy-peer-deps.
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      # Build BEZ publikování — nejdřív podepíšeme, teprve pak vydáváme.
+      # NSIS instalátor vznikne jako:  dist\LexisLocal Setup <verze>.exe
+      - name: Build Windows installer (unsigned)
+        run: npx electron-builder --win --publish never
+
+      - name: List build output
+        shell: pwsh
+        run: Get-ChildItem -Path dist -Filter *.exe | Select-Object Name, Length
+
+      # Federované přihlášení do Azure (OIDC). Bez secretů s klíčem — jen ID.
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Podpis NSIS instalátoru. Timestamping je POVINNÝ (certifikáty platí ~3 dny,
+      # bez časového razítka podpis po vypršení přestane platit).
+      - name: Sign Windows installer (Azure Artifact Signing)
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: https://neu.codesigning.azure.net/
+          signing-account-name: nexusstack-signing
+          certificate-profile-name: nexusstack-public
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          files-folder-recurse: false
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Upload signed installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: LexisLocal-windows-signed
+          path: dist\*.exe
+          if-no-files-found: error
