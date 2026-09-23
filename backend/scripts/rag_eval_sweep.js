@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * scripts/rag_eval_sweep.js — spustí golden set přes VÍC nastavení najednou
- * (semantic + hybrid pro několik alph) a vypíše JEDNU srovnávací tabulku.
- * Ideální pro rychlé přeměření po výměně embedding modelu (viz BGE_M3_REINDEX.md).
+ * scripts/rag_eval_sweep.js — golden set přes VÍC nastavení (semantic + hybrid pro
+ * několik alph) JEDNÍM během a jedna srovnávací tabulka.
  *
- * _hybridEnabled()/_hybridAlpha() v rag.js čtou process.env při KAŽDÉM volání
- * searchSimilar, takže stačí přepínat env mezi běhy v jednom procesu.
+ * RYCHLE: každý dotaz se vyhledá/embeduje POUZE JEDNOU (searchSimilar withComponents
+ * vrátí dílčí sem/lex skóre); jednotlivé konfigurace se pak blendují OFFLINE v paměti
+ * (žádné opakované embedování). Metriky přes rag_eval jádro (evaluateCase/aggregate).
  *
  * Použití:
  *   node backend/scripts/rag_eval_sweep.js [eval.json] [--alphas 0,0.1,0.2,0.35,0.5,0.7] [--k 5]
@@ -14,7 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 const rag = require('../lib/rag');
-const { runEval } = require('../lib/rag_eval');
+const { evaluateCase, aggregate } = require('../lib/rag_eval');
 
 function parseArgs(argv) {
     const o = { file: null, k: 5, alphas: [0, 0.1, 0.2, 0.35, 0.5, 0.7] };
@@ -27,14 +27,7 @@ function parseArgs(argv) {
     return o;
 }
 const pct = x => (x * 100).toFixed(1) + '%';
-
-async function runConfig(cases, k, hybrid, alpha) {
-    if (hybrid) { process.env.RAG_HYBRID = '1'; process.env.RAG_HYBRID_ALPHA = String(alpha); }
-    else { process.env.RAG_HYBRID = '0'; delete process.env.RAG_HYBRID_ALPHA; }
-    const searchFn = (q, f) => rag.searchSimilar(q, Math.max(k, 10), f || null, { lexicalFallback: true });
-    const r = await runEval({ cases, searchFn, k });
-    return r.summary;
-}
+const blend = (sem, lex, a) => a * (Number.isFinite(sem) ? sem : 0) + (1 - a) * (Number.isFinite(lex) ? lex : 0);
 
 async function main() {
     const args = parseArgs(process.argv.slice(2));
@@ -43,21 +36,38 @@ async function main() {
     const cases = Array.isArray(spec) ? spec : (spec.cases || []);
     const k = spec.k || args.k;
 
-    const rows = [];
-    rows.push(['semantic', await runConfig(cases, k, false)]);
-    for (const a of args.alphas) rows.push([`hybrid α=${a}`, await runConfig(cases, k, true, a)]);
+    // 1) Jedno vyhledání na dotaz — vrátí kandidáty s dílčími skóre (sem, lex).
+    const perCase = [];
+    let degraded = false;
+    for (const c of cases) {
+        const res = await rag.searchSimilar(c.query, 50, c.filters || null, { lexicalFallback: true, withComponents: true });
+        if (res.some(r => r.degraded)) degraded = true;
+        perCase.push({ c, res });
+    }
 
-    console.log(`\n📊 RAG eval sweep — ${cases.length} dotazů, k=${k}, model=${process.env.EMBEDDING_MODEL || 'nomic-embed-text'}`);
+    // 2) Konfigurace: semantic + hybrid pro každou alphu. Blend OFFLINE, re-rank, metriky.
+    const configs = [{ label: 'semantic', score: r => (r.semantic == null ? r.lexical : r.semantic) }];
+    for (const a of args.alphas) configs.push({ label: `hybrid α=${a}`, score: r => blend(r.semantic, r.lexical, a) });
+
+    const table = [];
+    for (const cfg of configs) {
+        const metrics = perCase.map(({ c, res }) => {
+            const ranked = res.map(r => ({ fileName: r.fileName, score: cfg.score(r) })).sort((x, y) => y.score - x.score);
+            return evaluateCase(ranked, c.relevant, k);
+        });
+        table.push([cfg.label, aggregate(metrics)]);
+    }
+
+    console.log(`\n📊 RAG eval sweep — ${cases.length} dotazů, k=${k}, model=${process.env.EMBEDDING_MODEL || 'nomic-embed-text'}${degraded ? ' (⚠️ lexikální fallback — embedding model neběžel)' : ''}`);
     console.log('─'.repeat(60));
     console.log('  konfigurace       hit@k    recall@k   MRR');
     console.log('─'.repeat(60));
     let best = null;
-    for (const [label, s] of rows) {
+    for (const [label, s] of table) {
         if (!best || s.mrr > best.mrr) best = { label, mrr: s.mrr };
         console.log('  ' + label.padEnd(16) + ' ' + pct(s.hitRate).padStart(6) + '  ' + pct(s.recallAtK).padStart(8) + '   ' + s.mrr.toFixed(3));
     }
     console.log('─'.repeat(60));
-    console.log(`  🏆 nejlepší dle MRR: ${best.label} (${best.mrr.toFixed(3)})`);
-    console.log('');
+    console.log(`  🏆 nejlepší dle MRR: ${best.label} (${best.mrr.toFixed(3)})\n`);
 }
 main().catch(e => { console.error('❌ Sweep selhal:', e.message); process.exit(1); });

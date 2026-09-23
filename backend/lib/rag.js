@@ -703,25 +703,22 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
 
     // Sémantický režim: kosinová podobnost vektorů (chunky bez vektoru → 0, jako dřív).
     // Lexikální fallback: kosinová podobnost term-frekvencí nad textem chunku.
-    // Tokeny dotazu potřebujeme pro lexikální fallback i pro hybridní blend.
+    // Hybrid: blend obou. withComponents: vrátí i dílčí skóre (sem/lex) — pro sweep,
+    // který pak blenduje offline pro víc alph BEZ opakovaného embedování dotazu.
     const hybrid = _hybridEnabled() && !embeddingFailed;
     const hybridAlpha = _hybridAlpha();
-    const qTokens = (embeddingFailed || hybrid) ? _lexTokens(query) : null;
+    const withComponents = !!(opts && opts.withComponents);
+    const needLex = embeddingFailed || hybrid || withComponents;
+    const qTokens = needLex ? _lexTokens(query) : null;
     const results = chunks.map(chunk => {
+        const txt = chunk.text || '';
+        const sem = embeddingFailed ? 0 : cosineSimilarity(queryVector, chunk.vector);
+        const lex = needLex ? lexicalScore(qTokens, txt) : 0;
         let score, method;
-        if (embeddingFailed) {
-            score = lexicalScore(qTokens, chunk.text || '');
-            method = 'lexical';
-        } else if (hybrid) {
-            const sem = cosineSimilarity(queryVector, chunk.vector);
-            const lex = lexicalScore(qTokens, chunk.text || '');
-            score = blendScore(sem, lex, hybridAlpha);
-            method = 'hybrid';
-        } else {
-            score = cosineSimilarity(queryVector, chunk.vector);
-            method = 'semantic';
-        }
-        return {
+        if (embeddingFailed) { score = lex; method = 'lexical'; }
+        else if (hybrid) { score = blendScore(sem, lex, hybridAlpha); method = 'hybrid'; }
+        else { score = sem; method = 'semantic'; }
+        const r = {
             fileName: chunk.fileName,
             text: chunk.text,
             score: score,
@@ -731,6 +728,8 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
             chunkIndex: chunk.chunkIndex,
             totalChunks: chunk.totalChunks
         };
+        if (withComponents) { r.semantic = embeddingFailed ? null : sem; r.lexical = lex; }
+        return r;
     });
 
     return results
