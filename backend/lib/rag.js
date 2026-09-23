@@ -28,18 +28,20 @@ const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
 // #5: hybridní retrieval (sémantika + lexikální shoda). OPT-IN (RAG_HYBRID=1),
 // default VYPNUTO → chování beze změny. České §, čísla zákonů a sp. zn. jsou přesné
 // tokeny, které lexikální shoda trefí a embeddingy rozmažou; blend obojí. Váhu řídí
-// RAG_HYBRID_ALPHA (podíl sémantiky, default 0.7). Po zapnutí dolaď RAG_MIN_SCORE.
+// RAG_HYBRID_ALPHA (podíl sémantiky, default 0.2 dle evalu). Po zapnutí dolaď RAG_MIN_SCORE.
 function _hybridEnabled() {
     const v = String(process.env.RAG_HYBRID == null ? '' : process.env.RAG_HYBRID).trim().toLowerCase();
     return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 function _hybridAlpha() {
     const a = parseFloat(process.env.RAG_HYBRID_ALPHA);
-    return (Number.isFinite(a) && a >= 0 && a <= 1) ? a : 0.7;
+    // Default 0.2 (silně lexikální) — změřeno na golden setu judikatury: nomic-embed-text
+    // na české právní texty nepřidává (semantic 0/10), optimum MRR je kolem alpha≈0.2.
+    return (Number.isFinite(a) && a >= 0 && a <= 1) ? a : 0.2;
 }
 // Blend sémantického a lexikálního skóre (obě v [0,1]).
 function blendScore(semantic, lexical, alpha) {
-    const a = (Number.isFinite(alpha) && alpha >= 0 && alpha <= 1) ? alpha : 0.7;
+    const a = (Number.isFinite(alpha) && alpha >= 0 && alpha <= 1) ? alpha : 0.2;
     const sem = Number.isFinite(semantic) ? semantic : 0;
     const lex = Number.isFinite(lexical) ? lexical : 0;
     return a * sem + (1 - a) * lex;

@@ -10,7 +10,7 @@ describe('#5 blendScore', () => {
         expect(blendScore(0.8, 0.2, 1)).toBeCloseTo(0.8, 6);
         expect(blendScore(0.8, 0.2, 0)).toBeCloseTo(0.2, 6);
     });
-    test('default (alpha=0.7) váží sémantiku výš', () => {
+    test('explicitní alpha se respektuje', () => {
         expect(blendScore(1, 0, 0.7)).toBeCloseTo(0.7, 6);
         expect(blendScore(0, 1, 0.7)).toBeCloseTo(0.3, 6);
     });
@@ -20,8 +20,8 @@ describe('#5 blendScore', () => {
         const b = blendScore(0.6, 0.1, 0.7); // netrefil
         expect(a).toBeGreaterThan(b);
     });
-    test('neplatná alpha → fallback 0.7; nečíselné vstupy → 0', () => {
-        expect(blendScore(1, 0, 5)).toBeCloseTo(0.7, 6);
+    test('neplatná alpha → fallback 0.2 (default); nečíselné vstupy → 0', () => {
+        expect(blendScore(1, 0, 5)).toBeCloseTo(0.2, 6);
         expect(blendScore(NaN, NaN, 0.5)).toBe(0);
     });
 });
