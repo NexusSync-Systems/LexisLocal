@@ -10,7 +10,22 @@ const router = express.Router();
 const db = require('../lib/database');
 const { getHardwareProfile, getSystemTelemetry } = require('../lib/green_monitor');
 const { loadInbox } = require('../lib/watcher');
+const { buildRagReport } = require('../lib/rag_report'); // #8: přehled využití RAG
 const ollama = require('../lib/ollama_client');
+
+// GET /api/system/rag-report - Přehled reálného využití RAG po agentech (#8).
+// Kolik % volání agenta skutečně dostalo aspoň jednu RAG pasáž + podíl simulovaného
+// fallbacku (chybějící model). Volitelně ?days=N omezí na posledních N dní.
+router.get('/rag-report', (req, res) => {
+    try {
+        const logs = db.get('transparency_logs') || [];
+        const days = parseInt(req.query.days, 10);
+        const sinceMs = (Number.isFinite(days) && days > 0) ? (Date.now() - days * 86400000) : null;
+        res.json(buildRagReport(logs, { sinceMs }));
+    } catch (err) {
+        res.status(500).json({ error: 'Nepodařilo se sestavit RAG report: ' + err.message });
+    }
+});
 
 // GET /api/system/green-metrics - Aggregate energy and CO2 statistics
 router.get('/green-metrics', (req, res) => {

@@ -114,7 +114,17 @@ Testy: 37 zeleně (6 sad).
   best-effort, přepínatelné `AGENT_REVISE_LOOP=0`. Nové pole `revision` ve výstupu
   (pro měření/UI). Nové logy v transparency ledgeru. Test: `tests/orchestratorReviseLoop.test.js`.
 
-Testy: 40 zeleně (7 sad). Zbývající nápady: #1 router, #5 hybridní retrieval, #8 RAG-report.
+Testy: 40 zeleně (7 sad).
+
+### Várka 5 (měření)
+
+- **#8 — RAG-report** (`lib/rag_report.js` + `GET /api/system/rag-report`). Z transparency
+  ledgeru spočítá per-agent: kolik % volání reálně dostalo aspoň jednu RAG pasáž,
+  průměr zdrojů na volání a podíl simulovaného fallbacku (chybějící model). Dává tvrdá
+  data pro rozhodnutí „kde se RAG vyplatí". `?days=N` omezí okno. Čistá funkce
+  `buildRagReport()`. Test: `tests/ragReport.test.js`.
+
+Testy: 45 zeleně (8 sad). Zbývající nápady: #1 router, #5 hybridní retrieval.
 
 Testy: 29 zeleně (5 sad). Zbývající nápady na agenty (router, kritika→revize
 smyčka, hybridní retrieval, preflight modelů, RAG-report z transparency_logs) —
