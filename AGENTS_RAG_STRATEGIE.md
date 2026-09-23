@@ -146,11 +146,26 @@ Testy: 56 zeleně (10 sad, cílené).
 
 Testy: 67 zeleně (11 sad, cílené).
 
-### Doporučený postup pro #5
-1. Sestav malý golden set (~20 dotazů + očekávané judikáty) pro `rag_eval.js`.
-2. Změř baseline (semantic).
-3. Zapni `RAG_HYBRID=1`, změř znovu; porovnej recall@k / MRR.
-4. Zapni natrvalo jen když se metriky zlepší; dolaď `RAG_HYBRID_ALPHA` a `RAG_MIN_SCORE`.
+### Eval baseline (C2) + postup pro #5
+
+Golden set nad reálnou judikaturou je hotový: **`backend/eval/rag_eval_judikatura.json`**
+(10 dotazů odvozených z metadat konkrétních rozhodnutí, cílených na `_kb_obor_*`).
+Měř takto (s běžící Ollamou, na svém stroji):
+
+```
+# 1) baseline (semantic)
+node backend/scripts/rag_eval.js backend/eval/rag_eval_judikatura.json
+
+# 2) hybrid
+RAG_HYBRID=1 node backend/scripts/rag_eval.js backend/eval/rag_eval_judikatura.json
+
+# 3) porovnej SOUHRN (hit-rate / recall@k / MRR); případně dolaď váhu
+RAG_HYBRID=1 RAG_HYBRID_ALPHA=0.6 node backend/scripts/rag_eval.js backend/eval/rag_eval_judikatura.json
+```
+
+Pozn.: měří se jen obory, které jsou reálně naseedované (viz `naplnit-judikaturu.sh`);
+celoobora-miss = spíš „nenaseedováno" než špatný retrieval. `RAG_HYBRID` zapni
+natrvalo jen když se metriky zlepší, a pak dolaď `RAG_MIN_SCORE`.
 
 Testy: 29 zeleně (5 sad). Zbývající nápady na agenty (router, kritika→revize
 smyčka, hybridní retrieval, preflight modelů, RAG-report z transparency_logs) —
