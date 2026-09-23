@@ -13,6 +13,7 @@
  * runner to označí (mode = lexical-fallback), ať se čísla nepřeceňují.
  */
 'use strict';
+require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '.env') }); // načti .env (EMBEDDING_MODEL, RAG_*)
 
 const fs = require('fs');
 const path = require('path');

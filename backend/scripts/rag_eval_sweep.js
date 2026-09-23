@@ -11,6 +11,7 @@
  *   node backend/scripts/rag_eval_sweep.js [eval.json] [--alphas 0,0.1,0.2,0.35,0.5,0.7] [--k 5]
  */
 'use strict';
+require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '.env') }); // načti .env (EMBEDDING_MODEL, RAG_*)
 const fs = require('fs');
 const path = require('path');
 const rag = require('../lib/rag');
