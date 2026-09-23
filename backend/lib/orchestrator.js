@@ -4,10 +4,14 @@
  * agents with model-tiering, accumulates context, and synthesizes a final response.
  */
 
-const { loadAgents } = require('./agents');
-const { CHAT_MODEL } = require('./model_config');
+const { loadAgents, agentTemperature } = require('./agents');
+const { CHAT_MODEL, RAG_MIN_SCORE } = require('./model_config');
 const { anonymizeText } = require('./anonymizer'); // GDPR: kontext se anonymizuje před modelem
 const { searchSimilar } = require('./rag');
+// B1: per-agent scope i v ChiefOrchestrator cestě — bez toho agenti v orchestrátoru
+// NEčerpají z vlastní znalostní báze (_kb_<id>) ani z judikatury (na rozdíl od
+// přímých rout /api/agent a /api/agent-swarm, které buildRagScope volají).
+const { applyAgentScope } = require('./rag_request');
 const { checkSubject } = require('./registries');
 // AI poskytovatel nezávislý na backendu (Ollama | OpenAI | Anthropic).
 const ollama = require('./ai_provider');
@@ -77,13 +81,26 @@ class ChiefOrchestrator {
             // --- SANDBOX: Kontrola oprávnění ---
             let ragContext = "";
             let highConfidence = [];
-            if (agent.permissions && agent.permissions.read_files) {
+            // #7: retrieval povol i agentovi BEZ přístupu ke spisům, pokud má vlastní
+            // znalostní bázi (_kb_<id>). applyAgentScope u spisAccess:'none' nastaví
+            // clientAccess:false → čte JEN svou KB, ne klientské spisy.
+            const canRetrieve = (agent.permissions && agent.permissions.read_files) || !!agent.knowledgeScope;
+            if (canRetrieve) {
                 try {
                     // Agent má právo číst klientské spisy -> dotážeme sémantické vyhledávání
                     // Best-effort kontext pro agenta — lexikální fallback zapnut,
                     // ať RAG precedenty fungují i při vypnutém modelu (degradovaně).
-                    const matches = await searchSimilar(step.instruction, 2, ragFilters, { lexicalFallback: true });
-                    highConfidence = matches.filter(m => m.score >= 0.70);
+                    // B1: přidej znalostní bázi agenta + judikaturní politiku k základním
+                    // ragFilters (obor/spisy). Když selže, degraduj na holé ragFilters.
+                    let stepFilters = ragFilters;
+                    try {
+                        const scoped = applyAgentScope(ragFilters, agent, {});
+                        if (scoped) stepFilters = scoped;
+                    } catch (scopeErr) {
+                        console.warn(`⚠️ Sandbox: applyAgentScope selhal pro ${agent.name}:`, scopeErr.message);
+                    }
+                    const matches = await searchSimilar(step.instruction, 2, stepFilters, { lexicalFallback: true });
+                    highConfidence = matches.filter(m => m.score >= RAG_MIN_SCORE);
                     if (highConfidence.length > 0) {
                         ragContext = highConfidence
                             .map(m => `[Precedent ze spisu: ${m.fileName}]:\n${m.text}`)
@@ -151,7 +168,7 @@ class ChiefOrchestrator {
                 const response = await ollama.chat({
                     model: stepModel,
                     messages: messages,
-                    options: { temperature: 0.2 }
+                    options: { temperature: agentTemperature(agent, 0.2) }
                 });
 
                 const stepResult = response.message.content;

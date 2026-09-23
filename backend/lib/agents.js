@@ -123,6 +123,17 @@ const ROLE_MODEL = {
     kontrolor:  () => process.env.REVIEW_MODEL || process.env.DRAFT_MODEL || process.env.CHAT_MODEL || 'llama3'
 };
 
+// Teplota dle role (per-agent): faktické/oponentní role nízko (přesnost),
+// stylista výš (plynulý přepis). Slouží jako default pro systémové agenty;
+// vlastní agent si drží svou hodnotu, když ji má nastavenou.
+const ROLE_TEMP = { resersnik: 0.1, kontrolor: 0.1, spisovatel: 0.2, sekretarka: 0.3, stylista: 0.5 };
+
+// Bezpečné vytažení teploty agenta (0..1); jinak fallback volajícího.
+function agentTemperature(agent, fallback) {
+    const v = agent && agent.temperature;
+    return (typeof v === 'number' && v >= 0 && v <= 1) ? v : fallback;
+}
+
 function normalizeAgent(agent) {
     if (!agent || typeof agent !== 'object') return agent;
     const id = agent.id || 'agent';
@@ -135,6 +146,13 @@ function normalizeAgent(agent) {
     // (rešeršní/koncipientské role z ní čerpají; stylista/sekretářka ne).
     if (typeof agent.useJudikatura !== 'boolean') {
         agent.useJudikatura = !!(agent.permissions && agent.permissions.read_files);
+    }
+    // Teplota per-agent: nastavenou (validní) hodnotu zachovej; jinak default dle role
+    // (jen systémové role v ROLE_TEMP). Vlastní agent bez hodnoty → undefined → route fallback.
+    if (typeof agent.temperature === 'number') {
+        if (!(agent.temperature >= 0 && agent.temperature <= 1)) agent.temperature = undefined;
+    } else if (ROLE_TEMP[id] != null) {
+        agent.temperature = ROLE_TEMP[id];
     }
     // Systémové agenty: model dle role z konfigurace (přebije i stará data v .agents.json).
     if (agent.isSystem && ROLE_MODEL[id]) {
@@ -206,7 +224,10 @@ function saveAgent(agentId, agentData) {
         // Per-agent RAG: vlastní znalostní báze + úroveň přístupu ke spisům.
         knowledgeScope: agentData.knowledgeScope || KB_PREFIX + cleanId,
         spisAccess: SPIS_ACCESS_LEVELS.includes(agentData.spisAccess) ? agentData.spisAccess : undefined,
-        useJudikatura: typeof agentData.useJudikatura === 'boolean' ? agentData.useJudikatura : undefined
+        useJudikatura: typeof agentData.useJudikatura === 'boolean' ? agentData.useJudikatura : undefined,
+        // Teplota per-agent (0..1); mimo rozsah / nezadáno → undefined (normalizeAgent doplní dle role).
+        temperature: (typeof agentData.temperature === 'number' && agentData.temperature >= 0 && agentData.temperature <= 1)
+            ? agentData.temperature : undefined
     };
 
     normalizeAgent(agents[cleanId]); // doplní/opraví spisAccess (když přišlo undefined)
@@ -246,6 +267,8 @@ function resetAgentToDefault(agentId) {
 module.exports = {
     loadAgents,
     saveAgent,
+    agentTemperature,
+    ROLE_TEMP,
     deleteAgent,
     resetAgentToDefault,
     normalizeAgent,

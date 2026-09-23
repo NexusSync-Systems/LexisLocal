@@ -7,9 +7,9 @@
 'use strict';
 
 const express = require('express');
-const { CHAT_MODEL } = require('../lib/model_config');
+const { CHAT_MODEL, RAG_MIN_SCORE } = require('../lib/model_config');
 const router = express.Router();
-const { loadAgents } = require('../lib/agents');
+const { loadAgents, agentTemperature } = require('../lib/agents');
 const { searchSimilar } = require('../lib/rag');
 const { logEvent } = require('../lib/audit');
 const { anonymizeText } = require('../lib/anonymizer');
@@ -53,7 +53,7 @@ router.post('/debate', async (req, res) => {
             console.log(`🧭 Swarm obor: ${oborDetection.label} (${oborDetection.source}${oborDetection.confident ? '' : ', nejistě → celoplošně'})`);
         }
         const matches = await searchSimilar(prompt, 3, resolvedFilters);
-        const highConfidenceMatches = matches.filter(m => m.score >= 0.70);
+        const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
 
         if (highConfidenceMatches.length > 0) {
             // 'redacted' (kterýkoli agent debaty) → klientské pasáže anonymizovaně; KB beze změny.
@@ -92,7 +92,7 @@ router.post('/debate', async (req, res) => {
         const response1 = await ollama.chat({
             model: selectedModel,
             messages: messages1,
-            options: { temperature: 0.3 }
+            options: { temperature: agentTemperature(agent1, 0.3) }
         });
 
         const answer1 = response1.message.content;
@@ -123,7 +123,7 @@ router.post('/debate', async (req, res) => {
         const response2 = await ollama.chat({
             model: selectedModel,
             messages: messages2,
-            options: { temperature: 0.2 }
+            options: { temperature: agentTemperature(agent2, 0.2) }
         });
 
         const answer2 = response2.message.content;

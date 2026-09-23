@@ -247,6 +247,12 @@ if (require.main === module) {
         console.warn('⚠️  AI běží přes CLOUD (chat: ' + _aiComp.chat + ', embed: ' + _aiComp.embed + '). Pro advokátní mlčenlivost bez smlouvy o zpracování zapni LEXIS_PILOT_LOCAL_ONLY=1 (vynutí lokální Ollamu).');
     }
 
+    // #6: Preflight modelů — hlasitě varuj, když role-model není v Ollamě stažený
+    // (jinak agenti tiše spadnou na simulovaný fallback). Best-effort, neblokuje start.
+    try {
+        require('./lib/model_preflight').preflightModels().catch(() => {});
+    } catch (e) { console.warn('⚠️ Preflight modelů se nepodařilo spustit:', e.message); }
+
     // IMAP příjem e-mailů (jen při přímém spuštění serveru; nikdy pod testy).
     try {
         const db = require('./lib/database');

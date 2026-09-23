@@ -136,7 +136,19 @@ async function processEmailTask(input) {
         }
     } else {
         try {
-            const r = await ChiefOrchestrator.orchestrate(cleanBody, '', CHAT_MODEL, null, null);
+            // B2: e-mailový vstup dříve jel s ragFilters=null → orchestrátor bez oboru
+            // i judikatury. Zkus obor auto-detekovat z těla e-mailu; při jistotě ho
+            // předej (přesnost), jinak null → per-agent scope (B1) přidá judikaturu
+            // celoplošně u agentů se čtením spisů.
+            let emailFilters = null;
+            try {
+                const { detectObor } = require('./obor_detect');
+                const d = await detectObor(cleanBody);
+                if (d && d.confident && d.scope) {
+                    emailFilters = { scopes: [d.scope], oborScope: d.scope, oborSource: 'auto' };
+                }
+            } catch (oErr) { /* bez oboru → orchestrátor doplní judikaturu celoplošně */ }
+            const r = await ChiefOrchestrator.orchestrate(cleanBody, '', CHAT_MODEL, null, emailFilters);
             output = r.finalOutput || '';
             stepsSummary = (r.steps || []).map(st => `${st.agentEmoji || ''} ${st.agentName}: ${st.instruction}`);
             citationCheck = r.citationCheck || null;

@@ -6,10 +6,10 @@
 'use strict';
 
 const express = require('express');
-const { CHAT_MODEL } = require('../lib/model_config');
+const { CHAT_MODEL, RAG_MIN_SCORE } = require('../lib/model_config');
 const router = express.Router();
 const crypto = require('crypto');
-const { loadAgents } = require('../lib/agents');
+const { loadAgents, agentTemperature } = require('../lib/agents');
 const { searchSimilar } = require('../lib/rag');
 const { anonymizeText } = require('../lib/anonymizer');
 const { logEvent } = require('../lib/audit');
@@ -74,7 +74,7 @@ router.post('/:agentId', async (req, res) => {
                 console.log(`🧠 RAG: Aktivní filtry pro vyhledávání: ${JSON.stringify(resolvedFilters)}`);
             }
             const matches = await searchSimilar(prompt, 3, resolvedFilters);
-            const highConfidenceMatches = matches.filter(m => m.score >= 0.70);
+            const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
             ragSources = highConfidenceMatches.map(m => ({
                 fileName: m.fileName,
                 score: m.score,
@@ -113,9 +113,27 @@ router.post('/:agentId', async (req, res) => {
             model: selectedModel,
             messages: messages,
             options: {
-                temperature: 0.3
+                temperature: agentTemperature(agent, 0.3)
             }
         });
+
+        // #2: Antihalucinační kontrola citací i v single-agent routě (dřív jen v
+        // orchestrátoru). Neověřené §/sp. zn. se advokátovi označí. Best-effort —
+        // chyba ověření nesmí shodit odpověď agenta.
+        let citationCheck = null;
+        try {
+            const { verifyCitationsWithSources } = require('../lib/citation_verifier');
+            const cc = await verifyCitationsWithSources(response.message.content, {});
+            citationCheck = cc ? {
+                total: cc.total,
+                unverifiedCount: cc.unverifiedCount,
+                citations: cc.citations,
+                annotatedText: cc.annotatedText,
+                sourcesConsulted: cc.sourcesConsulted
+            } : null;
+        } catch (ccErr) {
+            console.warn('⚠️ Agent: ověření citací selhalo (nekritické):', ccErr.message);
+        }
 
         const durationMs = Date.now() - startTime;
         logEvent('LexisEditor', `AI Agent (${agent.name})`, 'Generování textu', {
@@ -159,6 +177,7 @@ router.post('/:agentId', async (req, res) => {
             transparencyId: transparencyRecord.id,
             greenMetrics,
             oborDetected: oborDetection,
+            citationCheck: citationCheck,
             timestamp: new Date().toISOString()
         });
 
