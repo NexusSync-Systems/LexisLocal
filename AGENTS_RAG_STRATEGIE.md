@@ -124,7 +124,17 @@ Testy: 40 zeleně (7 sad).
   data pro rozhodnutí „kde se RAG vyplatí". `?days=N` omezí okno. Čistá funkce
   `buildRagReport()`. Test: `tests/ragReport.test.js`.
 
-Testy: 45 zeleně (8 sad). Zbývající nápady: #1 router, #5 hybridní retrieval.
+Testy: 45 zeleně (8 sad).
+
+### Várka 6 (spolehlivost routingu)
+
+- **#1 — deterministický router** (`lib/agent_router.js` + napojení v `orchestrator.decomposeQuery`).
+  `sanitizeSteps()` očistí a zvaliduje kroky z LLM (zahodí neznámé agenty, doplní
+  tier, ořízne na 1..4) — LLM výstup se dá bezpečně použít. `routeByIntent()` odvodí
+  kroky z klíčových slov zadání, když LLM selže → fallback respektuje záměr (dřív
+  slepý lineární plán). Test: `tests/agentRouter.test.js` (+ aktualizace `orchestrator.test.js`).
+
+Testy: 56 zeleně (10 sad, cílené). Zbývá: **#5 hybridní retrieval** — až po eval baseline (C2).
 
 Testy: 29 zeleně (5 sad). Zbývající nápady na agenty (router, kritika→revize
 smyčka, hybridní retrieval, preflight modelů, RAG-report z transparency_logs) —

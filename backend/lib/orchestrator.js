@@ -12,6 +12,7 @@ const { searchSimilar } = require('./rag');
 // NEčerpají z vlastní znalostní báze (_kb_<id>) ani z judikatury (na rozdíl od
 // přímých rout /api/agent a /api/agent-swarm, které buildRagScope volají).
 const { applyAgentScope } = require('./rag_request');
+const { routeByIntent, sanitizeSteps } = require('./agent_router'); // #1 deterministický router
 const { checkSubject } = require('./registries');
 // AI poskytovatel nezávislý na backendu (Ollama | OpenAI | Anthropic).
 const ollama = require('./ai_provider');
@@ -461,15 +462,25 @@ Vytvoř maximálně 2 až 4 logické a vysoce efektivní kroky tak, aby na sebe 
             }
             jsonText = jsonText.trim();
             
-            const steps = JSON.parse(jsonText);
-            if (Array.isArray(steps) && steps.length > 0) {
-                return steps;
+            const parsed = JSON.parse(jsonText);
+            // #1: očisti a zvaliduj kroky (zahoď neznámé agenty, ořízni na 1..4).
+            const clean = sanitizeSteps(parsed);
+            if (clean.length > 0) {
+                return clean;
             }
+            console.warn("⚠️ Dekompozice: LLM vrátil neplatné/prázdné kroky → deterministický router.");
         } catch (e) {
-            console.warn("⚠️ Selhala inteligentní dekompozice, vracím výchozí lineární plán:", e.message);
+            console.warn("⚠️ Selhala inteligentní dekompozice → deterministický router:", e.message);
         }
 
-        // Safe deterministic fallback decomposition if LLM fails formatting
+        // #1: deterministický router z klíčových slov (respektuje záměr, offline).
+        const routed = routeByIntent(prompt);
+        if (routed && routed.length > 0) {
+            console.log(`🧭 Router: deterministický plán (${routed.map(s => s.agentId).join(' → ')}).`);
+            return routed;
+        }
+
+        // Poslední pojistka: obecný lineární plán, když nelze určit záměr.
         return [
             {
                 step: 1,
