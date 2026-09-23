@@ -134,7 +134,23 @@ Testy: 45 zeleně (8 sad).
   kroky z klíčových slov zadání, když LLM selže → fallback respektuje záměr (dřív
   slepý lineární plán). Test: `tests/agentRouter.test.js` (+ aktualizace `orchestrator.test.js`).
 
-Testy: 56 zeleně (10 sad, cílené). Zbývá: **#5 hybridní retrieval** — až po eval baseline (C2).
+Testy: 56 zeleně (10 sad, cílené).
+
+### Várka 7 (retrieval — opt-in)
+
+- **#5 — hybridní retrieval** (`lib/rag.js`). `searchSimilar` umí blend sémantického
+  a lexikálního skóre (`blendScore`), aby přesné tokeny (§, čísla zákonů, sp. zn.)
+  neztrácely na váze proti embeddingům. **OPT-IN, default VYPNUTO** (`RAG_HYBRID=1`,
+  váha `RAG_HYBRID_ALPHA`, default 0.7) — chování beze změny, dokud nezměříš přínos
+  přes `rag_eval.js` a nezapneš. Po zapnutí dolaď `RAG_MIN_SCORE`. Test: `tests/ragHybrid.test.js`.
+
+Testy: 67 zeleně (11 sad, cílené).
+
+### Doporučený postup pro #5
+1. Sestav malý golden set (~20 dotazů + očekávané judikáty) pro `rag_eval.js`.
+2. Změř baseline (semantic).
+3. Zapni `RAG_HYBRID=1`, změř znovu; porovnej recall@k / MRR.
+4. Zapni natrvalo jen když se metriky zlepší; dolaď `RAG_HYBRID_ALPHA` a `RAG_MIN_SCORE`.
 
 Testy: 29 zeleně (5 sad). Zbývající nápady na agenty (router, kritika→revize
 smyčka, hybridní retrieval, preflight modelů, RAG-report z transparency_logs) —

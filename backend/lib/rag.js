@@ -25,6 +25,26 @@ const { WATCH_DIR, dataPath } = require('./config'); // jeden zdroj pravdy, viz 
 const secureCrypto = require('./secure_crypto'); // AES-GCM + zpětné čtení CBC (jeden zdroj)
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
 
+// #5: hybridní retrieval (sémantika + lexikální shoda). OPT-IN (RAG_HYBRID=1),
+// default VYPNUTO → chování beze změny. České §, čísla zákonů a sp. zn. jsou přesné
+// tokeny, které lexikální shoda trefí a embeddingy rozmažou; blend obojí. Váhu řídí
+// RAG_HYBRID_ALPHA (podíl sémantiky, default 0.7). Po zapnutí dolaď RAG_MIN_SCORE.
+function _hybridEnabled() {
+    const v = String(process.env.RAG_HYBRID == null ? '' : process.env.RAG_HYBRID).trim().toLowerCase();
+    return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+function _hybridAlpha() {
+    const a = parseFloat(process.env.RAG_HYBRID_ALPHA);
+    return (Number.isFinite(a) && a >= 0 && a <= 1) ? a : 0.7;
+}
+// Blend sémantického a lexikálního skóre (obě v [0,1]).
+function blendScore(semantic, lexical, alpha) {
+    const a = (Number.isFinite(alpha) && alpha >= 0 && alpha <= 1) ? alpha : 0.7;
+    const sem = Number.isFinite(semantic) ? semantic : 0;
+    const lex = Number.isFinite(lexical) ? lexical : 0;
+    return a * sem + (1 - a) * lex;
+}
+
 // Jednoduchý mutex — serializuje zápisové operace nad indexem. Chokidar spouští
 // indexaci více souborů paralelně; bez serializace by se interleaved load→save
 // navzájem přepisovaly (ztráta chunků / přepis partitionů).
@@ -681,16 +701,29 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
 
     // Sémantický režim: kosinová podobnost vektorů (chunky bez vektoru → 0, jako dřív).
     // Lexikální fallback: kosinová podobnost term-frekvencí nad textem chunku.
-    const qTokens = embeddingFailed ? _lexTokens(query) : null;
+    // Tokeny dotazu potřebujeme pro lexikální fallback i pro hybridní blend.
+    const hybrid = _hybridEnabled() && !embeddingFailed;
+    const hybridAlpha = _hybridAlpha();
+    const qTokens = (embeddingFailed || hybrid) ? _lexTokens(query) : null;
     const results = chunks.map(chunk => {
-        const score = embeddingFailed
-            ? lexicalScore(qTokens, chunk.text || '')
-            : cosineSimilarity(queryVector, chunk.vector);
+        let score, method;
+        if (embeddingFailed) {
+            score = lexicalScore(qTokens, chunk.text || '');
+            method = 'lexical';
+        } else if (hybrid) {
+            const sem = cosineSimilarity(queryVector, chunk.vector);
+            const lex = lexicalScore(qTokens, chunk.text || '');
+            score = blendScore(sem, lex, hybridAlpha);
+            method = 'hybrid';
+        } else {
+            score = cosineSimilarity(queryVector, chunk.vector);
+            method = 'semantic';
+        }
         return {
             fileName: chunk.fileName,
             text: chunk.text,
             score: score,
-            method: embeddingFailed ? 'lexical' : 'semantic',
+            method: method,
             degraded: embeddingFailed,
             scope: chunk.scope || null, // KB chunk (_kb_<id>) vs. klientský spis (null)
             chunkIndex: chunk.chunkIndex,
@@ -711,6 +744,7 @@ module.exports = {
     getEmbedding,
     cosineSimilarity,
     lexicalScore,
+    blendScore,
     chunkText,
     indexKnowledge,
     deleteKnowledge,
