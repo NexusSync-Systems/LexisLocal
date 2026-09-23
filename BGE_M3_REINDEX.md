@@ -31,20 +31,17 @@ curl -X POST http://127.0.0.1:4000/api/rag/reindex-all -H "X-API-Token: <TVUJ_TO
 ```
    Počkej, až doběhne (u velkých oborů to chvíli trvá — embeduje se každý chunk).
 
-5) **Změř znovu** stejným golden setem:
+5) **Změř znovu** — jedním příkazem přes celý sweep (semantic + hybrid přes alphy):
 ```
-node backend/scripts/rag_eval.js backend/eval/rag_eval_judikatura.json          # semantic
-RAG_HYBRID=1 node backend/scripts/rag_eval.js backend/eval/rag_eval_judikatura.json   # hybrid
+node backend/scripts/rag_eval_sweep.js
 ```
-   Porovnej se stavem na nomic (semantic 0 %, hybrid α=0.2 → MRR 0.231).
+   Vypíše srovnávací tabulku a označí nejlepší konfiguraci dle MRR. Porovnej se stavem
+   na nomic (semantic 0 %, hybrid α=0.2 → MRR 0.231).
 
 6) **Přelaď podle nových čísel** (bge-m3 sémantika bude nejspíš užitečná, takže optimum
-   se posune JINAM než u nomic):
-   - alpha sweep znovu (nejspíš vyšší než 0.2, protože sémantika teď přidává):
-```
-for a in 0.3 0.5 0.7; do echo "== alpha $a =="; RAG_HYBRID=1 RAG_HYBRID_ALPHA=$a node backend/scripts/rag_eval.js backend/eval/rag_eval_judikatura.json | tail -2; done
-```
-   - re-kalibruj práh (skóre se změní):
+   alphy se posune VÝŠ než 0.2):
+   - alphu vybere už sweep z kroku 5 (řádek „nejlepší dle MRR"),
+   - re-kalibruj práh s vybranou alphou (skóre se změní):
 ```
 RAG_HYBRID=1 RAG_HYBRID_ALPHA=<vybrané> node backend/scripts/rag_score_probe.js
 ```
