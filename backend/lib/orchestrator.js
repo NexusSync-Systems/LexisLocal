@@ -19,6 +19,12 @@ const crypto = require('crypto');
 const db = require('./database');
 const { calculateInferenceMetrics } = require('./green_monitor');
 
+// #3: přepínač smyčky kritika→revize (default ZAP). Vypnutí: AGENT_REVISE_LOOP=0.
+function _reviseEnabled() {
+    const v = String(process.env.AGENT_REVISE_LOOP == null ? '1' : process.env.AGENT_REVISE_LOOP).trim().toLowerCase();
+    return v !== '0' && v !== 'false' && v !== 'no' && v !== 'off';
+}
+
 class ChiefOrchestrator {
     constructor() {
         this.defaultModel = CHAT_MODEL;
@@ -227,6 +233,20 @@ class ChiefOrchestrator {
             }
         }
 
+        // --- KROK 2.5: Kritika → revize (bounded, 1 průchod; #3) ---------------------
+        // Dřív se výstupy jen zřetězily; Kontrolorovy připomínky se nikam nezapracovaly.
+        // Teď: má-li plán koncept od Spisovatele, Kontrolor ho oponuje a Spisovatel
+        // vytvoří JEDNU revizi. Revidovaný text jde do syntézy. Best-effort + přepínatelné.
+        let revisionInfo = null;
+        try {
+            revisionInfo = await this._reviewReviseLoop({ agents, stepsLog, onStepProgress });
+            if (revisionInfo && revisionInfo.revisedText) {
+                accumulatedContext += `\n--- Revidovaný koncept (Spisovatel po oponentuře Kontrolora): ---\n${revisionInfo.revisedText}\n`;
+            }
+        } catch (revErr) {
+            console.warn('⚠️ Kritika→revize selhala (nekritické):', revErr.message);
+        }
+
         // --- KROK 3: Syntéza (Synthesis) ---
         if (onStepProgress) {
             onStepProgress({ status: "synthesizing", message: "Provádím finální syntézu a kompletaci výsledků swarmu..." });
@@ -305,6 +325,7 @@ class ChiefOrchestrator {
             prompt,
             steps: stepsLog,
             finalOutput: finalResponse,
+            revision: revisionInfo,
             citationCheck: citationCheck ? {
                 total: citationCheck.total,
                 unverifiedCount: citationCheck.unverifiedCount,
@@ -315,6 +336,81 @@ class ChiefOrchestrator {
             durationMs,
             timestamp: new Date().toISOString()
         };
+    }
+
+    /**
+     * #3: jedno volání agenta nad hotovým textem (kritika/revize) + zápis do
+     * green/transparency logu (AI Act). RAG se zde nezapojuje — pracuje se s
+     * poskytnutým konceptem. Teplota dle agenta.
+     */
+    async _callAgent(agent, model, messages, logLabel) {
+        const usedModel = model || this.defaultModel;
+        const t0 = Date.now();
+        const response = await ollama.chat({
+            model: usedModel,
+            messages: messages,
+            options: { temperature: agentTemperature(agent, 0.2) }
+        });
+        const content = (response && response.message && response.message.content) || '';
+        const durationMs = Date.now() - t0;
+        try {
+            const greenMetrics = calculateInferenceMetrics(durationMs);
+            db.insert('green_logs', { agentId: agent.id, model: usedModel, timestamp: new Date().toISOString(), ...greenMetrics });
+            const forLog = anonymizeText(messages.map(m => m.content).join('\n'));
+            db.insert('transparency_logs', {
+                agentId: agent.id, agentName: agent.name, model: usedModel,
+                prompt: logLabel, systemPrompt: forLog,
+                systemPromptHash: crypto.createHash('sha256').update(forLog).digest('hex'),
+                ragSources: [], timestamp: new Date().toISOString(), humanApproved: false,
+                greenMetrics: { energyWh: greenMetrics.energyWh, co2Grams: greenMetrics.co2Grams }
+            });
+        } catch (e) { /* logování je best-effort */ }
+        return content;
+    }
+
+    /**
+     * #3: smyčka kritika→revize. Kontrolor oponuje poslední koncept Spisovatele;
+     * pokud najde vady, Spisovatel vytvoří JEDNU revidovanou verzi. Bounded (1×),
+     * best-effort, přepínatelné (AGENT_REVISE_LOOP=0). Vrací
+     * { critiqued, revised, issues, revisedText } nebo null (smyčka se nespustila).
+     */
+    async _reviewReviseLoop({ agents, stepsLog, onStepProgress }) {
+        if (!_reviseEnabled()) return null;
+        const kontrolor = agents && agents.kontrolor;
+        const spisovatel = agents && agents.spisovatel;
+        if (!kontrolor || !spisovatel) return null;
+
+        const draftEntry = [...stepsLog].reverse().find(s => s.agentId === 'spisovatel' && s.output && String(s.output).trim());
+        if (!draftEntry) return null;
+        const draft = String(draftEntry.output);
+
+        if (onStepProgress) onStepProgress({ status: 'reviewing', agentName: kontrolor.name, agentEmoji: kontrolor.emoji, message: 'Kontrolor oponuje koncept…' });
+
+        const critiqueInstruction = 'Vypiš KONKRÉTNÍ, číslované právní i formální vady níže uvedeného KONCEPTU ' +
+            '(chybějící náležitosti, vymyšlené/nepřesné §, rozpory, slabá místa). Pokud koncept nemá vady, ' +
+            "napiš přesně 'BEZ VÝHRAD'. Nepřepisuj celý dokument, jen seznam připomínek.";
+        const critique = await this._callAgent(kontrolor, kontrolor.preferredModel,
+            [{ role: 'system', content: kontrolor.systemPrompt },
+             { role: 'user', content: critiqueInstruction + '\n\nKONCEPT:\n' + draft }],
+            'Kritika konceptu (Kontrolor)');
+        stepsLog.push({ step: 'revize-kritika', agentId: 'kontrolor', agentName: kontrolor.name, agentEmoji: kontrolor.emoji, instruction: 'Oponentura konceptu', output: critique });
+
+        if (/BEZ\s+VÝHRAD/i.test(critique)) {
+            return { critiqued: true, revised: false, issues: critique, revisedText: null };
+        }
+
+        if (onStepProgress) onStepProgress({ status: 'revising', agentName: spisovatel.name, agentEmoji: spisovatel.emoji, message: 'Spisovatel zapracovává připomínky…' });
+
+        const reviseInstruction = 'Zapracuj do KONCEPTU níže uvedené PŘIPOMÍNKY a vrať CELÝ opravený text ' +
+            'dokumentu — bez komentářů, bez uvození, bez seznamu změn. Chybějící konkrétní údaje nevymýšlej, ' +
+            'ponech [Doplnit...].';
+        const revisedText = await this._callAgent(spisovatel, spisovatel.preferredModel,
+            [{ role: 'system', content: spisovatel.systemPrompt },
+             { role: 'user', content: reviseInstruction + '\n\nPŘIPOMÍNKY:\n' + critique + '\n\nKONCEPT:\n' + draft }],
+            'Revize konceptu dle připomínek (Spisovatel)');
+        stepsLog.push({ step: 'revize-oprava', agentId: 'spisovatel', agentName: spisovatel.name, agentEmoji: spisovatel.emoji, instruction: 'Revize dle připomínek Kontrolora', output: revisedText });
+
+        return { critiqued: true, revised: true, issues: critique, revisedText: revisedText };
     }
 
     /**

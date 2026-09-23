@@ -103,7 +103,18 @@ Commit obsahuje tři nízkorizikové úpravy + testy (23 testů zeleně: 2 nové
   varuje u chybějících (vč. návrhu náhrady) — ať tichá degradace na simulovaný
   fallback není neviditelná. Nemutuje konfiguraci. Test: `tests/modelPreflight.test.js`.
 
-Testy: 37 zeleně (6 sad). Zbývající nápady: #1 router, #3 kritika→revize, #5 hybridní retrieval, #8 RAG-report.
+Testy: 37 zeleně (6 sad).
+
+### Várka 4 (kvalita výstupu — kritika→revize)
+
+- **#3 — smyčka kritika→revize** (`lib/orchestrator.js`). Po dílčích krocích, má-li
+  plán koncept od Spisovatele, Kontrolor ho oponuje (číslované vady, jinak
+  „BEZ VÝHRAD") a Spisovatel vytvoří JEDNU revidovanou verzi, která jde do syntézy.
+  Dřív se výstupy jen zřetězily a připomínky se nikam nezapracovaly. Bounded (1×),
+  best-effort, přepínatelné `AGENT_REVISE_LOOP=0`. Nové pole `revision` ve výstupu
+  (pro měření/UI). Nové logy v transparency ledgeru. Test: `tests/orchestratorReviseLoop.test.js`.
+
+Testy: 40 zeleně (7 sad). Zbývající nápady: #1 router, #5 hybridní retrieval, #8 RAG-report.
 
 Testy: 29 zeleně (5 sad). Zbývající nápady na agenty (router, kritika→revize
 smyčka, hybridní retrieval, preflight modelů, RAG-report z transparency_logs) —
