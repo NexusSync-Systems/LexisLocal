@@ -167,6 +167,33 @@ Pozn.: měří se jen obory, které jsou reálně naseedované (viz `naplnit-jud
 celoobora-miss = spíš „nenaseedováno" než špatný retrieval. `RAG_HYBRID` zapni
 natrvalo jen když se metriky zlepší, a pak dolaď `RAG_MIN_SCORE`.
 
+### Výsledky měření (nomic-embed-text) a finální nastavení
+
+Golden set (10 dotazů, k=5) na reálné judikatuře:
+
+| režim | hit@5 | MRR |
+|---|---|---|
+| semantic (nomic) | 0 % | 0.000 |
+| hybrid α=0.7 | 30 % | 0.060 |
+| hybrid α=0.35 | 20 % | 0.163 |
+| hybrid α=0.2 | 30 % | **0.231** |
+| hybrid α=0.0 (jen lexikální) | 30 % | 0.228 |
+
+Závěr: **nomic-embed-text je na CZ právo prakticky k ničemu** (semantic 0/10); rozhoduje
+lexikální signál. Optimum MRR ~α=0.2 (default v kódu). Kalibrace prahu sondou
+(`scripts/rag_score_probe.js`): skóre skutečných trefů 0.31–0.51 → **`RAG_MIN_SCORE=0.30`**.
+
+**Doporučené `.env`:**
+```
+RAG_HYBRID=1
+RAG_MIN_SCORE=0.30
+# RAG_HYBRID_ALPHA=0.2  (default v kódu)
+```
+
+**Poznámka:** i s hybridem ~7/10 mine — omezuje hustota korpusu (stovky podobných
+rozsudků) a slabé embeddingy. Skutečný skok nahoru = **výměna embedding modelu za
+`bge-m3`** (multilingvální, umí CZ) + přeindexace. To je další samostatný experiment.
+
 Testy: 29 zeleně (5 sad). Zbývající nápady na agenty (router, kritika→revize
 smyčka, hybridní retrieval, preflight modelů, RAG-report z transparency_logs) —
 viz níže.
