@@ -34,6 +34,30 @@ function parseArgs(argv) {
 const pct = x => (x * 100).toFixed(1) + '%';
 const blend = (sem, lex, a) => a * (Number.isFinite(sem) ? sem : 0) + (1 - a) * (Number.isFinite(lex) ? lex : 0);
 
+// Reciprocal Rank Fusion: zkombinuje víc pořadí dokumentů do jednoho. Silný zásah v
+// KTERÉMKOLIV pořadí táhne dokument nahoru, takže fúze skoro nikdy neregresuje (na rozdíl
+// od čistého přeřazení). orderings = pole polí názvů dokumentů (nejlepší první).
+function rrfFuse(orderings, K = 60) {
+    const score = new Map();
+    for (const order of orderings) {
+        for (let i = 0; i < order.length; i++) {
+            const key = String(order[i]);
+            score.set(key, (score.get(key) || 0) + 1 / (K + i + 1));
+        }
+    }
+    return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+}
+// Distinct dokumenty v pořadí podle skóre (první výskyt = nejlepší rank).
+function distinctByScore(cands, scoreFn) {
+    const seen = new Set(); const out = [];
+    for (const r of [...cands].sort((x, y) => scoreFn(y) - scoreFn(x))) {
+        const key = String(r.fileName).toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key); out.push(r.fileName);
+    }
+    return out;
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     const file = args.file || path.join(__dirname, '..', 'eval', 'rag_eval_judikatura.json');
@@ -73,11 +97,21 @@ async function main() {
         });
         table.push([cfg.label, aggregate(metrics)]);
     }
-    // Reranked konfigurace: pořadí už určil cross-encoder (pc.reranked), jen změř.
+    // Reranked + RRF fúze. Uložíme si per-case pořadí dokumentů pro srovnávací tabulku.
     if (args.rerank) {
-        const metrics = perCase.map(({ c, reranked }) =>
-            evaluateCase((reranked || []).map(r => ({ fileName: r.fileName })), c.relevant, k));
-        table.push([`RERANK (pool=${args.depth})`, aggregate(metrics)]);
+        const semScoreFn = r => (r.semantic == null ? r.lexical : r.semantic);
+        for (const pc of perCase) {
+            pc.semDocs = distinctByScore(pc.res, semScoreFn);
+            pc.rrDocs = distinctByScore(pc.reranked || [], r => (r.rerankScore == null ? -1 : r.rerankScore));
+            pc.rrfDocs = rrfFuse([pc.semDocs, pc.rrDocs], 60);
+        }
+        const rerankMetrics = perCase.map(({ c, rrDocs }) =>
+            evaluateCase(rrDocs.map(fn => ({ fileName: fn })), c.relevant, k));
+        table.push([`RERANK (pool=${args.depth})`, aggregate(rerankMetrics)]);
+
+        const rrfMetrics = perCase.map(({ c, rrfDocs }) =>
+            evaluateCase(rrfDocs.map(fn => ({ fileName: fn })), c.relevant, k));
+        table.push([`RRF(sem+rerank)`, aggregate(rrfMetrics)]);
     }
 
     console.log(`\n📊 RAG eval sweep — ${cases.length} dotazů, k=${k}, model=${process.env.EMBEDDING_MODEL || 'nomic-embed-text'}${degraded ? ' (⚠️ lexikální fallback — embedding model neběžel)' : ''}`);
@@ -131,20 +165,27 @@ async function main() {
             }
             return null;
         };
-        console.log('🔁 Per-case — rank správného dokumentu: semantic → RERANK:');
-        console.log('─'.repeat(72));
-        console.log('  case                                      semantic   →   rerank');
-        console.log('─'.repeat(72));
-        for (const { c, res, reranked } of perCase) {
-            const semRanked = res.map(r => ({ fileName: r.fileName, score: semScore(r) })).sort((x, y) => y.score - x.score);
-            const sRank = distinctRank(semRanked, c.relevant);
-            const rRank = distinctRank(reranked || [], c.relevant);
-            const arrow = (sRank && rRank && rRank < sRank) ? ' ✅' : (sRank && rRank && rRank > sRank ? ' ⚠️' : '');
-            const label = String(c.label || c.query).slice(0, 40).padEnd(40);
-            console.log('  ' + label + ' ' + String(sRank == null ? '—' : sRank).padStart(8) +
-                '   →   ' + String(rRank == null ? '—' : rRank).padStart(6) + arrow);
+        const rankInDocs = (docs, rel) => {
+            for (let i = 0; i < docs.length; i++) if (isRelevant(docs[i], rel || [])) return i + 1;
+            return null;
+        };
+        console.log('🔁 Per-case — rank správného dokumentu: semantic → RERANK → RRF:');
+        console.log('─'.repeat(78));
+        console.log('  case                                    semantic   rerank    RRF');
+        console.log('─'.repeat(78));
+        for (const { c, semDocs, rrDocs, rrfDocs } of perCase) {
+            const sRank = rankInDocs(semDocs, c.relevant);
+            const rRank = rankInDocs(rrDocs, c.relevant);
+            const fRank = rankInDocs(rrfDocs, c.relevant);
+            // ✅ když RRF drží zásah v top-k, ⚠️ když ho ztratil oproti semantic
+            const inTopK = x => x != null && x <= k;
+            const mark = inTopK(fRank) ? ' ✅' : (inTopK(sRank) && !inTopK(fRank) ? ' ⚠️' : '');
+            const label = String(c.label || c.query).slice(0, 38).padEnd(38);
+            const fmt = x => String(x == null ? '—' : x);
+            console.log('  ' + label + ' ' + fmt(sRank).padStart(6) + '   ' + fmt(rRank).padStart(6) +
+                '   ' + fmt(fRank).padStart(6) + mark);
         }
-        console.log('─'.repeat(72) + '\n');
+        console.log('─'.repeat(78) + '\n');
     }
 
     // 4) Prahová tabulka (semantic): hit@k po zahození kandidátů pod prahem.
