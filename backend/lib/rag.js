@@ -82,6 +82,67 @@ function getPartitionKey(directoryName) {
     return crypto.pbkdf2Sync(masterKey, directoryName, 1000, 32, 'sha256');
 }
 
+// --- Kompaktní ukládání vektorů (base64 Float32) --------------------------------
+// Vektor jako JSON pole čísel je ~2–3× větší než binární Float32; u velkých partitionů
+// to naráží na V8 limit délky řetězce (~512 MB) při JSON.stringify před šifrováním
+// (Cannot create a string longer than 0x1fffffe8). Na disk proto vektory ukládáme jako
+// base64 Float32 (pole `vec`); v PAMĚTI zůstávají jako `vector` (pole čísel), takže se
+// zbytek kódu (cosineSimilarity apod.) nemění. Čtení zvládá OBA formáty (zpětná komp.).
+function _vecToB64(vec) {
+    if (!Array.isArray(vec) || vec.length === 0) return null;
+    const f = Float32Array.from(vec);
+    return Buffer.from(f.buffer, f.byteOffset, f.byteLength).toString('base64');
+}
+function _b64ToVec(b64) {
+    if (typeof b64 !== 'string' || !b64) return null;
+    const buf = Buffer.from(b64, 'base64');
+    const n = Math.floor(buf.byteLength / 4);
+    const f = new Float32Array(buf.buffer, buf.byteOffset, n);
+    return Array.from(f);
+}
+// Deduplikace chunků dle id (fallback fileName#chunkIndex) — brání navrstvení při
+// opakovaném seedování, které partition nafukuje.
+function _dedupChunks(chunks) {
+    const seen = new Set();
+    const out = [];
+    for (const c of (chunks || [])) {
+        if (!c || typeof c !== 'object') continue;
+        const key = (c.id != null) ? ('id:' + c.id) : ('f:' + c.fileName + '#' + c.chunkIndex);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(c);
+    }
+    return out;
+}
+// Chunk → diskový tvar: vektor jako base64 (`vec`), bez pole `vector`.
+function _encodeChunkForDisk(c) {
+    const out = {};
+    for (const k of Object.keys(c)) { if (k !== 'vector' && k !== 'vec') out[k] = c[k]; }
+    const b64 = _vecToB64(c.vector);
+    if (b64) out.vec = b64;
+    else out.vector = null; // neembedovaný chunk: zachovej explicitní null (ne undefined)
+    return out;
+}
+// Diskový tvar → chunk: rekonstruuj `vector` z `vec`, nebo ponech staré pole `vector`.
+function _decodeChunkFromDisk(c) {
+    if (!c || typeof c !== 'object') return c;
+    if (typeof c.vec === 'string') {
+        const out = {};
+        for (const k of Object.keys(c)) { if (k !== 'vec') out[k] = c[k]; }
+        out.vector = _b64ToVec(c.vec);
+        return out;
+    }
+    return c;
+}
+function _encodeIndexForDisk(index) {
+    const chunks = _dedupChunks(index && index.chunks).map(_encodeChunkForDisk);
+    return Object.assign({}, index, { chunks });
+}
+function _decodeIndexFromDisk(index) {
+    if (!index || !Array.isArray(index.chunks)) return index || { chunks: [] };
+    return Object.assign({}, index, { chunks: index.chunks.map(_decodeChunkFromDisk) });
+}
+
 /**
  * Saves a partition index file encrypted with a key derived for the specific directory.
  */
@@ -91,8 +152,10 @@ function savePartition(directoryName, index) {
     
     try {
         const key = getPartitionKey(directoryName);
+        // Kompaktní tvar (base64 vektory) + dedup → menší JSON, nedotýká se limitu 512 MB.
+        const encoded = _encodeIndexForDisk(index);
         // AES-256-GCM (integrita) přes sdílený secure_crypto.
-        const payload = JSON.stringify(secureCrypto.encrypt(key, JSON.stringify(index)));
+        const payload = JSON.stringify(secureCrypto.encrypt(key, JSON.stringify(encoded)));
         fs.writeFileSync(partitionPath, payload, 'utf8');
     } catch (e) {
         console.error(`⚠️ RAG: Nepodařilo se uložit partition pro ${directoryName}:`, e.message);
@@ -132,7 +195,7 @@ function loadPartition(directoryName) {
                     const dir = c.fileName.includes('/') ? c.fileName.split('/')[0] : 'root';
                     return dir === directoryName;
                 });
-                return { chunks: filteredChunks };
+                return _decodeIndexFromDisk({ chunks: filteredChunks });
             } catch (e) {}
         }
         return { chunks: [] };
@@ -145,7 +208,7 @@ function loadPartition(directoryName) {
         const key = getPartitionKey(directoryName);
         // Přečte GCM i starší CBC (zpětná kompatibilita).
         const decrypted = secureCrypto.decrypt(key, payload);
-        return JSON.parse(decrypted);
+        return _decodeIndexFromDisk(JSON.parse(decrypted));
     } catch (e) {
         console.error(`⚠️ RAG: Nepodařilo se dešifrovat partition pro ${directoryName}:`, e.message);
         return { chunks: [] };
@@ -757,5 +820,11 @@ module.exports = {
     loadPartition,
     partitionStat,
     savePartition,
-    getActiveDirectories
+    getActiveDirectories,
+    // #úložiště: kompaktní vektory (testy)
+    vecToBase64: _vecToB64,
+    base64ToVec: _b64ToVec,
+    dedupChunks: _dedupChunks,
+    encodeChunkForDisk: _encodeChunkForDisk,
+    decodeChunkFromDisk: _decodeChunkFromDisk
 };
