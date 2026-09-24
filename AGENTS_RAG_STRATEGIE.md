@@ -194,6 +194,30 @@ RAG_MIN_SCORE=0.30
 rozsudků) a slabé embeddingy. Skutečný skok nahoru = **výměna embedding modelu za
 `bge-m3`** (multilingvální, umí CZ) + přeindexace. To je další samostatný experiment.
 
+### Výsledek: bge-m3 (změřeno)
+
+Po výměně `nomic-embed-text` → `bge-m3` a přeindexaci (`reindex-kb.js`), stejný golden set:
+
+| embedding | semantic hit@5 / MRR |
+|---|---|
+| nomic-embed-text | 0 % / 0.000 |
+| **bge-m3** | **30 % / 0.242** |
+
+S bge-m3 už **hybrid nepřidává** (všechny alphy 0.242 identické) — lexikální berlička
+není potřeba. Kalibrace prahu (sonda) pro bge-m3: skóre trefů 0.17–0.35 → **`RAG_MIN_SCORE=0.14`**.
+
+**Finální produkční `.env`:**
+```
+EMBEDDING_MODEL=bge-m3
+RAG_HYBRID=1
+RAG_MIN_SCORE=0.14
+```
+Po změně embedding modelu VŽDY: `node backend/scripts/reindex-kb.js`.
+
+**Realistické očekávání:** ~30 % „najde přesně TEN rozsudek" je dané hustotou korpusu;
+pro Rešeršníka to znamená „vrátí relevantní precedenty". Další zvednutí = pokrytí/kvalita
+korpusu (doplnit prázdné obory, lepší chunking), ne další ladění retrievalu.
+
 Testy: 29 zeleně (5 sad). Zbývající nápady na agenty (router, kritika→revize
 smyčka, hybridní retrieval, preflight modelů, RAG-report z transparency_logs) —
 viz níže.
