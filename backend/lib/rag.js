@@ -143,20 +143,53 @@ function _decodeIndexFromDisk(index) {
     return Object.assign({}, index, { chunks: index.chunks.map(_decodeChunkFromDisk) });
 }
 
+// --- Shardování partitionů ------------------------------------------------------
+// I s base64 vektory může velká báze (desítky tisíc chunků) překročit V8 limit délky
+// řetězce: JSON.stringify plaintextu se blíží ~512 MB, a šifra navíc dělá HEX ciphertext
+// ~2× (efektivní strop plaintextu ~256 MB). Partition proto ukládáme po SHARDECH — každý
+// shard je samostatně šifrovaný soubor s omezeným počtem chunků, takže žádný řetězec
+// (plaintext ANI hex) se limitu nepřiblíží. Shard 0 = `.rag_<id>.json` (nese i meta a
+// `_shards` = počet shardů), další = `.rag_<id>.p1.json`, `.p2.json`, …
+const SHARD_MAX_CHUNKS = Math.max(1, parseInt(process.env.RAG_SHARD_MAX_CHUNKS, 10) || 6000);
+
+function _partitionBase(directoryName) {
+    const partitionId = crypto.createHash('sha256').update(directoryName).digest('hex').substring(0, 16);
+    return dataPath(`.rag_${partitionId}`);
+}
+function _shardPath(base, i) {
+    return i === 0 ? `${base}.json` : `${base}.p${i}.json`;
+}
+
 /**
  * Saves a partition index file encrypted with a key derived for the specific directory.
+ * Velké partitiony se rozdělí na víc shardů (viz SHARD_MAX_CHUNKS), aby se serializace
+ * nedotkla V8 limitu délky řetězce.
  */
 function savePartition(directoryName, index) {
-    const partitionId = crypto.createHash('sha256').update(directoryName).digest('hex').substring(0, 16);
-    const partitionPath = dataPath(`.rag_${partitionId}.json`);
-    
+    const base = _partitionBase(directoryName);
     try {
         const key = getPartitionKey(directoryName);
-        // Kompaktní tvar (base64 vektory) + dedup → menší JSON, nedotýká se limitu 512 MB.
-        const encoded = _encodeIndexForDisk(index);
-        // AES-256-GCM (integrita) přes sdílený secure_crypto.
-        const payload = JSON.stringify(secureCrypto.encrypt(key, JSON.stringify(encoded)));
-        fs.writeFileSync(partitionPath, payload, 'utf8');
+        // Kompaktní tvar (base64 vektory) + dedup → menší JSON.
+        const deduped = _dedupChunks(index && index.chunks);
+        const encodedChunks = deduped.map(_encodeChunkForDisk);
+        const meta = Object.assign({}, index); delete meta.chunks;
+
+        const shardCount = Math.max(1, Math.ceil(encodedChunks.length / SHARD_MAX_CHUNKS));
+        for (let s = 0; s < shardCount; s++) {
+            const slice = encodedChunks.slice(s * SHARD_MAX_CHUNKS, (s + 1) * SHARD_MAX_CHUNKS);
+            const shardObj = (s === 0)
+                ? Object.assign({}, meta, { _shards: shardCount, chunks: slice })
+                : { chunks: slice };
+            // AES-256-GCM (integrita) přes sdílený secure_crypto — každý shard zvlášť.
+            const payload = JSON.stringify(secureCrypto.encrypt(key, JSON.stringify(shardObj)));
+            fs.writeFileSync(_shardPath(base, s), payload, 'utf8');
+        }
+        // Ukliď staré (nadbytečné) shardy po zmenšení báze.
+        for (let s = shardCount; ; s++) {
+            const p = _shardPath(base, s);
+            if (!fs.existsSync(p)) break;
+            try { fs.unlinkSync(p); } catch (e) { /* best-effort */ }
+        }
     } catch (e) {
         console.error(`⚠️ RAG: Nepodařilo se uložit partition pro ${directoryName}:`, e.message);
     }
@@ -168,8 +201,9 @@ function savePartition(directoryName, index) {
  * Vrací { mtimeMs, size } nebo null, když partition ještě neexistuje.
  */
 function partitionStat(directoryName) {
-    const partitionId = crypto.createHash('sha256').update(directoryName).digest('hex').substring(0, 16);
-    const partitionPath = dataPath(`.rag_${partitionId}.json`);
+    // Shard 0 se přepisuje při KAŽDÉM uložení partitionu, takže jeho mtime je platný
+    // podpis pro invalidaci cache i u shardovaných bází.
+    const partitionPath = _shardPath(_partitionBase(directoryName), 0);
     try {
         const st = fs.statSync(partitionPath);
         return { mtimeMs: st.mtimeMs, size: st.size };
@@ -182,10 +216,10 @@ function partitionStat(directoryName) {
  * Loads and decrypts a partition index file.
  */
 function loadPartition(directoryName) {
-    const partitionId = crypto.createHash('sha256').update(directoryName).digest('hex').substring(0, 16);
-    const partitionPath = dataPath(`.rag_${partitionId}.json`);
-    
-    if (!fs.existsSync(partitionPath)) {
+    const base = _partitionBase(directoryName);
+    const shard0 = _shardPath(base, 0);
+
+    if (!fs.existsSync(shard0)) {
         const RAG_INDEX_PATH = dataPath('.rag_index.json');
         if (fs.existsSync(RAG_INDEX_PATH)) {
             try {
@@ -200,15 +234,23 @@ function loadPartition(directoryName) {
         }
         return { chunks: [] };
     }
-    
-    try {
-        const rawPayload = fs.readFileSync(partitionPath, 'utf8');
-        const payload = JSON.parse(rawPayload);
 
+    try {
         const key = getPartitionKey(directoryName);
-        // Přečte GCM i starší CBC (zpětná kompatibilita).
-        const decrypted = secureCrypto.decrypt(key, payload);
-        return _decodeIndexFromDisk(JSON.parse(decrypted));
+        // Shard 0 nese meta + `_shards`. Starší jednosouborové partitiony `_shards` nemají
+        // → čtou se jako jeden shard (zpětná kompatibilita).
+        const first = JSON.parse(secureCrypto.decrypt(key, JSON.parse(fs.readFileSync(shard0, 'utf8'))));
+        const shardCount = (first && Number.isInteger(first._shards) && first._shards > 0) ? first._shards : 1;
+        const allChunks = (first.chunks || []).slice();
+        for (let s = 1; s < shardCount; s++) {
+            const p = _shardPath(base, s);
+            if (!fs.existsSync(p)) break;
+            const obj = JSON.parse(secureCrypto.decrypt(key, JSON.parse(fs.readFileSync(p, 'utf8'))));
+            if (obj && Array.isArray(obj.chunks)) allChunks.push(...obj.chunks);
+        }
+        const merged = Object.assign({}, first, { chunks: allChunks });
+        delete merged._shards;
+        return _decodeIndexFromDisk(merged);
     } catch (e) {
         console.error(`⚠️ RAG: Nepodařilo se dešifrovat partition pro ${directoryName}:`, e.message);
         return { chunks: [] };
@@ -224,23 +266,24 @@ function reencryptAllPartitions(oldMasterKey, newMasterKey) {
     // by šifrované starým klíčem (nedešifrovatelné).
     const dirs = [...new Set([...getActiveDirectories(), ..._listKbScopes()])];
     for (const dir of dirs) {
-        const partitionId = crypto.createHash('sha256').update(dir).digest('hex').substring(0, 16);
-        const partitionPath = dataPath(`.rag_${partitionId}.json`);
-        if (!fs.existsSync(partitionPath)) continue;
-        
-        try {
-            const rawPayload = fs.readFileSync(partitionPath, 'utf8');
-            const payload = JSON.parse(rawPayload);
+        const base = _partitionBase(dir);
+        if (!fs.existsSync(_shardPath(base, 0))) continue;
 
-            const oldKey = crypto.pbkdf2Sync(oldMasterKey, dir, 1000, 32, 'sha256');
-            const decrypted = secureCrypto.decrypt(oldKey, payload); // GCM i legacy CBC
-            const index = JSON.parse(decrypted);
-
-            const newKey = crypto.pbkdf2Sync(newMasterKey, dir, 1000, 32, 'sha256');
-            const newPayload = JSON.stringify(secureCrypto.encrypt(newKey, JSON.stringify(index)));
-            fs.writeFileSync(partitionPath, newPayload, 'utf8');
-        } catch (e) {
-            console.error(`❌ RAG: Selhal přepisy klíče pro partition ${dir}:`, e.message);
+        const oldKey = crypto.pbkdf2Sync(oldMasterKey, dir, 1000, 32, 'sha256');
+        const newKey = crypto.pbkdf2Sync(newMasterKey, dir, 1000, 32, 'sha256');
+        // Každý shard je samostatně šifrovaný — přešifruj soubor po souboru (bez slučování),
+        // takže se ani u velkých bází nedotkneme V8 limitu délky řetězce.
+        for (let s = 0; ; s++) {
+            const p = _shardPath(base, s);
+            if (!fs.existsSync(p)) break;
+            try {
+                const payload = JSON.parse(fs.readFileSync(p, 'utf8'));
+                const decrypted = secureCrypto.decrypt(oldKey, payload); // GCM i legacy CBC
+                const newPayload = JSON.stringify(secureCrypto.encrypt(newKey, decrypted));
+                fs.writeFileSync(p, newPayload, 'utf8');
+            } catch (e) {
+                console.error(`❌ RAG: Selhal přepisy klíče pro partition ${dir} (shard ${s}):`, e.message);
+            }
         }
     }
 }
