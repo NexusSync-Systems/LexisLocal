@@ -656,12 +656,16 @@ async function deleteKnowledge(scope, fileName) {
  * embedding modelu/poskytovatele (jiná dimenze vektoru). Embedding počítá MIMO zámek;
  * pod zámkem jen zapíše dle id (chunky přidané mezitím zůstanou nedotčené).
  */
-async function reindexKnowledge(scope) {
-    const snapshot = loadPartition(scope).chunks || [];
+async function reindexKnowledge(scope, onProgress) {
+    // Dedup PŘED embedováním — duplicitní chunky (navrstvené opakovaným seedováním) se
+    // jinak zbytečně re-embedují a nafukují dobu běhu. Klíč = id (fallback fileName#idx).
+    const snapshot = _dedupChunks(loadPartition(scope).chunks || []);
     if (!snapshot.length) return { scope, chunks: 0, embedded: 0 };
 
+    const total = snapshot.length;
     const vectors = Object.create(null);
     let embedded = 0;
+    let done = 0;
     for (const c of snapshot) {
         try {
             const v = await getEmbedding(c.text || '');
@@ -670,12 +674,17 @@ async function reindexKnowledge(scope) {
         } catch (e) {
             vectors[c.id] = null;
         }
+        done++;
+        // Průběh (živý log v reindex-kb.js) — hlásí každých 25 chunků + na konci.
+        if (typeof onProgress === 'function' && (done % 25 === 0 || done === total)) {
+            try { onProgress(done, total, embedded); } catch (e) { /* log nesmí shodit reindex */ }
+        }
     }
 
     await ragMutex.acquire();
     try {
         const part = loadPartition(scope);
-        const chunks = part.chunks || [];
+        const chunks = _dedupChunks(part.chunks || []);
         for (const c of chunks) {
             if (Object.prototype.hasOwnProperty.call(vectors, c.id)) {
                 c.vector = vectors[c.id];
@@ -689,11 +698,22 @@ async function reindexKnowledge(scope) {
     }
 }
 
-/** Re-embeduje VŠECHNY registrované znalostní báze (po změně embedding modelu). */
-async function reindexAllKnowledge() {
+/**
+ * Re-embeduje VŠECHNY registrované znalostní báze (po změně embedding modelu).
+ * Volitelný `onScope(phase, scope, i, n, extra)` hlásí průběh: phase 'start' | 'progress'
+ * | 'done' (extra = {done,total,emb} u 'progress', výsledek {scope,chunks,embedded} u 'done').
+ */
+async function reindexAllKnowledge(onScope) {
     const results = [];
-    for (const scope of _listKbScopes()) {
-        results.push(await reindexKnowledge(scope));
+    const scopes = _listKbScopes();
+    for (let i = 0; i < scopes.length; i++) {
+        const scope = scopes[i];
+        if (typeof onScope === 'function') { try { onScope('start', scope, i, scopes.length); } catch (e) {} }
+        const r = await reindexKnowledge(scope, (done, total, emb) => {
+            if (typeof onScope === 'function') { try { onScope('progress', scope, i, scopes.length, { done, total, emb }); } catch (e) {} }
+        });
+        results.push(r);
+        if (typeof onScope === 'function') { try { onScope('done', scope, i, scopes.length, r); } catch (e) {} }
     }
     return results;
 }
@@ -860,6 +880,7 @@ module.exports = {
     reindexAllKnowledge,
     reencryptAllPartitions,
     listJudikaturaScopes,
+    listKbScopes: _listKbScopes,
     loadPartition,
     partitionStat,
     savePartition,
