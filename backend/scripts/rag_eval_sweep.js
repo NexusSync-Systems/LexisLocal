@@ -15,7 +15,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '.e
 const fs = require('fs');
 const path = require('path');
 const rag = require('../lib/rag');
-const { evaluateCase, aggregate } = require('../lib/rag_eval');
+const { evaluateCase, aggregate, isRelevant } = require('../lib/rag_eval');
 
 function parseArgs(argv) {
     const o = { file: null, k: 5, alphas: [0, 0.1, 0.2, 0.35, 0.5, 0.7] };
@@ -70,5 +70,51 @@ async function main() {
     }
     console.log('─'.repeat(60));
     console.log(`  🏆 nejlepší dle MRR: ${best.label} (${best.mrr.toFixed(3)})\n`);
+
+    // 3) Per-case (semantic): rank a skóre SPRÁVNÉHO dokumentu — kde leží práh?
+    const semScore = r => (r.semantic == null ? r.lexical : r.semantic);
+    console.log('🔎 Per-case (semantic) — rank a skóre správného dokumentu:');
+    console.log('─'.repeat(72));
+    console.log('  case                                      rank   skóre_rel   top1');
+    console.log('─'.repeat(72));
+    const relScores = [];
+    for (const { c, res } of perCase) {
+        const ranked = res.map(r => ({ fileName: r.fileName, score: semScore(r) })).sort((x, y) => y.score - x.score);
+        let relScore = null, rank = null;
+        for (let i = 0; i < ranked.length; i++) {
+            if (isRelevant(ranked[i].fileName, c.relevant || [])) { relScore = ranked[i].score; rank = i + 1; break; }
+        }
+        if (relScore != null) relScores.push(relScore);
+        const label = String(c.label || c.query).slice(0, 40).padEnd(40);
+        const top1 = ranked.length ? ranked[0].score : 0;
+        console.log('  ' + label + ' ' + String(rank == null ? '—' : rank).padStart(4) +
+            '   ' + (relScore == null ? '  —  ' : relScore.toFixed(3)).padStart(7) +
+            '   ' + top1.toFixed(3).padStart(6));
+    }
+    console.log('─'.repeat(72));
+    if (relScores.length) {
+        const minRel = Math.min(...relScores);
+        console.log(`  Nejnižší skóre správného dokumentu: ${minRel.toFixed(3)}` +
+            ` → aby se neztratil žádný zásah, RAG_MIN_SCORE musí být ≤ ${minRel.toFixed(3)}.\n`);
+    }
+
+    // 4) Prahová tabulka (semantic): hit@k po zahození kandidátů pod prahem.
+    console.log('🎚️  Práh RAG_MIN_SCORE (semantic) — hit@k po odfiltrování kandidátů pod prahem:');
+    console.log('─'.repeat(48));
+    const envThr = parseFloat(process.env.RAG_MIN_SCORE);
+    const thresholds = [0.10, 0.14, 0.20, 0.25, 0.30, 0.40];
+    if (Number.isFinite(envThr) && !thresholds.includes(envThr)) thresholds.push(envThr);
+    thresholds.sort((a, b) => a - b);
+    for (const t of thresholds) {
+        const metrics = perCase.map(({ c, res }) => {
+            const ranked = res.filter(r => semScore(r) >= t)
+                .map(r => ({ fileName: r.fileName, score: semScore(r) })).sort((x, y) => y.score - x.score);
+            return evaluateCase(ranked, c.relevant || [], k);
+        });
+        const s = aggregate(metrics);
+        const mark = (Number.isFinite(envThr) && Math.abs(t - envThr) < 1e-9) ? '  ← .env' : '';
+        console.log('  t=' + t.toFixed(2) + '   hit@k ' + pct(s.hitRate).padStart(6) + '   recall@k ' + pct(s.recallAtK).padStart(6) + mark);
+    }
+    console.log('─'.repeat(48) + '\n');
 }
 main().catch(e => { console.error('❌ Sweep selhal:', e.message); process.exit(1); });
