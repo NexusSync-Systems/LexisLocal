@@ -656,28 +656,42 @@ async function deleteKnowledge(scope, fileName) {
  * embedding modelu/poskytovatele (jiná dimenze vektoru). Embedding počítá MIMO zámek;
  * pod zámkem jen zapíše dle id (chunky přidané mezitím zůstanou nedotčené).
  */
-async function reindexKnowledge(scope, onProgress) {
+async function reindexKnowledge(scope, onProgress, opts = {}) {
     // Dedup PŘED embedováním — duplicitní chunky (navrstvené opakovaným seedováním) se
     // jinak zbytečně re-embedují a nafukují dobu běhu. Klíč = id (fallback fileName#idx).
     const snapshot = _dedupChunks(loadPartition(scope).chunks || []);
-    if (!snapshot.length) return { scope, chunks: 0, embedded: 0 };
+    if (!snapshot.length) return { scope, chunks: 0, embedded: 0, reused: 0 };
+
+    // Obnovitelnost: chunk, který UŽ má vektor cílové dimenze (targetDim), se přeskočí
+    // (nepřepočítává se). Díky tomu je reindex bezpečně opakovatelný — re-běh po pádu
+    // pokračuje, kde skončil, a dokončené báze proletí okamžitě. `force` vynutí přepočet.
+    const targetDim = Number.isInteger(opts.targetDim) && opts.targetDim > 0 ? opts.targetDim : null;
+    const force = !!opts.force;
 
     const total = snapshot.length;
     const vectors = Object.create(null);
     let embedded = 0;
+    let reused = 0;
     let done = 0;
     for (const c of snapshot) {
-        try {
-            const v = await getEmbedding(c.text || '');
-            vectors[c.id] = v;
-            if (v != null) embedded++;
-        } catch (e) {
-            vectors[c.id] = null;
+        const cur = c.vector;
+        if (!force && targetDim && Array.isArray(cur) && cur.length === targetDim) {
+            // už embedováno správným modelem → recykluj, žádné volání ollamy
+            vectors[c.id] = cur;
+            embedded++; reused++;
+        } else {
+            try {
+                const v = await getEmbedding(c.text || '');
+                vectors[c.id] = v;
+                if (v != null) embedded++;
+            } catch (e) {
+                vectors[c.id] = null;
+            }
         }
         done++;
         // Průběh (živý log v reindex-kb.js) — hlásí každých 25 chunků + na konci.
         if (typeof onProgress === 'function' && (done % 25 === 0 || done === total)) {
-            try { onProgress(done, total, embedded); } catch (e) { /* log nesmí shodit reindex */ }
+            try { onProgress(done, total, embedded, reused); } catch (e) { /* log nesmí shodit reindex */ }
         }
     }
 
@@ -692,7 +706,7 @@ async function reindexKnowledge(scope, onProgress) {
             }
         }
         savePartition(scope, { chunks });
-        return { scope, chunks: chunks.length, embedded };
+        return { scope, chunks: chunks.length, embedded, reused };
     } finally {
         ragMutex.release();
     }
@@ -701,17 +715,18 @@ async function reindexKnowledge(scope, onProgress) {
 /**
  * Re-embeduje VŠECHNY registrované znalostní báze (po změně embedding modelu).
  * Volitelný `onScope(phase, scope, i, n, extra)` hlásí průběh: phase 'start' | 'progress'
- * | 'done' (extra = {done,total,emb} u 'progress', výsledek {scope,chunks,embedded} u 'done').
+ * | 'done' (extra = {done,total,emb,reused} u 'progress', výsledek {scope,chunks,embedded,
+ * reused} u 'done'). `opts` ({targetDim, force}) se předá do reindexKnowledge (obnovitelnost).
  */
-async function reindexAllKnowledge(onScope) {
+async function reindexAllKnowledge(onScope, opts = {}) {
     const results = [];
     const scopes = _listKbScopes();
     for (let i = 0; i < scopes.length; i++) {
         const scope = scopes[i];
         if (typeof onScope === 'function') { try { onScope('start', scope, i, scopes.length); } catch (e) {} }
-        const r = await reindexKnowledge(scope, (done, total, emb) => {
-            if (typeof onScope === 'function') { try { onScope('progress', scope, i, scopes.length, { done, total, emb }); } catch (e) {} }
-        });
+        const r = await reindexKnowledge(scope, (done, total, emb, reused) => {
+            if (typeof onScope === 'function') { try { onScope('progress', scope, i, scopes.length, { done, total, emb, reused }); } catch (e) {} }
+        }, opts);
         results.push(r);
         if (typeof onScope === 'function') { try { onScope('done', scope, i, scopes.length, r); } catch (e) {} }
     }
