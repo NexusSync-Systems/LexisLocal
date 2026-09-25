@@ -52,3 +52,7 @@ backend/eval/rag_eval.json
 # Judikatura pro RAG — data, ne kód (plní se přes seed-kb.js)
 judikatura/
 judikatura-ukazka/
+
+# Zálohy a varianty .env (šablona .env.example zůstává)
+.env.*
+!.env.example
