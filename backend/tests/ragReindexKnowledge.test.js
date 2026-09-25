@@ -44,7 +44,7 @@ describe('reindexKnowledge / reindexAllKnowledge', () => {
 
     test('prázdný scope → nic k re-embeddingu', async () => {
         const res = await rag.reindexKnowledge('_kb_neexistuje');
-        expect(res).toEqual({ scope: '_kb_neexistuje', chunks: 0, embedded: 0 });
+        expect(res).toEqual({ scope: '_kb_neexistuje', chunks: 0, embedded: 0, reused: 0 });
     });
 
     test('reindexAllKnowledge projde registrované báze', async () => {

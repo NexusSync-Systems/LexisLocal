@@ -18,6 +18,7 @@ const db = require('../lib/database');
 const ollama = require('../lib/ai_provider'); // Ollama | OpenAI | Anthropic (stejné rozhraní)
 const { generateAgentFallback } = require('../lib/agent_fallback');
 const { buildRagScope } = require('../lib/rag_request');
+const agentTools = require('../lib/agent_tools'); // interní tool-registry (Fáze 1, za AGENT_TOOLS=1)
 
 // POST /api/agent/:agentId - Volání agenta s modelem dle výběru
 router.post('/:agentId', async (req, res) => {
@@ -109,13 +110,31 @@ router.post('/:agentId', async (req, res) => {
 
         messages.push({ role: 'user', content: prompt });
 
-        const response = await ollama.chat({
-            model: selectedModel,
-            messages: messages,
-            options: {
-                temperature: agentTemperature(agent, 0.3)
-            }
-        });
+        const chatOptions = { temperature: agentTemperature(agent, 0.3) };
+        // Tool-calling (Fáze 1, read-only): agent si smí sám došáhnout pro fakta (search_rag,
+        // get_document, check_registry) v mezích svých oprávnění. Za AGENT_TOOLS=1; jinak
+        // beze změny. RAG kontext je už předvyplněný výše — tooly slouží ke zpřesnění.
+        let response, toolsUsed = [];
+        if (agentTools.enabled() && agentTools.toolsForAgent(agent).length > 0) {
+            const ctx = {
+                ragFilters: resolvedFilters, // search_rag respektuje scope/přístup agenta
+                audit: (ev) => {
+                    try {
+                        logEvent('LexisEditor', `AI Agent nástroj (${agent.name})`, 'Volání nástroje', {
+                            tool: ev.tool, ok: ev.ok, args: ev.args
+                        });
+                    } catch (e) { /* audit nesmí shodit odpověď */ }
+                }
+            };
+            const loop = await agentTools.runToolLoop({
+                provider: ollama, model: selectedModel, messages, options: chatOptions, agent, ctx
+            });
+            toolsUsed = loop.toolCalls.map(c => c.name);
+            if (toolsUsed.length) console.log(`🔧 Agent [${agent.name}] použil nástroje: ${toolsUsed.join(', ')} (${loop.iters} it.)`);
+            response = { message: { content: loop.content } };
+        } else {
+            response = await ollama.chat({ model: selectedModel, messages: messages, options: chatOptions });
+        }
 
         // #2: Antihalucinační kontrola citací i v single-agent routě (dřív jen v
         // orchestrátoru). Neověřené §/sp. zn. se advokátovi označí. Best-effort —
@@ -178,6 +197,7 @@ router.post('/:agentId', async (req, res) => {
             greenMetrics,
             oborDetected: oborDetection,
             citationCheck: citationCheck,
+            toolsUsed: toolsUsed,
             timestamp: new Date().toISOString()
         });
 
