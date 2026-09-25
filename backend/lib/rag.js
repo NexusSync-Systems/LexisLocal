@@ -35,11 +35,11 @@ function _hybridEnabled() {
 }
 function _hybridAlpha() {
     const a = parseFloat(process.env.RAG_HYBRID_ALPHA);
-    // Default 0.7 (silně sémantický). Změřeno na rozšířeném golden setu judikatury (39
-    // dotazů, bge-m3): hybrid α=0.7 = hit@5 100 %, recall@5 65 %, MRR 0.934 — nejlepší;
-    // bije čistý semantic (MRR 0.864) i starý α=0.2 (0.800). Pozn.: α=0.2 byl optimální
-    // pro nomic-embed-text, ale bge-m3 sémantika je silná → těžiště zpět k sémantice.
-    return (Number.isFinite(a) && a >= 0 && a <= 1) ? a : 0.7;
+    // Default 0.8 (silně sémantický). Změřeno na rozšířeném golden setu judikatury (39
+    // dotazů, bge-m3): α=0.8 = hit@5 100 %, recall@5 65 %, MRR 0.955 — vrchol křivky
+    // (0.7→0.934, 0.9→0.919); bije čistý semantic (0.864) i starý α=0.2 (0.800). Pozn.:
+    // α=0.2 byl optimální pro nomic-embed-text, ale bge-m3 sémantika je silná.
+    return (Number.isFinite(a) && a >= 0 && a <= 1) ? a : 0.8;
 }
 // RRF (Reciprocal Rank Fusion): místo lineárního blendu skóre kombinuj POŘADÍ ze
 // sémantického a lexikálního žebříčku. Rank-fúze hustého + řídkého vyhledávání je v IR
