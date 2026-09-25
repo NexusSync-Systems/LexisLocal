@@ -1,0 +1,703 @@
+{
+  "_comment": "Rozšířený golden set (víc dotazů, víc relevantních judikátů na dotaz). Vytvořeno z labeling worksheetu. Spuštění: node backend/scripts/rag_eval_sweep.js backend/eval/rag_eval_expanded.json",
+  "k": 5,
+  "cases": [
+    {
+      "label": "nemovitosti — vyklizení bytu po skončení nájmu",
+      "query": "Žaloba na vyklizení bytu po skončení nájmu a neoprávněné užívání bytu bývalým nájemcem.",
+      "relevant": [
+        "21_C_203_2023-49.txt",
+        "25_C_152_2023-63.txt",
+        "28_C_161_2023-35.txt",
+        "7_C_288_2023-19.txt",
+        "115_C_319_2023-27.txt",
+        "25_C_259_2023-40.txt",
+        "18_C_137_2023-29.txt",
+        "61_C_81_2023-27.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_nemovitosti_a_najemni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "nemovitosti — sleva z nájemného pro vady",
+      "query": "Sleva z nájemného kvůli vadám bytu, které znemožňují jeho řádné užívání.",
+      "relevant": [
+        "5_C_434_2020-167.txt",
+        "10_C_236_2023-30.txt",
+        "44_C_158_2022-110.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_nemovitosti_a_najemni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "nemovitosti — výpověď nájmu pro neplacení",
+      "query": "Výpověď nájmu bytu z důvodu neplacení nájemného a dlužných úhrad za služby.",
+      "relevant": [
+        "18_C_207_2023-139.txt",
+        "17_C_242_2023-22.txt",
+        "31_C_95_2023-19.txt",
+        "18_C_232_2022-68.txt",
+        "6_C_110_2023-47.txt",
+        "115_C_12_2023-17.txt",
+        "39_C_151_2023-51.txt",
+        "6_C_344_2023-14.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_nemovitosti_a_najemni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "nemovitosti — předkupní právo spoluvlastníka",
+      "query": "Předkupní právo spoluvlastníka nemovitosti při převodu spoluvlastnického podílu.",
+      "relevant": [
+        "21_C_60_2022-79.txt",
+        "61_C_233_2020-100.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_nemovitosti_a_najemni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "daňové — doměření DPH a zneužití práva",
+      "query": "Doměření daně z přidané hodnoty pro zneužití práva a účast na podvodu na DPH.",
+      "relevant": [
+        "63_C_34_2023-99.txt",
+        "26_C_206_2023-219.txt",
+        "35_C_55_2024-27.txt",
+        "10_C_19_2021-457.txt",
+        "22_C_242_2022-62.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_danove_a_financni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "daňové — prekluze doměření daně",
+      "query": "Prekluze práva správce daně doměřit daň a běh lhůty pro stanovení daně.",
+      "relevant": [
+        "63_C_34_2023-99.txt",
+        "79_C_33_2022-150.txt",
+        "26_C_206_2023-219.txt",
+        "63_C_217_2022-58.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_danove_a_financni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "daňové — penále a úrok z prodlení",
+      "query": "Penále a úrok z prodlení při dodatečném vyměření daně.",
+      "relevant": [
+        "10_C_19_2021-457.txt",
+        "26_C_206_2023-219.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_danove_a_financni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "dědické — neplatnost závěti pro formu",
+      "query": "Neplatnost závěti pro nedostatek zákonné formy a náležitostí pořízení pro případ smrti.",
+      "relevant": [
+        "28_C_306_2018-419.txt",
+        "24_Co_243_2024-129.txt",
+        "24_C_121_2022.txt",
+        "3_C_230_2020-212.txt",
+        "4_C_97_2022-300.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_dedicke_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "dědické — povinný díl nepominutelného dědice",
+      "query": "Povinný díl nepominutelného dědice a započtení darů na dědický podíl.",
+      "relevant": [
+        "17_C_278_2021-221.txt",
+        "15_C_246_2023-91.txt",
+        "12_C_60_2023-170.txt",
+        "18_C_36_2022-161.txt",
+        "30_C_232_2020-275.txt",
+        "24_C_305_2020-322.txt",
+        "7_C_93_2017-139.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_dedicke_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "dědické — odpovědnost dědiců za dluhy",
+      "query": "Odpovědnost dědiců za dluhy zůstavitele do výše nabytého dědictví.",
+      "relevant": [
+        "18_C_280_2013-774.txt",
+        "38_C_188_2023-29.txt",
+        "24_Co_157_2024-571.txt",
+        "6_C_117_2022-142.txt",
+        "10_C_13_2022-37.txt",
+        "24_C_305_2020-322.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_dedicke_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "dědické — vydědění pro nezájem",
+      "query": "Vydědění potomka pro trvalý neprojevovaný opravdový zájem o zůstavitele.",
+      "relevant": [
+        "12_C_60_2023-170.txt",
+        "5_C_116_2022-107.txt",
+        "24_C_305_2020-322.txt",
+        "22_C_308_2023-78.txt",
+        "18_C_36_2022-161.txt",
+        "10_C_115_2022-99.txt",
+        "15_C_246_2023-91.txt",
+        "30_C_232_2020-275.txt",
+        "17_C_191_2019.txt",
+        "26_C_163_2024-36.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_dedicke_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "insolvenční — popření pohledávky správcem",
+      "query": "Popření pravosti a výše přihlášené pohledávky insolvenčním správcem a incidenční spor.",
+      "relevant": [
+        "8_C_267_2022-126.txt",
+        "16_C_183_2014-771.txt",
+        "12_C_147_2023-43.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_insolvencni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "insolvenční — oddlužení a osvobození",
+      "query": "Oddlužení a osvobození dlužníka od placení zbytku dluhů po splnění splátkového kalendáře.",
+      "relevant": [
+        "18_C_3_2023-108.txt",
+        "22_C_36_2019-156.txt",
+        "14_C_33_2015-47.txt",
+        "12_C_147_2023-43.txt",
+        "8_C_393_2017-46.txt",
+        "10_C_344_2018-29.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_insolvencni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "insolvenční — zajištěná pohledávka",
+      "query": "Přihláška zajištěné pohledávky a uspokojení věřitele ze zajištění v insolvenci.",
+      "relevant": [
+        "18_C_3_2023-108.txt",
+        "44_C_95_2020-92.txt",
+        "25_C_24_2019.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_insolvencni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "náhrada škody — nemajetková újma pozůstalých",
+      "query": "Náhrada nemajetkové újmy pozůstalých při usmrcení blízké osoby.",
+      "relevant": [
+        "42_C_120_2019-84.txt",
+        "16_C_166_2018-297.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_nahrada_skody_a_odpovednost"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "náhrada škody — promlčení nároku",
+      "query": "Promlčení práva na náhradu škody a počátek běhu promlčecí lhůty.",
+      "relevant": [
+        "109_C_36_2018-227.txt",
+        "25_Co_177_2023-296.txt",
+        "4_C_349_2022-245.txt",
+        "13_C_206_2017-128.txt",
+        "17_C_220_2020-372.txt",
+        "5_C_125_2022-159.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_nahrada_skody_a_odpovednost"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "náhrada škody — provoz dopravního prostředku",
+      "query": "Odpovědnost provozovatele za škodu způsobenou provozem dopravního prostředku.",
+      "relevant": [
+        "20_C_207_2024-31.txt",
+        "38_C_50_2023-105.txt",
+        "19_C_171_2023-13.txt",
+        "16_C_166_2018-297.txt",
+        "16_C_106_2022-174.txt",
+        "261_C_8_2021-146.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_nahrada_skody_a_odpovednost"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "občanské — bezdůvodné obohacení",
+      "query": "Vydání bezdůvodného obohacení získaného plněním bez právního důvodu.",
+      "relevant": [
+        "33_C_230_2023-21.txt",
+        "13_C_351_2022-118.txt",
+        "23_C_96_2021-96.txt",
+        "17_C_273_2023-48.txt",
+        "8_C_59_2021.txt",
+        "8_C_190_2023-48.txt",
+        "3_C_266_2023-114.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_obcanske_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "občanské — odstoupení pro podstatné porušení",
+      "query": "Odstoupení od smlouvy pro podstatné porušení smluvní povinnosti a vzájemné vrácení plnění.",
+      "relevant": [
+        "16_C_89_2022-53.txt",
+        "8_C_190_2023-48.txt",
+        "22_C_259_2017-227.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_obcanske_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "občanské — rozpor s dobrými mravy",
+      "query": "Neplatnost právního jednání pro rozpor s dobrými mravy.",
+      "relevant": [
+        "4_C_272_2023-16.txt",
+        "16_C_201_2022-140.txt",
+        "33_C_230_2023-21.txt",
+        "10_C_231_2023-14.txt",
+        "30_C_277_2020-458.txt",
+        "9_C_258_2023-75.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_obcanske_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "občanské — promlčení a uznání dluhu",
+      "query": "Promlčení pohledávky a účinky uznání dluhu na běh promlčecí lhůty.",
+      "relevant": [
+        "142_C_3_2022-209.txt",
+        "28_C_206_2022-53.txt",
+        "22_C_259_2017-227.txt",
+        "27_C_372_2022-63.txt",
+        "19_C_307_2023-68.txt",
+        "45_C_88_2023-59.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_obcanske_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "GDPR — náhrada újmy za zpracování údajů",
+      "query": "Nárok na náhradu nemajetkové újmy za neoprávněné zpracování osobních údajů.",
+      "relevant": [
+        "15_C_110_2023-66.txt",
+        "19_C_251_2022-221.txt",
+        "7_C_4_2023.txt",
+        "28_C_4_2023-100.txt",
+        "47_C_217_2023-130.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_ochrana_osobnich_udaju_gdpr"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "GDPR — právo na výmaz",
+      "query": "Právo subjektu údajů na výmaz osobních údajů (právo být zapomenut).",
+      "relevant": [
+        "26_C_239_2023-77.txt",
+        "37_C_137_2022-79.txt",
+        "10_C_189_2023-80.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_ochrana_osobnich_udaju_gdpr"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "GDPR — oprávněný zájem správce",
+      "query": "Zákonnost zpracování osobních údajů na základě oprávněného zájmu správce.",
+      "relevant": [
+        "47_C_217_2023-130.txt",
+        "37_C_137_2022-79.txt",
+        "11_C_329_2023-28.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_ochrana_osobnich_udaju_gdpr"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "GDPR — pokuta za porušení",
+      "query": "Pokuta za porušení povinností správce podle GDPR a kritéria její výše.",
+      "relevant": [
+        "47_C_217_2023-130.txt",
+        "10_C_332_2018-331.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_ochrana_osobnich_udaju_gdpr"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "pracovní — neplatná výpověď a náhrada mzdy",
+      "query": "Neplatné rozvázání pracovního poměru výpovědí a náhrada mzdy za dobu sporu.",
+      "relevant": [
+        "22_C_339_2021-500.txt",
+        "30_C_45_2021-149.txt",
+        "42_C_26_2019-480.txt",
+        "7_C_506_2022-177.txt",
+        "11_C_406_2021-87.txt",
+        "11_C_209_2022-83.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_pracovni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "pracovní — okamžité zrušení pro hrubé porušení",
+      "query": "Okamžité zrušení pracovního poměru pro zvlášť hrubé porušení pracovních povinností.",
+      "relevant": [
+        "25_C_112_2022-139.txt",
+        "49_C_112_2020-186.txt",
+        "39_C_56_2020.txt",
+        "5_C_211_2020-287.txt",
+        "38_C_140_2020-95.txt",
+        "10_C_35_2021-121.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_pracovni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "pracovní — odstupné při organizační změně",
+      "query": "Nárok na odstupné při skončení pracovního poměru pro nadbytečnost a organizační změny.",
+      "relevant": [
+        "7_C_506_2022-177.txt",
+        "42_C_195_2022-157.txt",
+        "18_C_95_2019-408.txt",
+        "7_C_356_2019-266.txt",
+        "16_C_297_2022-178.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_pracovni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "pracovní — odpovědnost zaměstnance za škodu",
+      "query": "Odpovědnost zaměstnance za škodu způsobenou zaměstnavateli a limit náhrady.",
+      "relevant": [
+        "9_C_10_2022-146.txt",
+        "23_C_52_2013-429.txt",
+        "5_C_211_2020-287.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_pracovni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "rodinné — péče o dítě a styk",
+      "query": "Úprava péče o nezletilé dítě a styku rodiče s dítětem po rozchodu rodičů.",
+      "relevant": [
+        "34_C_322_2023.txt",
+        "20_C_189_2022-86.txt",
+        "14_C_123_2022-57.txt",
+        "22_C_73_2023-40.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_rodinne_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "rodinné — výživné na dítě",
+      "query": "Vyživovací povinnost rodičů k dítěti a určení výše výživného podle poměrů.",
+      "relevant": [
+        "8_C_23_2023-109.txt",
+        "14_C_229_2023.txt",
+        "17_C_77_2023-53.txt",
+        "10_C_260_2023-54.txt",
+        "19_C_11_2023-131.txt",
+        "10_C_160_2023-55.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_rodinne_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "rodinné — vypořádání SJM",
+      "query": "Vypořádání společného jmění manželů po rozvodu manželství.",
+      "relevant": [
+        "15_C_134_2022.txt",
+        "42_C_22_2018-843.txt",
+        "8_C_53_2020-453.txt",
+        "14_C_54_2022.txt",
+        "12_C_100_2022-89.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_rodinne_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "spotřebitelské — odstoupení od distanční smlouvy",
+      "query": "Odstoupení spotřebitele od smlouvy uzavřené distančním způsobem ve lhůtě.",
+      "relevant": [
+        "13_C_70_2023-46.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_spotrebitelske_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "spotřebitelské — reklamace vadného zboží",
+      "query": "Reklamace vadného zboží a práva spotřebitele z vadného plnění.",
+      "relevant": [
+        "13_C_70_2023-46.txt",
+        "41_C_167_2022-59.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_spotrebitelske_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "spotřebitelské — zneužívající ujednání",
+      "query": "Nepřiměřené (zneužívající) smluvní ujednání ve spotřebitelské smlouvě a jeho neúčinnost.",
+      "relevant": [
+        "9_C_97_2014-131.txt",
+        "7_C_52_2024-39.txt",
+        "16_C_401_2023-143.txt",
+        "22_C_289_2023-28.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_spotrebitelske_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "ústavní — právo na spravedlivý proces",
+      "query": "Porušení práva na spravedlivý proces v řízení před obecnými soudy.",
+      "relevant": [
+        "22_C_67_2019-245.txt",
+        "10_C_163_2019-556.txt",
+        "11_Co_422_2020-409.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_ustavni_pravo_a_lidska_prava"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "ústavní — nepřiměřená délka řízení",
+      "query": "Nepřiměřená délka soudního řízení a přiměřené zadostiučinění za nemajetkovou újmu.",
+      "relevant": [
+        "41_C_66_2023-53.txt",
+        "20_C_115_2022-85.txt",
+        "18_C_22_2023.txt",
+        "36_Co_161_2024-91.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_ustavni_pravo_a_lidska_prava"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "ústavní — ochrana soukromí",
+      "query": "Zásah do práva na ochranu soukromého a rodinného života.",
+      "relevant": [
+        "31_C_126_2020-244.txt",
+        "31_C_132_2020-255.txt",
+        "36_Co_161_2024-91.txt",
+        "11_C_197_2023-102.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_ustavni_pravo_a_lidska_prava"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "ústavní — svoboda projevu vs. osobnost",
+      "query": "Střet svobody projevu s právem na ochranu osobnosti a dobré pověsti.",
+      "relevant": [
+        "5_C_247_2023-107.txt",
+        "26_C_47_2022-219.txt",
+        "10_C_64_2018-107.txt",
+        "18_C_249_2023-344.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_ustavni_pravo_a_lidska_prava"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "insolvenční — neúčinné právní jednání",
+      "query": "Neúčinnost právních jednání dlužníka bez přiměřeného protiplnění a odporovatelnost.",
+      "relevant": [
+        "14_C_100_2022-83.txt",
+        "21_C_272_2022-91.txt",
+        "8_C_169_2020.txt",
+        "11_Co_92_2024-253.txt",
+        "13_C_208_2018-130.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_insolvencni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "rodinné — popření otcovství",
+      "query": "Popření otcovství a lhůty k jeho uplatnění.",
+      "relevant": [
+        "21_C_47_2020-154.txt",
+        "41_C_76_2022-35.txt",
+        "25_CO_178_2022-139.txt",
+        "67_C_96_2023-18.txt",
+        "7_C_306_2020-112.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_rodinne_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "spotřebitelské — neplatná rozhodčí doložka",
+      "query": "Neplatnost rozhodčí doložky sjednané ve spotřebitelské smlouvě.",
+      "relevant": [
+        "15_C_53_2022-109.txt",
+        "44_C_55_2022-84.txt",
+        "19_C_53_2023-41.txt",
+        "18_C_20_2024-186.txt",
+        "34_C_36_2012-1257.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_spotrebitelske_pravo"
+        ],
+        "clientAccess": false
+      }
+    }
+  ]
+}

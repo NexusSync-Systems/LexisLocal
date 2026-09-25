@@ -1,0 +1,393 @@
+{
+  "_instrukce": "U RELEVANTNÍCH judikátů přepiš \"relevant\": false → true (klidně u víc kandidátů na dotaz). Pak spusť rag_label_compile.js.",
+  "generatedAt": "2026-09-25T14:33:17.563Z",
+  "model": "bge-m3",
+  "topK": 10,
+  "cases": [
+    {
+      "label": "daňové — ručení za nezaplacenou DPH",
+      "query": "Ručení příjemce zdanitelného plnění za daň nezaplacenou poskytovatelem.",
+      "scope": "_kb_obor_danove_a_financni_pravo",
+      "candidates": [
+        {
+          "rank": 1,
+          "fileName": "9_C_192_2022-37.txt",
+          "score": 0.525,
+          "relevant": false,
+          "snippet": "ve výši 6 825 Kč a poplatku 300 Kč za zaslání upomínky. Žalovaný dlužnou částku ani přes výzvu nezaplatil. 6. Zjištěný skutkový stav soud posoudil podle zákona č. 168/1999 Sb., o pojištění odpovědnosti z provozu vozidla. 7. Žalovaný tím, že"
+        },
+        {
+          "rank": 2,
+          "fileName": "13_C_167_2022-33.txt",
+          "score": 0.523,
+          "relevant": false,
+          "snippet": "z prodlení. 3. Žalovaný se k návrhu nevyjádřil. Za splnění podmínek § 115a o. s. ř. soud rozhodl bez nařízení jednání. 4. Na základě listinných důkazů zjistil soud následující skutkový stav věci. Žalovaný je vlastníkem vozidla [registrační "
+        },
+        {
+          "rank": 3,
+          "fileName": "18_C_266_2020-31.txt",
+          "score": 0.517,
+          "relevant": false,
+          "snippet": "dne [datum] a [datum], soud proto ve věci rozhodl na základě předložených listinných důkazů, aniž by nařizoval jednání. Z obsahu výzvy k úhradě bylo zjištěno, že žalovaný jako provozovatel vozidla [registrační značka] vedeného v příslušném "
+        },
+        {
+          "rank": 4,
+          "fileName": "18_C_287_2020-30.txt",
+          "score": 0.517,
+          "relevant": false,
+          "snippet": "dne [datum] a [datum], soud proto ve věci rozhodl na základě předložených listinných důkazů, aniž by nařizoval jednání. Z obsahu výzvy k úhradě bylo zjištěno, že žalovaný jako provozovatel vozidla [registrační značka] vedeného v příslušném "
+        },
+        {
+          "rank": 5,
+          "fileName": "18_C_294_2023-191.txt",
+          "score": 0.516,
+          "relevant": false,
+          "snippet": "nebo dohod o pracích konaných mimo pracovní poměr.25. Z výzvy žalobkyně k dodání potvrzení o zdanitelných příjmech (čl. 119 a 120) ze dne 7.3.2024 soud zjistil, že žalobkyně vyzvala žalovanou k předání potvrzení o zdanitelných příjmech za r"
+        },
+        {
+          "rank": 6,
+          "fileName": "40_C_350_2021-23.txt",
+          "score": 0.516,
+          "relevant": false,
+          "snippet": "jejímž předmětem bylo povinné ručení vozidla [příjmení], [registrační značka] za pojistné období od [datum] do [datum]. Lze učinit následující závěr o skutkovém stavu. Žalovaný jako osoba, která s pojistitelem uzavřela pojistnou smlouvu (dá"
+        },
+        {
+          "rank": 7,
+          "fileName": "21_C_275_2023-15.txt",
+          "score": 0.515,
+          "relevant": false,
+          "snippet": "Žalovanému byla rovněž zaslána předžalobní výzva k plnění (prokázáno předžalobní upomínkou a podacím archem). 6. Na základě předložených důkazů, kdy soud hodnotil každý důkaz jednotlivě a všechny důkazy v jejich vzájemné souvislosti, a po p"
+        },
+        {
+          "rank": 8,
+          "fileName": "18_C_293_2020-23.txt",
+          "score": 0.515,
+          "relevant": false,
+          "snippet": "dne [datum] a [datum], soud proto ve věci rozhodl na základě předložených listinných důkazů, aniž by nařizoval jednání. Z obsahu výzvy k úhradě bylo zjištěno, že žalovaný jako provozovatel vozidla [registrační značka] vedeného v příslušném "
+        },
+        {
+          "rank": 9,
+          "fileName": "18_C_254_2022-15.txt",
+          "score": 0.515,
+          "relevant": false,
+          "snippet": "peněžité plnění, ručení Zmíněná ustanovení: § 1970 z. č. 89/2012 Sb., § 4 z. č. 168/1999 Sb., § 1 z. č. 168/1999 Sb. 1. Žalobkyně se domáhala zaplacení shora uvedené částky spolu s příslušenstvím s odůvodněním, že žalovaná je vlastníkem voz"
+        },
+        {
+          "rank": 10,
+          "fileName": "21_C_199_2023-46.txt",
+          "score": 0.515,
+          "relevant": false,
+          "snippet": "a [datum] soud zjistil, že žalobkyně upomínala žalovaného k úhradě dlužného příspěvku za jeho nepojištěné vozidlo. Z předžalobní výzvy ze dne [datum] pak bylo zjištěno, že zástupkyně žalobkyně vyzvala žalovaného před podáním žaloby k úhradě"
+        }
+      ]
+    },
+    {
+      "label": "insolvenční — neúčinné právní jednání",
+      "query": "Neúčinnost právních jednání dlužníka bez přiměřeného protiplnění a odporovatelnost.",
+      "scope": "_kb_obor_insolvencni_pravo",
+      "candidates": [
+        {
+          "rank": 1,
+          "fileName": "14_C_100_2022-83.txt",
+          "score": 0.629,
+          "relevant": true,
+          "snippet": "právně účinné. Toto právo má věřitel i tehdy, je-li právo třetí osoby již vykonatelné, anebo bylo-li již uspokojeno. 23. Podle § 589 odst. 2 o. z. neúčinnost právního jednání dlužníka se zakládá rozhodnutím soudu o žalobě věřitele, kterou b"
+        },
+        {
+          "rank": 2,
+          "fileName": "21_C_272_2022-91.txt",
+          "score": 0.629,
+          "relevant": true,
+          "snippet": "a dále to, zda jsou naplněny zákonné podmínky odporovatelnosti. 16. Po právní stránce soud věc posoudil následovně: 17. Dle § 589 odst. 1 zákona č. 89/2021 Sb., občanský zákoník (dále jen „o. z.“) zkracuje-li právní jednání dlužníka uspokoj"
+        },
+        {
+          "rank": 3,
+          "fileName": "8_C_169_2020.txt",
+          "score": 0.626,
+          "relevant": true,
+          "snippet": "právně účinné. Toto právo má věřitel i tehdy, je-li právo třetí osoby již vykonatelné, anebo bylo-li již uspokojeno. Podle § 589 odstavec 2, neúčinnost právního jednání dlužníka se zakládá rozhodnutím soudu o žalobě věřitele, kterou bylo od"
+        },
+        {
+          "rank": 4,
+          "fileName": "11_Co_92_2024-253.txt",
+          "score": 0.625,
+          "relevant": true,
+          "snippet": "postupem dle § 214 odst. 1 o. s. ř., se závěrem, že odvolání není důvodné.5. Podle § 589 odst. 1 věta první o. z. zkracuje-li právní jednání dlužníka uspokojení vykonatelné pohledávky věřitele, má věřitel právo domáhat se, aby soud určil, ž"
+        },
+        {
+          "rank": 5,
+          "fileName": "13_C_208_2018-130.txt",
+          "score": 0.624,
+          "relevant": true,
+          "snippet": "právně účinné. Toto právo má věřitel i tehdy, je-li právo třetí osoby již vykonatelné, anebo bylo-li již uspokojeno 23. Dle ust § 589 odst. 2 občanského zákoníku neúčinnost právního jednání dlužníka se zakládá rozhodnutím soudu o žalobě věř"
+        },
+        {
+          "rank": 6,
+          "fileName": "35_CO_82_2022-228.txt",
+          "score": 0.623,
+          "relevant": false,
+          "snippet": "se zakládá rozhodnutím soudu o žalobě věřitele, kterou bylo odporováno právnímu jednání dlužníka (odpůrčí žaloba). 22. Z ustanovení § 589 odst. 1 a 2 OZ se podává, že„ Zkracuje-li právní jednání dlužníka uspokojení vykonatelné pohledávky vě"
+        },
+        {
+          "rank": 7,
+          "fileName": "20_C_345_2022-247.txt",
+          "score": 0.623,
+          "relevant": false,
+          "snippet": "věřitele, má věřitel právo domáhat se, aby soud určil, že právní jednání dlužníka není vůči věřiteli právně účinné. Toto právo má věřitel i tehdy, je-li právo třetí osoby již vykonatelné, anebo bylo-li již uspokojeno.21. Podle ust. § 589 od"
+        },
+        {
+          "rank": 8,
+          "fileName": "9_C_138_2023-41.txt",
+          "score": 0.621,
+          "relevant": false,
+          "snippet": "právně účinné; toto právo má věřitel i tehdy, je-li právo třetí osoby již vykonatelné, anebo bylo-li již uspokojeno. Podle § 589 odst. 2 o. z. se neúčinnost právního jednání dlužníka zakládá rozhodnutím soudu o žalobě věřitele, kterou bylo "
+        },
+        {
+          "rank": 9,
+          "fileName": "47_C_81_2024-49.txt",
+          "score": 0.621,
+          "relevant": false,
+          "snippet": "věřitele, má věřitel právo domáhat se, aby soud určil, že právní jednání dlužníka není vůči věřiteli právně účinné. Toto právo má věřitel i tehdy, je-li právo třetí osoby již vykonatelné, anebo bylo-li již uspokojeno. (2) Neúčinnost právníh"
+        },
+        {
+          "rank": 10,
+          "fileName": "7_C_200_2021-99.txt",
+          "score": 0.619,
+          "relevant": false,
+          "snippet": "účastníků a neprováděl k dotčeným skutečnostem dokazování. <b>16. Po právní stránce soud věc hodnotil následovně.</b> 17. Dle ust. § 589 odst. 1 o.z. zkracuje-li právní jednání dlužníka uspokojení vykonatelné pohledávky věřitele, má věřitel"
+        }
+      ]
+    },
+    {
+      "label": "náhrada škody — vada výrobku",
+      "query": "Odpovědnost výrobce za škodu způsobenou vadou výrobku.",
+      "scope": "_kb_obor_nahrada_skody_a_odpovednost",
+      "candidates": [
+        {
+          "rank": 1,
+          "fileName": "4_C_66_2023-112.txt",
+          "score": 0.531,
+          "relevant": false,
+          "snippet": "má žalobce procesní povinnost tvrdit a posléze i prokázat všechny tyto uvedené předpoklady potřebné pro vznik nároku. Odpovědnost za škodu při pracovním úrazu je pak tzv. objektivní odpovědností; zaměstnavatel odpovídá za samotný výsledek ("
+        },
+        {
+          "rank": 2,
+          "fileName": "12_C_107_2022-95.txt",
+          "score": 0.529,
+          "relevant": false,
+          "snippet": "Smlouvy o postoupení pohledávky byla postoupena ze žalobce na Společnost Středočeská obchodní společnost dne [datum]. 8. Podle ust. § 1 zákona 82/1998 Sb. (dále jen zákona), stát odpovídá za podmínek zákonem stanovených za škodu způsobenou "
+        },
+        {
+          "rank": 3,
+          "fileName": "7_C_63_2021-463.txt",
+          "score": 0.528,
+          "relevant": false,
+          "snippet": "kterýkoliv z nich, odpovědnost za škodu nemůže nastat. V řízení o náhradu škody podle ustanovení § 250 odst. 1 zák. práce má žalobce (poškozený zaměstnavatel) procesní povinnost tvrdit [srov. § 101 odst. 1 písm. a) o. s. ř.] a posléze i pro"
+        },
+        {
+          "rank": 4,
+          "fileName": "9_C_37_2021.txt",
+          "score": 0.526,
+          "relevant": false,
+          "snippet": "čehož vznikla žalobkyni jako zaměstnavateli škoda, a to zaviněným jednáním žalovaného 1) a žalovaného 2). 36. Předpokladem pro vznik odpovědnosti zaměstnance vůči zaměstnavateli za škodu podle § 250 odst. 1 zákoníku práce je porušení pracov"
+        },
+        {
+          "rank": 5,
+          "fileName": "12_C_47_2022-96.txt",
+          "score": 0.526,
+          "relevant": false,
+          "snippet": "stát odpovídá za podmínek zákonem stanovených za škodu způsobenou při výkonu státní moci. Podle ust. § 5 písm. a), b) zákona stát odpovídá za podmínek zákonem stanovených za škodu, která byla způsobena rozhodnutím, jež bylo vydáno v občansk"
+        },
+        {
+          "rank": 6,
+          "fileName": "12_C_96_2021.txt",
+          "score": 0.526,
+          "relevant": false,
+          "snippet": "stát odpovídá za podmínek zákonem stanovených za škodu způsobenou při výkonu státní moci. Podle ust. § 5 písm. a), b) zákona stát odpovídá za podmínek zákonem stanovených za škodu, která byla způsobena rozhodnutím, jež bylo vydáno v občansk"
+        },
+        {
+          "rank": 7,
+          "fileName": "17_CO_203_2022-174.txt",
+          "score": 0.525,
+          "relevant": false,
+          "snippet": "za škodu. Odpovědnost chovatele za škodu způsobenou domácím zvířetem se posuzuje podle ustanovení § 2933 o. z. z hlediska potřebného dozoru nad chovaným zvířetem. Jedná se o objektivní odpovědnost, kde platí předpokládané (presumované) zavi"
+        },
+        {
+          "rank": 8,
+          "fileName": "31_C_9_2019-251.txt",
+          "score": 0.524,
+          "relevant": false,
+          "snippet": "škodu způsobenou při výkonu státní moci. Podle § 2 zákona odpovědnosti za škodu podle tohoto zákona se nelze zprostit. Podle § 5 zákona stát odpovídá za podmínek stanovených tímto zákonem za škodu, která byla způsobena a) rozhodnutím, jež b"
+        },
+        {
+          "rank": 9,
+          "fileName": "31_C_9_2019-325.txt",
+          "score": 0.524,
+          "relevant": false,
+          "snippet": "škodu způsobenou při výkonu státní moci. Podle § 2 zákona odpovědnosti za škodu podle tohoto zákona se nelze zprostit. Podle § 5 zákona stát odpovídá za podmínek stanovených tímto zákonem za škodu, která byla způsobena a) rozhodnutím, jež b"
+        },
+        {
+          "rank": 10,
+          "fileName": "25_C_143_2017-311.txt",
+          "score": 0.524,
+          "relevant": false,
+          "snippet": "„zákon“) stát odpovídá za podmínek zákonem stanovených za škodu způsobenou při výkonu státní moci. Podle ust. § 5 písm. a), b) zákona stát odpovídá za podmínek zákonem stanovených za škodu, která byla způsobena rozhodnutím, jež bylo vydáno "
+        }
+      ]
+    },
+    {
+      "label": "rodinné — popření otcovství",
+      "query": "Popření otcovství a lhůty k jeho uplatnění.",
+      "scope": "_kb_obor_rodinne_pravo",
+      "candidates": [
+        {
+          "rank": 1,
+          "fileName": "21_C_47_2020-154.txt",
+          "score": 0.666,
+          "relevant": true,
+          "snippet": "otcovství a zároveň požádat, s ohledem na specifika celé situace, o prominutí zmeškání lhůty k popření otcovství. Na svém návrhu pak navrhovatelka setrvala i po provedeném dokazování, kdy prostřednictvím svého právního zástupce tedy nadále "
+        },
+        {
+          "rank": 2,
+          "fileName": "41_C_76_2022-35.txt",
+          "score": 0.64,
+          "relevant": true,
+          "snippet": "žalobce, a aby bylo možné rozhodovat o určení otcovství, muselo by být nejprve úspěšně rozhodnuto o popření otcovství. To však s ohledem na uplynutí zákonné lhůty stanovené v § 789 o.z. a absence zájmu dítěte na popření otcovství po uplynut"
+        },
+        {
+          "rank": 3,
+          "fileName": "25_CO_178_2022-139.txt",
+          "score": 0.64,
+          "relevant": true,
+          "snippet": "již spolu manželé nežili ani se intimně nestýkali. Navrhovatel podal návrh na popření otcovství v říjnu roku [rok]. 9. Pro popření otcovství založeného první domněnkou určení otcovství stanovil právní řád v ustanovení § 57 zákona o rodině p"
+        },
+        {
+          "rank": 4,
+          "fileName": "67_C_96_2023-18.txt",
+          "score": 0.616,
+          "relevant": true,
+          "snippet": "k podání návrhu na popření otcovství k nezletilému [jméno], neboť tento návrh může podle § 785 o.z. a § 789 o.z. podat pouze manžel matky a matka (žalovaná). Zákon nepřiznává aktivní legitimaci k podání návrhu ani nezletilému. Zahájit řízen"
+        },
+        {
+          "rank": 5,
+          "fileName": "7_C_306_2020-112.txt",
+          "score": 0.61,
+          "relevant": true,
+          "snippet": "Soud: Okresní soud v Domažlicích Sp. zn.: 7 C 306/2020-112 Datum vydání: 2022-04-08 ECLI: ECLI:CZ:OSDO:2022:7.C.306.2020.9 Předmět řízení: o popření otcovství zletilého dítěte s žádostí o prominutí zmeškání lhůty Klíčová slova: popření otco"
+        },
+        {
+          "rank": 6,
+          "fileName": "31_C_59_2019-112.txt",
+          "score": 0.598,
+          "relevant": false,
+          "snippet": "žaloba byla podána dne 30. 9. 2019, nicméně pravomocně bylo o návrhu na popření otcovství rozhodnuto již dne 22. 8. 2018, tedy k předběžnému uplatnění nároku došlo po uplynutí promlčecí lhůty a z tohoto důvodu je podaná žaloba nedůvodná a n"
+        },
+        {
+          "rank": 7,
+          "fileName": "70_CO_136_2022-99.txt",
+          "score": 0.589,
+          "relevant": false,
+          "snippet": "právě až v návazném řízení o popření otcovství (a šlo zde tedy pouze o to, aby žalobce nebyl pro účely § 793 o.z. ze své možnosti být otcem v důsledku souhlasného prohlášení žalované a [jméno] [příjmení] zcela vyšachován). Bylo proto dovoze"
+        },
+        {
+          "rank": 8,
+          "fileName": "16_C_227_2021-32.txt",
+          "score": 0.583,
+          "relevant": false,
+          "snippet": "od narození dítěte popřít, že otcem dítěte je její manžel. Ustanovení o popření otcovství manželem platí obdobně.</i> <i>5. Podle ust. § 785 odst. 1 občanského zákoníku může manžel do šesti měsíců ode dne, kdy se dozvěděl o skutečnostech za"
+        },
+        {
+          "rank": 9,
+          "fileName": "3_C_49_2020-171.txt",
+          "score": 0.583,
+          "relevant": false,
+          "snippet": "svědkyně by se vyjádřily ke společnému žití žalobkyně a) a [jméno] [celé jméno žalovaného]. 15. S ohledem na shora cit. zákonná ustanovení a po zhodnocení důkazů provedených v tomto řízení soud dospěl k závěru, že návrh na popření otcovství"
+        },
+        {
+          "rank": 10,
+          "fileName": "32_C_44_2022-28.txt",
+          "score": 0.58,
+          "relevant": false,
+          "snippet": "považuje vedlejšího účastníka. Po právní stránce se soud nejprve zabýval aktivní legitimací navrhovatelky. Zákon č. 89/2012 Sb., občanský zákoník, v platném znění (dále jen„ o. z“) v ustanoveních § 785 a § 791 o. z. upravuje pouze popření o"
+        }
+      ]
+    },
+    {
+      "label": "spotřebitelské — neplatná rozhodčí doložka",
+      "query": "Neplatnost rozhodčí doložky sjednané ve spotřebitelské smlouvě.",
+      "scope": "_kb_obor_spotrebitelske_pravo",
+      "candidates": [
+        {
+          "rank": 1,
+          "fileName": "15_C_53_2022-109.txt",
+          "score": 0.653,
+          "relevant": true,
+          "snippet": "soudu vyjádřený v nálezu sp.zn. III. ÚS 4084/12, že neplatnost úvěrové smlouvy způsobuje neplatnost i rozhodčí doložky. Sjednanou samostatnou rozhodčí smlouvu lze totiž obsahově a z hlediska jejího účelu považovat za rozhodčí doložku. Úvěro"
+        },
+        {
+          "rank": 2,
+          "fileName": "44_C_55_2022-84.txt",
+          "score": 0.649,
+          "relevant": true,
+          "snippet": "titulem z důvodu nedostatku pravomoci rozhodce takový rozhodčí nález vydat daného neplatností rozhodčí doložky. Tato neplatnost pak byla způsobena především tím, že rozhodčí doložka byla obsažena nikoliv v samotné úvěrové smlouvě, ale v žal"
+        },
+        {
+          "rank": 3,
+          "fileName": "19_C_53_2023-41.txt",
+          "score": 0.643,
+          "relevant": true,
+          "snippet": "základních práv a svobod, je požadavek ochrany slabší strany, jejímž typickým příkladem je ochrana spotřebitele. <i>Rozhodčí smlouva, která neobsahuje přímé určení rozhodce ad hoc nebo konkrétní způsob jeho určení, nýbrž pouze odkazuje na r"
+        },
+        {
+          "rank": 4,
+          "fileName": "18_C_20_2024-186.txt",
+          "score": 0.634,
+          "relevant": true,
+          "snippet": "neplatnost smlouvy o zápůjčce se tak vztahuje i na rozhodčí smlouvu.28. Ústavního soudu ve svém nálezu sp. zn. II. ÚS 996/18 ze dne , datum, uvádí: „…z hlediska promlčení nároku věřitele jsou zásadní okolnosti využití neplatné rozhodčí dolo"
+        },
+        {
+          "rank": 5,
+          "fileName": "34_C_36_2012-1257.txt",
+          "score": 0.633,
+          "relevant": true,
+          "snippet": "procesní pravidla srovnatelná s těmi, která by na spotřebitele dopadla, i kdyby rozhodčí smlouvu neuzavřel, tj. rozhodčí smlouva měla obsahovat závazek vést rozhodčí řízení, kde by byla reflektována zásada ústnosti, odvolací instance, absen"
+        },
+        {
+          "rank": 6,
+          "fileName": "18_C_149_2023-205.txt",
+          "score": 0.629,
+          "relevant": false,
+          "snippet": "neplatnost smlouvy o úvěru se tak vztahuje i na rozhodčí smlouvu.32. Ústavního soudu ve svém nálezu sp. zn. II. ÚS 996/18 ze dne , datum, uvádí: „…z hlediska promlčení nároku věřitele jsou zásadní okolnosti využití neplatné rozhodčí doložky"
+        },
+        {
+          "rank": 7,
+          "fileName": "8_C_164_2023-25.txt",
+          "score": 0.625,
+          "relevant": false,
+          "snippet": "ve VOP a rozhodčí doložky. To vše ve svém souhrnu činí předmětné smlouvy o půjčíce pro rozpor s dobrými mravy neplatné. Samotný fakt, že smlouva byla formulářově předtištěna, neumožňovala žalovanému její modifikaci, nemá ještě samo osobě na"
+        },
+        {
+          "rank": 8,
+          "fileName": "83_C_14_2022-44.txt",
+          "score": 0.623,
+          "relevant": false,
+          "snippet": "rozhodčí smlouvy. 23. Krajský soud dospěl na základě žaloby o zrušení rozhodčího nálezu k následujícím právním závěrům. 24. Žalobce uplatnil jako důvody pro zrušení rozhodčího nálezu -) podle § 31 písm. b) ZRŘ námitku, že rozhodčí doložka j"
+        },
+        {
+          "rank": 9,
+          "fileName": "15_C_98_2015-251.txt",
+          "score": 0.623,
+          "relevant": false,
+          "snippet": "je neplatná i rozhodčí doložka v této smlouvě ujednaná, a rozhodce tedy nebyl oprávněn spor stran řešit a rozhodnout. Soud tak žalobě jako důvodné vyhověl a předmětný rozhodčí nález z důvodu uvedeném v ustanovení § 31 písm. b) zákona o rozh"
+        },
+        {
+          "rank": 10,
+          "fileName": "77_C_40_2021-148.txt",
+          "score": 0.621,
+          "relevant": false,
+          "snippet": "souhrnu naplňuje kritéria nespravedlnosti, a to natolik zjevné, že v jejím důsledku je neplatnou dle ust. § 39 zák. č. 40/1964 Sb., občanský zákoník, ve znění účinném do 31. 12. 2013 („ SOZ“) nejen úvěrová smlouva, ale také spolu s ní sjedn"
+        }
+      ]
+    }
+  ]
+}
