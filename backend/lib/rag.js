@@ -39,6 +39,19 @@ function _hybridAlpha() {
     // na české právní texty nepřidává (semantic 0/10), optimum MRR je kolem alpha≈0.2.
     return (Number.isFinite(a) && a >= 0 && a <= 1) ? a : 0.2;
 }
+// RRF (Reciprocal Rank Fusion): místo lineárního blendu skóre kombinuj POŘADÍ ze
+// sémantického a lexikálního žebříčku. Rank-fúze hustého + řídkého vyhledávání je v IR
+// robustní default (silný zásah v kterémkoliv žebříčku táhne dokument nahoru, škály skóre
+// nevadí). Zapíná RAG_RRF=1; konstanta K přes RAG_RRF_K (default 60). Má přednost před
+// lineárním hybridem.
+function _rrfEnabled() {
+    const v = String(process.env.RAG_RRF == null ? '' : process.env.RAG_RRF).trim().toLowerCase();
+    return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+function _rrfK() {
+    const k = parseInt(process.env.RAG_RRF_K, 10);
+    return (Number.isFinite(k) && k > 0) ? k : 60;
+}
 // Blend sémantického a lexikálního skóre (obě v [0,1]).
 function blendScore(semantic, lexical, alpha) {
     const a = (Number.isFinite(alpha) && alpha >= 0 && alpha <= 1) ? alpha : 0.2;
@@ -846,10 +859,11 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     // Lexikální fallback: kosinová podobnost term-frekvencí nad textem chunku.
     // Hybrid: blend obou. withComponents: vrátí i dílčí skóre (sem/lex) — pro sweep,
     // který pak blenduje offline pro víc alph BEZ opakovaného embedování dotazu.
-    const hybrid = _hybridEnabled() && !embeddingFailed;
+    const rrf = _rrfEnabled() && !embeddingFailed;
+    const hybrid = _hybridEnabled() && !embeddingFailed && !rrf; // RRF má přednost před lin. hybridem
     const hybridAlpha = _hybridAlpha();
     const withComponents = !!(opts && opts.withComponents);
-    const needLex = embeddingFailed || hybrid || withComponents;
+    const needLex = embeddingFailed || hybrid || withComponents || rrf;
     const qTokens = needLex ? _lexTokens(query) : null;
     const results = chunks.map(chunk => {
         const txt = chunk.text || '';
@@ -857,6 +871,7 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
         const lex = needLex ? lexicalScore(qTokens, txt) : 0;
         let score, method;
         if (embeddingFailed) { score = lex; method = 'lexical'; }
+        else if (rrf) { score = sem; method = 'rrf'; }      // dočasné skóre; přepíše fúze níž
         else if (hybrid) { score = blendScore(sem, lex, hybridAlpha); method = 'hybrid'; }
         else { score = sem; method = 'semantic'; }
         const r = {
@@ -869,13 +884,33 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
             chunkIndex: chunk.chunkIndex,
             totalChunks: chunk.totalChunks
         };
-        if (withComponents) { r.semantic = embeddingFailed ? null : sem; r.lexical = lex; }
+        if (withComponents || rrf) { r.semantic = embeddingFailed ? null : sem; r.lexical = lex; }
         return r;
     });
+
+    // RRF: fúze pořadí ze sémantického a lexikálního žebříčku (r.semantic/r.lexical).
+    if (rrf && results.length) _applyRrf(results, _rrfK());
 
     return results
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
+}
+
+/**
+ * Reciprocal Rank Fusion nad výsledky RAG: přepíše `score` každého výsledku na
+ * Σ 1/(K + rank_i), kde rank_i je pořadí v sémantickém (r.semantic) a lexikálním
+ * (r.lexical) žebříčku. Robustní kombinace hustého + řídkého vyhledávání.
+ * Mutuje a vrací totéž pole (setříděné volající). Čistá funkce (testovatelná).
+ */
+function _applyRrf(results, K = 60) {
+    const s = (Number.isFinite(K) && K > 0) ? K : 60;
+    const fused = new Map();
+    const bySem = [...results].sort((a, b) => (b.semantic || 0) - (a.semantic || 0));
+    const byLex = [...results].sort((a, b) => (b.lexical || 0) - (a.lexical || 0));
+    bySem.forEach((r, i) => fused.set(r, (fused.get(r) || 0) + 1 / (s + i + 1)));
+    byLex.forEach((r, i) => fused.set(r, (fused.get(r) || 0) + 1 / (s + i + 1)));
+    for (const r of results) { r.score = fused.get(r) || 0; r.method = 'rrf'; }
+    return results;
 }
 
 module.exports = {
@@ -905,5 +940,6 @@ module.exports = {
     base64ToVec: _b64ToVec,
     dedupChunks: _dedupChunks,
     encodeChunkForDisk: _encodeChunkForDisk,
-    decodeChunkFromDisk: _decodeChunkFromDisk
+    decodeChunkFromDisk: _decodeChunkFromDisk,
+    applyRrf: _applyRrf
 };
