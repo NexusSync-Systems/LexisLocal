@@ -142,3 +142,57 @@ describe('enabled/maxIters — env přepínače', () => {
         delete process.env.AGENT_TOOLS;
     });
 });
+
+describe('runToolLoop — degradace na modelech bez tool-callingu', () => {
+    test('model bez tool šablony (provider hodí „does not support tools") → reálná odpověď BEZ nástrojů, ne pád', async () => {
+        let n = 0;
+        const provider = {
+            _calls: [],
+            chat: async (params) => {
+                provider._calls.push(params);
+                if (params.tools) { n++; throw new Error('registry.ollama.ai/library/gemma2:2b does not support tools'); }
+                return { message: { content: 'reálná kritika bez nástrojů' } };
+            }
+        };
+        const out = await tools.runToolLoop({ provider, model: 'somemodel', messages: [{ role: 'user', content: 'zhodnoť' }], agent: agentRW });
+        expect(out.content).toBe('reálná kritika bez nástrojů');
+        expect(out.toolCalls).toHaveLength(0);
+        expect(n).toBe(1); // jen jeden pokus s nástroji, pak bez
+        expect(provider._calls[provider._calls.length - 1].tools).toBeUndefined();
+    });
+
+    test('jiná chyba providera (výpadek Ollamy) probublá dál (řeší volající)', async () => {
+        const provider = { chat: async () => { throw new Error('fetch failed: ECONNREFUSED'); } };
+        await expect(tools.runToolLoop({ provider, model: 'qwen2.5:3b', messages: [], agent: agentRW }))
+            .rejects.toThrow(/ECONNREFUSED/);
+    });
+
+    test('známý ne-tool model (gemma2) → tooly se ani neposílají (žádný drahý 400 round-trip)', async () => {
+        const p = mockProvider([finalMsg('odpověď gemma2')]);
+        const out = await tools.runToolLoop({ provider: p, model: 'gemma2:2b', messages: [], agent: agentRW });
+        expect(out.content).toBe('odpověď gemma2');
+        expect(out.toolCalls).toHaveLength(0);
+        expect(p._calls[0].tools).toBeUndefined();
+        expect(p._calls).toHaveLength(1);
+    });
+
+    test('_modelMaySupportTools: gemma2/gemma v1 ne; qwen2.5, llama3.1, gemma3 ano', () => {
+        expect(tools._modelMaySupportTools('gemma2:2b')).toBe(false);
+        expect(tools._modelMaySupportTools('gemma:2b')).toBe(false);
+        expect(tools._modelMaySupportTools('qwen2.5:3b')).toBe(true);
+        expect(tools._modelMaySupportTools('llama3.1:8b')).toBe(true);
+        expect(tools._modelMaySupportTools('gemma3:4b')).toBe(true);
+    });
+
+    test('AGENT_TOOLS_NO_TOOL_MODELS přepíše default seznam', () => {
+        process.env.AGENT_TOOLS_NO_TOOL_MODELS = 'llama3,phi';
+        expect(tools._modelMaySupportTools('gemma2:2b')).toBe(true);  // už není v seznamu
+        expect(tools._modelMaySupportTools('llama3:latest')).toBe(false);
+        delete process.env.AGENT_TOOLS_NO_TOOL_MODELS;
+    });
+
+    test('_isNoToolSupportError rozpozná ollama chybu, ne obecnou', () => {
+        expect(tools._isNoToolSupportError(new Error('llama3 does not support tools'))).toBe(true);
+        expect(tools._isNoToolSupportError(new Error('connection refused'))).toBe(false);
+    });
+});

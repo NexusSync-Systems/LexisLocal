@@ -47,7 +47,8 @@ const DEFAULT_AGENTS = {
         role: "Detekce rizik, protimluvů a slabých míst v argumentaci.",
         systemPrompt: "Jsi oponentní právní zástupce. Tvým úkolem je kriticky zhodnotit předložený text, najít v něm logické chyby, slabá místa a navrhnout protiargumenty.",
         isSystem: true,
-        preferredModel: "mistral",
+        // Model řídí ROLE_MODEL (REVIEW_MODEL) přes normalizeAgent; tady jen bezpečný default.
+        preferredModel: CHAT_MODEL,
         permissions: {
             read_files: true,
             query_registries: false,

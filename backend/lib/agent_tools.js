@@ -142,6 +142,28 @@ function enabled() {
 }
 function maxIters() { return _num(process.env.AGENT_TOOLS_MAX_ITERS, 3, 1, 6); }
 
+// Modely, které v Ollamě nepodporují tool-calling (vrací 400 „does not support tools").
+// Necháme je odpovědět bez nástrojů místo drahého 400 round-tripu (načtení modelu + chyba).
+// Konfigurovatelné přes AGENT_TOOLS_NO_TOOL_MODELS (comma-sep substringy, case-insensitive).
+// Default pokrývá gemma2 (nakonfigurovaný REVIEW_MODEL kontrolora) a gemma v1 — ani jeden
+// nemá tool šablonu. qwen2.5 / llama3.1+ tool-calling umí.
+function _noToolModelPatterns() {
+    const raw = process.env.AGENT_TOOLS_NO_TOOL_MODELS;
+    if (raw == null || String(raw).trim() === '') return ['gemma2', 'gemma:'];
+    return String(raw).split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+}
+function _modelMaySupportTools(model) {
+    const m = String(model == null ? '' : model).toLowerCase();
+    if (!m) return true;
+    return !_noToolModelPatterns().some(pat => m.includes(pat));
+}
+// Rozpozná ollama chybu „model nepodporuje tool-calling" napříč verzemi knihovny.
+function _isNoToolSupportError(e) {
+    const msg = String((e && (e.message || e.error)) || e || '').toLowerCase();
+    return msg.includes('does not support tools') ||
+           (msg.includes('tool') && msg.includes('not support'));
+}
+
 /**
  * Bounded tool-loop nad providerem (kompatibilní s ai_provider.chat / ollama.chat).
  * @returns {Promise<{content:string, toolCalls:Array<{name,args}>, iters:number}>}
@@ -155,7 +177,9 @@ async function runToolLoop({ provider, model, messages, options, agent, ctx }) {
     const calls = [];
     const baseMsgs = Array.isArray(messages) ? messages.slice() : [];
 
-    if (!tools.length) {
+    // Model bez tool-callingu (ollama vrací 400 „does not support tools") NEBO agent bez
+    // povolených toolů → jedno bez-toolové volání (reálná odpověď, jen bez nástrojů).
+    if (!tools.length || !_modelMaySupportTools(model)) {
         const resp = await provider.chat({ model, messages: baseMsgs, options });
         return { content: (resp && resp.message && resp.message.content) || '', toolCalls: calls, iters: 0 };
     }
@@ -164,7 +188,19 @@ async function runToolLoop({ provider, model, messages, options, agent, ctx }) {
     const MAX = maxIters();
     let iters = 0;
     for (; iters < MAX; iters++) {
-        const resp = await provider.chat({ model, messages: msgs, tools, options });
+        let resp;
+        try {
+            resp = await provider.chat({ model, messages: msgs, tools, options });
+        } catch (e) {
+            // Model tool-calling nepodporuje (ollama 400) → NEshazuj agenta do simulovaného
+            // fallbacku; odpověz naposledy BEZ nástrojů (reálný model). Jiné chyby (výpadek
+            // Ollamy) probublají dál a řeší je volající (agent.js → offline fallback).
+            if (iters === 0 && _isNoToolSupportError(e)) {
+                const resp2 = await provider.chat({ model, messages: baseMsgs, options });
+                return { content: (resp2 && resp2.message && resp2.message.content) || '', toolCalls: calls, iters: 0 };
+            }
+            throw e;
+        }
         const msg = (resp && resp.message) ? resp.message : {};
         const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
         if (!toolCalls.length) {
@@ -187,4 +223,4 @@ async function runToolLoop({ provider, model, messages, options, agent, ctx }) {
     return { content: (finalResp && finalResp.message && finalResp.message.content) || '', toolCalls: calls, iters };
 }
 
-module.exports = { TOOLS, toolsForAgent, isToolAllowed, execTool, runToolLoop, enabled, maxIters };
+module.exports = { TOOLS, toolsForAgent, isToolAllowed, execTool, runToolLoop, enabled, maxIters, _modelMaySupportTools, _isNoToolSupportError };
