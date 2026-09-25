@@ -208,3 +208,9 @@ Seřazeno podle priority. Frontendové položky (LexisEditor) jsou v CLAUDE.md t
 - [x] **CI:** `.github/workflows/ci.yml` (node --check + `npm test` při push/PR na ubuntu).
 - Pozn.: lokální jest hlásí chybu jest-circus kvůli rozjetému `node_modules`
   (i `package-lock.json` je změněný) → spustit `npm ci` na Macu; CI dělá čistý install.
+
+## Práce z cloudu přes most k Macu (doplněno 9/2026)
+- Jest nejde spustit nad namountovanou složkou: resolver modulů padá přes FUSE mount (`jest-circus/build/runner.js ... was not found`), i když soubor existuje. Chyba tedy nemusí znamenat rozbité `node_modules`. Logiku ověřuj čistým `node` skriptem, plnou sadu (`npm test`) pusť na Macu nebo nech na CI.
+- V testech je `NODE_ENV=test`, takže `secure_crypto.resolveKeyDir()` míří do temp. Klíč lze přebít `LEXIS_KEY_DIR`.
+- Git příkazy, které zapisují do `.git` (commit, ale i `git status`), z cloudu nespouštěj, zůstane `index.lock`. Commit a push dělá Zdeněk na Macu.
+- ⚠️ `.env.bak.*` není v `.gitignore` (v kořeni leží netrackovaný `.env.bak.1790233701`). Hrozí, že se omylem commitne. Doplnit do `.gitignore` vzor `.env*` s výjimkou `!.env.example`.
