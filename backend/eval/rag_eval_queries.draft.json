@@ -1,0 +1,60 @@
+{
+  "_comment": "Draft dotazů pro ROZŠÍŘENÝ golden set. Realistické právní rešeršní dotazy po oborech. Slouží jako VSTUP do rag_label_worksheet.js, který ke každému dotazu vytáhne top-K judikátů; člověk pak ve worksheetu označí, které jsou relevantní (klidně víc). Draft NEobsahuje odpovědi — ty určuje až labeling nad reálným indexem.",
+  "topK": 15,
+  "cases": [
+    { "label": "nemovitosti — vyklizení bytu po skončení nájmu", "scope": "_kb_obor_nemovitosti_a_najemni_pravo", "query": "Žaloba na vyklizení bytu po skončení nájmu a neoprávněné užívání bytu bývalým nájemcem." },
+    { "label": "nemovitosti — sleva z nájemného pro vady", "scope": "_kb_obor_nemovitosti_a_najemni_pravo", "query": "Sleva z nájemného kvůli vadám bytu, které znemožňují jeho řádné užívání." },
+    { "label": "nemovitosti — výpověď nájmu pro neplacení", "scope": "_kb_obor_nemovitosti_a_najemni_pravo", "query": "Výpověď nájmu bytu z důvodu neplacení nájemného a dlužných úhrad za služby." },
+    { "label": "nemovitosti — předkupní právo spoluvlastníka", "scope": "_kb_obor_nemovitosti_a_najemni_pravo", "query": "Předkupní právo spoluvlastníka nemovitosti při převodu spoluvlastnického podílu." },
+
+    { "label": "daňové — doměření DPH a zneužití práva", "scope": "_kb_obor_danove_a_financni_pravo", "query": "Doměření daně z přidané hodnoty pro zneužití práva a účast na podvodu na DPH." },
+    { "label": "daňové — prekluze doměření daně", "scope": "_kb_obor_danove_a_financni_pravo", "query": "Prekluze práva správce daně doměřit daň a běh lhůty pro stanovení daně." },
+    { "label": "daňové — ručení za nezaplacenou DPH", "scope": "_kb_obor_danove_a_financni_pravo", "query": "Ručení příjemce zdanitelného plnění za daň nezaplacenou poskytovatelem." },
+    { "label": "daňové — penále a úrok z prodlení", "scope": "_kb_obor_danove_a_financni_pravo", "query": "Penále a úrok z prodlení při dodatečném vyměření daně." },
+
+    { "label": "dědické — neplatnost závěti pro formu", "scope": "_kb_obor_dedicke_pravo", "query": "Neplatnost závěti pro nedostatek zákonné formy a náležitostí pořízení pro případ smrti." },
+    { "label": "dědické — povinný díl nepominutelného dědice", "scope": "_kb_obor_dedicke_pravo", "query": "Povinný díl nepominutelného dědice a započtení darů na dědický podíl." },
+    { "label": "dědické — odpovědnost dědiců za dluhy", "scope": "_kb_obor_dedicke_pravo", "query": "Odpovědnost dědiců za dluhy zůstavitele do výše nabytého dědictví." },
+    { "label": "dědické — vydědění pro nezájem", "scope": "_kb_obor_dedicke_pravo", "query": "Vydědění potomka pro trvalý neprojevovaný opravdový zájem o zůstavitele." },
+
+    { "label": "insolvenční — popření pohledávky správcem", "scope": "_kb_obor_insolvencni_pravo", "query": "Popření pravosti a výše přihlášené pohledávky insolvenčním správcem a incidenční spor." },
+    { "label": "insolvenční — oddlužení a osvobození", "scope": "_kb_obor_insolvencni_pravo", "query": "Oddlužení a osvobození dlužníka od placení zbytku dluhů po splnění splátkového kalendáře." },
+    { "label": "insolvenční — neúčinné právní jednání", "scope": "_kb_obor_insolvencni_pravo", "query": "Neúčinnost právních jednání dlužníka bez přiměřeného protiplnění a odporovatelnost." },
+    { "label": "insolvenční — zajištěná pohledávka", "scope": "_kb_obor_insolvencni_pravo", "query": "Přihláška zajištěné pohledávky a uspokojení věřitele ze zajištění v insolvenci." },
+
+    { "label": "náhrada škody — nemajetková újma pozůstalých", "scope": "_kb_obor_nahrada_skody_a_odpovednost", "query": "Náhrada nemajetkové újmy pozůstalých při usmrcení blízké osoby." },
+    { "label": "náhrada škody — vada výrobku", "scope": "_kb_obor_nahrada_skody_a_odpovednost", "query": "Odpovědnost výrobce za škodu způsobenou vadou výrobku." },
+    { "label": "náhrada škody — promlčení nároku", "scope": "_kb_obor_nahrada_skody_a_odpovednost", "query": "Promlčení práva na náhradu škody a počátek běhu promlčecí lhůty." },
+    { "label": "náhrada škody — provoz dopravního prostředku", "scope": "_kb_obor_nahrada_skody_a_odpovednost", "query": "Odpovědnost provozovatele za škodu způsobenou provozem dopravního prostředku." },
+
+    { "label": "občanské — bezdůvodné obohacení", "scope": "_kb_obor_obcanske_pravo", "query": "Vydání bezdůvodného obohacení získaného plněním bez právního důvodu." },
+    { "label": "občanské — odstoupení pro podstatné porušení", "scope": "_kb_obor_obcanske_pravo", "query": "Odstoupení od smlouvy pro podstatné porušení smluvní povinnosti a vzájemné vrácení plnění." },
+    { "label": "občanské — rozpor s dobrými mravy", "scope": "_kb_obor_obcanske_pravo", "query": "Neplatnost právního jednání pro rozpor s dobrými mravy." },
+    { "label": "občanské — promlčení a uznání dluhu", "scope": "_kb_obor_obcanske_pravo", "query": "Promlčení pohledávky a účinky uznání dluhu na běh promlčecí lhůty." },
+
+    { "label": "GDPR — náhrada újmy za zpracování údajů", "scope": "_kb_obor_ochrana_osobnich_udaju_gdpr", "query": "Nárok na náhradu nemajetkové újmy za neoprávněné zpracování osobních údajů." },
+    { "label": "GDPR — právo na výmaz", "scope": "_kb_obor_ochrana_osobnich_udaju_gdpr", "query": "Právo subjektu údajů na výmaz osobních údajů (právo být zapomenut)." },
+    { "label": "GDPR — oprávněný zájem správce", "scope": "_kb_obor_ochrana_osobnich_udaju_gdpr", "query": "Zákonnost zpracování osobních údajů na základě oprávněného zájmu správce." },
+    { "label": "GDPR — pokuta za porušení", "scope": "_kb_obor_ochrana_osobnich_udaju_gdpr", "query": "Pokuta za porušení povinností správce podle GDPR a kritéria její výše." },
+
+    { "label": "pracovní — neplatná výpověď a náhrada mzdy", "scope": "_kb_obor_pracovni_pravo", "query": "Neplatné rozvázání pracovního poměru výpovědí a náhrada mzdy za dobu sporu." },
+    { "label": "pracovní — okamžité zrušení pro hrubé porušení", "scope": "_kb_obor_pracovni_pravo", "query": "Okamžité zrušení pracovního poměru pro zvlášť hrubé porušení pracovních povinností." },
+    { "label": "pracovní — odstupné při organizační změně", "scope": "_kb_obor_pracovni_pravo", "query": "Nárok na odstupné při skončení pracovního poměru pro nadbytečnost a organizační změny." },
+    { "label": "pracovní — odpovědnost zaměstnance za škodu", "scope": "_kb_obor_pracovni_pravo", "query": "Odpovědnost zaměstnance za škodu způsobenou zaměstnavateli a limit náhrady." },
+
+    { "label": "rodinné — péče o dítě a styk", "scope": "_kb_obor_rodinne_pravo", "query": "Úprava péče o nezletilé dítě a styku rodiče s dítětem po rozchodu rodičů." },
+    { "label": "rodinné — výživné na dítě", "scope": "_kb_obor_rodinne_pravo", "query": "Vyživovací povinnost rodičů k dítěti a určení výše výživného podle poměrů." },
+    { "label": "rodinné — vypořádání SJM", "scope": "_kb_obor_rodinne_pravo", "query": "Vypořádání společného jmění manželů po rozvodu manželství." },
+    { "label": "rodinné — popření otcovství", "scope": "_kb_obor_rodinne_pravo", "query": "Popření otcovství a lhůty k jeho uplatnění." },
+
+    { "label": "spotřebitelské — odstoupení od distanční smlouvy", "scope": "_kb_obor_spotrebitelske_pravo", "query": "Odstoupení spotřebitele od smlouvy uzavřené distančním způsobem ve lhůtě." },
+    { "label": "spotřebitelské — reklamace vadného zboží", "scope": "_kb_obor_spotrebitelske_pravo", "query": "Reklamace vadného zboží a práva spotřebitele z vadného plnění." },
+    { "label": "spotřebitelské — neplatná rozhodčí doložka", "scope": "_kb_obor_spotrebitelske_pravo", "query": "Neplatnost rozhodčí doložky sjednané ve spotřebitelské smlouvě." },
+    { "label": "spotřebitelské — zneužívající ujednání", "scope": "_kb_obor_spotrebitelske_pravo", "query": "Nepřiměřené (zneužívající) smluvní ujednání ve spotřebitelské smlouvě a jeho neúčinnost." },
+
+    { "label": "ústavní — právo na spravedlivý proces", "scope": "_kb_obor_ustavni_pravo_a_lidska_prava", "query": "Porušení práva na spravedlivý proces v řízení před obecnými soudy." },
+    { "label": "ústavní — nepřiměřená délka řízení", "scope": "_kb_obor_ustavni_pravo_a_lidska_prava", "query": "Nepřiměřená délka soudního řízení a přiměřené zadostiučinění za nemajetkovou újmu." },
+    { "label": "ústavní — ochrana soukromí", "scope": "_kb_obor_ustavni_pravo_a_lidska_prava", "query": "Zásah do práva na ochranu soukromého a rodinného života." },
+    { "label": "ústavní — svoboda projevu vs. osobnost", "scope": "_kb_obor_ustavni_pravo_a_lidska_prava", "query": "Střet svobody projevu s právem na ochranu osobnosti a dobré pověsti." }
+  ]
+}
