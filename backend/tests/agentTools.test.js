@@ -196,3 +196,34 @@ describe('runToolLoop — degradace na modelech bez tool-callingu', () => {
         expect(tools._isNoToolSupportError(new Error('connection refused'))).toBe(false);
     });
 });
+
+describe('search_caselaw_online — CLOUD rešerše gating (mlčenlivost)', () => {
+    const agentR = { id: 'resersnik', permissions: { read_files: true, query_registries: true } };
+    afterEach(() => {
+        delete process.env.AGENT_EXTERNAL_RESEARCH;
+        delete process.env.AI_LOCAL_ONLY;
+        delete process.env.LEXIS_PILOT_LOCAL_ONLY;
+    });
+
+    test('default (flag vyp) → cloud tool se NEnabízí', () => {
+        delete process.env.AGENT_EXTERNAL_RESEARCH;
+        const names = tools.toolsForAgent(agentR).map(t => t.function.name);
+        expect(names).not.toContain('search_caselaw_online');
+    });
+    test('AGENT_EXTERNAL_RESEARCH=1 → cloud tool se nabízí', () => {
+        process.env.AGENT_EXTERNAL_RESEARCH = '1';
+        const names = tools.toolsForAgent(agentR).map(t => t.function.name);
+        expect(names).toContain('search_caselaw_online');
+    });
+    test('lokální režim (AI_LOCAL_ONLY=1) cloud tool skryje i při zapnutém flagu', () => {
+        process.env.AGENT_EXTERNAL_RESEARCH = '1';
+        process.env.AI_LOCAL_ONLY = '1';
+        const names = tools.toolsForAgent(agentR).map(t => t.function.name);
+        expect(names).not.toContain('search_caselaw_online');
+    });
+    test('execTool odmítne cloud tool, když je vypnutý (fetch se nevolá)', async () => {
+        delete process.env.AGENT_EXTERNAL_RESEARCH;
+        const r = await tools.execTool(agentR, 'search_caselaw_online', { query: 'x' }, {});
+        expect(r.error).toMatch(/AGENT_EXTERNAL_RESEARCH|vypnut/);
+    });
+});

@@ -95,6 +95,27 @@ const TOOLS = {
             if (ico.length !== 8) return { error: 'IČO musí mít 8 číslic.' };
             return await registries().checkSubject(ico);
         }
+    },
+    // CLOUD rešerše judikatury (LawGPT). Za AGENT_EXTERNAL_RESEARCH=1; v lokálním režimu VYP.
+    // Posílá se JEN dotaz (text), nikdy klientský spis — viz §3 návrhu externí rešerše.
+    search_caselaw_online: {
+        permission: 'read_files',
+        description: 'CLOUD vyhledávání judikatury ve veřejné databázi LawGPT.cz (obecné soudy + Ústavní soud). ' +
+            'Použij POUZE když lokální znalostní báze nestačí (např. agenda NSS/NS/ÚS). ' +
+            'Posílá se JEN tvůj dotaz (text) — nikdy klientský spis ani osobní údaje.',
+        parameters: {
+            type: 'object',
+            properties: {
+                query: { type: 'string', description: 'Právní otázka / pojem (bez osobních údajů klienta).' },
+                limit: { type: 'integer', description: 'Počet judikátů (1–10, výchozí 5).' }
+            },
+            required: ['query']
+        },
+        impl: async (args) => {
+            if (!_externalResearchEnabled()) return { error: 'Externí rešerše je vypnutá (AGENT_EXTERNAL_RESEARCH).' };
+            if (_localOnly()) return { error: 'Lokální režim (mlčenlivost): externí cloudová rešerše je zakázána.' };
+            return await _lawgptJudgments(args.query, args.limit);
+        }
     }
 };
 
@@ -107,9 +128,10 @@ function toolsForAgent(agent) {
     const out = [];
     for (const name of Object.keys(TOOLS)) {
         const t = TOOLS[name];
-        if (_agentAllows(agent, t.permission)) {
-            out.push({ type: 'function', function: { name, description: t.description, parameters: t.parameters } });
-        }
+        if (!_agentAllows(agent, t.permission)) continue;
+        // CLOUD rešerši nabídni jen když je zapnutá a NEjsme v lokálním režimu.
+        if (name === 'search_caselaw_online' && (!_externalResearchEnabled() || _localOnly())) continue;
+        out.push({ type: 'function', function: { name, description: t.description, parameters: t.parameters } });
     }
     return out;
 }
@@ -141,6 +163,41 @@ function enabled() {
     return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 function maxIters() { return _num(process.env.AGENT_TOOLS_MAX_ITERS, 3, 1, 6); }
+
+// Externí (CLOUD) rešerše přes LawGPT — VYP ve výchozím stavu. Zapíná AGENT_EXTERNAL_RESEARCH=1.
+function _externalResearchEnabled() {
+    const v = String(process.env.AGENT_EXTERNAL_RESEARCH == null ? '' : process.env.AGENT_EXTERNAL_RESEARCH).trim().toLowerCase();
+    return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+// Lokální/pilotní režim (mlčenlivost) → cloud rešerše je zakázaná.
+function _localOnly() {
+    try { return !!require('./ai_provider').assertLocalCompliance().localOnly; } catch (e) { return false; }
+}
+// Dotaz do veřejné LawGPT judikatury (read-only, bez účtu). Vrací trimnuté výsledky.
+async function _lawgptJudgments(query, limit) {
+    const q = String(query == null ? '' : query).trim();
+    if (!q) return { error: 'Prázdný dotaz.' };
+    const n = _num(limit, 5, 1, 10);
+    const url = 'https://lawgpt.cz/api/judgments/search?q=' + encodeURIComponent(q) + '&source=all&limit=' + n;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    try {
+        const r = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, signal: ctrl.signal });
+        if (!r.ok) return { error: 'LawGPT status ' + r.status };
+        const data = await r.json();
+        const results = (data && data.data && Array.isArray(data.data.results)) ? data.data.results : [];
+        return { source: 'lawgpt', results: results.slice(0, n).map(function (it) {
+            return {
+                court: it && it.court ? (it.court.name || it.court.code || '') : '',
+                case_number: (it && it.case_number) || (it && it.ecli) || '',
+                date: (it && it.decision_date) || '',
+                text: String((it && it.excerpt) || '').slice(0, 500)
+            };
+        }) };
+    } catch (e) {
+        return { error: 'LawGPT nedostupný: ' + (e && e.message) };
+    } finally { clearTimeout(timer); }
+}
 
 // Modely, které v Ollamě nepodporují tool-calling (vrací 400 „does not support tools").
 // Necháme je odpovědět bez nástrojů místo drahého 400 round-tripu (načtení modelu + chyba).
@@ -223,4 +280,4 @@ async function runToolLoop({ provider, model, messages, options, agent, ctx }) {
     return { content: (finalResp && finalResp.message && finalResp.message.content) || '', toolCalls: calls, iters };
 }
 
-module.exports = { TOOLS, toolsForAgent, isToolAllowed, execTool, runToolLoop, enabled, maxIters, _modelMaySupportTools, _isNoToolSupportError };
+module.exports = { TOOLS, toolsForAgent, isToolAllowed, execTool, runToolLoop, enabled, maxIters, _modelMaySupportTools, _isNoToolSupportError, _externalResearchEnabled };
