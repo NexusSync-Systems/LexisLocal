@@ -18,17 +18,18 @@ const rag = require('../lib/rag');
 const { evaluateCase, aggregate, isRelevant } = require('../lib/rag_eval');
 
 function parseArgs(argv) {
-    const o = { file: null, k: 5, alphas: [0, 0.1, 0.2, 0.35, 0.5, 0.7], rerank: false, depth: 50 };
+    const o = { file: null, k: 5, alphas: [0, 0.1, 0.2, 0.35, 0.5, 0.7], rerank: false, depth: 50, depthSet: false };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === '--k') o.k = parseInt(argv[++i], 10) || 5;
         else if (a === '--alphas') o.alphas = String(argv[++i]).split(',').map(Number).filter(x => Number.isFinite(x));
         else if (a === '--rerank') o.rerank = true;
-        else if (a === '--depth') o.depth = parseInt(argv[++i], 10) || 50;
+        else if (a === '--depth') { o.depth = parseInt(argv[++i], 10) || 50; o.depthSet = true; }
         else if (!a.startsWith('--')) o.file = a;
     }
-    // s rerankem potřebujeme dost hluboký pool kandidátů, aby v něm správný dokument vůbec byl
-    if (o.rerank && o.depth < 100) o.depth = 150;
+    // S rerankem chceme dost hluboký pool, ale JEN jako default — když uživatel --depth zadá,
+    // respektuj ho (i menší, pro rychlejší běh na slabším stroji).
+    if (o.rerank && !o.depthSet) o.depth = 150;
     return o;
 }
 const pct = x => (x * 100).toFixed(1) + '%';
