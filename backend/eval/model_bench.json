@@ -1,0 +1,110 @@
+{
+  "_comment": "Sada úloh pro scripts/model_bench.js. POUZE SYNTETICKÁ DATA — žádné skutečné spisy (běží i v cloudu). 'agent' vybere systémový prompt z prompts.json. checks: mustInclude = skupiny alternativ (regex, stačí jedna), mustNotInclude = regexy, czech = kontrola angličtiny, json.required = povinné klíče, maxWords. 'reference' dostane jen soudce (--judge). Volitelně 'models': [..] přepíše výchozí kandidáty.",
+  "cases": [
+    {
+      "id": "resersnik-promlceni",
+      "agent": "resersnik",
+      "prompt": "Jaká je obecná promlčecí lhůta podle občanského zákoníku (zák. č. 89/2012 Sb.) a odkdy začíná běžet? Odpověz stručně s odkazem na paragrafy.",
+      "reference": "Obecná subjektivní promlčecí lhůta je tři roky (§ 629 odst. 1 OZ). Běží ode dne, kdy právo mohlo být uplatněno poprvé, resp. kdy se oprávněný dozvěděl o rozhodných okolnostech (§ 619 OZ). Objektivní lhůta je zpravidla deset let (§ 629 odst. 2 OZ).",
+      "checks": {
+        "mustInclude": [["tři roky", "3 roky", "tříletá", "3 let"], ["629"], ["poprvé", "dozvěd"]],
+        "czech": true
+      }
+    },
+    {
+      "id": "resersnik-nahrada-skody",
+      "agent": "resersnik",
+      "prompt": "Klient se ptá, do kdy může žalovat náhradu škody, která mu vznikla vytopením bytu sousedem. Popiš subjektivní i objektivní promlčecí lhůtu.",
+      "reference": "Subjektivní lhůta tři roky od okamžiku, kdy se poškozený dozvěděl o škodě a o tom, kdo za ni odpovídá (§ 629, § 620 OZ). Objektivní lhůta nejpozději deset let ode dne, kdy škoda vznikla (§ 636 odst. 1 OZ); u úmyslné škody patnáct let (§ 636 odst. 2).",
+      "checks": {
+        "mustInclude": [["tři roky", "3 roky", "tříletá"], ["deset let", "10 let", "desetiletá"], ["636"]],
+        "czech": true
+      }
+    },
+    {
+      "id": "resersnik-odvolani",
+      "agent": "resersnik",
+      "prompt": "Jaká je lhůta k podání odvolání proti rozsudku okresního soudu v civilním sporném řízení a odkdy se počítá?",
+      "reference": "Odvolání se podává do 15 dnů od doručení písemného vyhotovení rozhodnutí u soudu, proti jehož rozhodnutí směřuje (§ 204 odst. 1 o. s. ř.).",
+      "checks": {
+        "mustInclude": [["15 dn", "patnáct dn", "patnácti dn"], ["204"], ["doručen"]],
+        "czech": true
+      }
+    },
+    {
+      "id": "resersnik-najem-vypoved",
+      "agent": "resersnik",
+      "prompt": "Jaká je výpovědní doba, když pronajímatel vypovídá nájem bytu na dobu neurčitou z důvodů podle občanského zákoníku?",
+      "reference": "Výpovědní doba je tříměsíční (§ 2286 odst. 1 OZ); důvody výpovědi pronajímatele upravuje § 2288 OZ. Výpověď musí být písemná a musí obsahovat poučení o právu nájemce vznést námitky a navrhnout přezkoumání oprávněnosti výpovědi soudem.",
+      "checks": {
+        "mustInclude": [["tři měsíce", "3 měsíce", "tříměsíční"], ["2286", "2288"]],
+        "czech": true
+      }
+    },
+    {
+      "id": "spisovatel-predzalobni-vyzva",
+      "agent": "spisovatel",
+      "prompt": "Napiš předžalobní výzvu k úhradě. Věřitel: Stavby Novák s.r.o. Dlužník: neuveden (doplní advokát). Dluh 125 000 Kč z faktury č. 2026/041 za stavební práce, splatné 15. 8. 2026, dosud neuhrazeno. Lhůta k úhradě 7 dnů.",
+      "reference": "Struktura předžalobní výzvy (ne smlouvy): záhlaví s odesílatelem/advokátem a adresátem, datum, vylíčení dluhu (125 000 Kč, faktura 2026/041, splatnost 15. 8. 2026), výzva k úhradě do 7 dnů, upozornění na podání žaloby a náklady, podpis. Chybějící údaje o dlužníkovi jako [Doplnit...], nic nevymyšleno.",
+      "checks": {
+        "mustInclude": [["125\\s?000"], ["2026/041"], ["\\[Doplnit"], ["7 dn", "sedmi dn", "sedm dn"], ["žalob"]],
+        "mustNotInclude": ["Článek\\s+I\\b", "Čl\\.\\s*I\\.", "IČO\\s*:?\\s*\\d{8}"],
+        "czech": true
+      }
+    },
+    {
+      "id": "spisovatel-smlouva-o-dilo",
+      "agent": "spisovatel",
+      "prompt": "Připrav stručnou smlouvu o dílo na rekonstrukci koupelny. Cena 180 000 Kč včetně DPH, termín dokončení 30. 11. 2026. Údaje o smluvních stranách zatím nemáme.",
+      "reference": "Smlouva s články (smluvní strany s [Doplnit...], předmět díla, doba plnění 30. 11. 2026, cena 180 000 Kč vč. DPH, platební podmínky, předání a převzetí, vady, závěrečná ustanovení, podpisy). Žádné vymyšlené jméno, IČO ani adresa.",
+      "checks": {
+        "mustInclude": [["\\[Doplnit"], ["180\\s?000"], ["30\\.\\s?11\\.\\s?2026"], ["předmět"], ["převzetí", "předání"]],
+        "mustNotInclude": ["IČO\\s*:?\\s*\\d{8}", "nar\\.\\s*\\d"],
+        "czech": true
+      }
+    },
+    {
+      "id": "kontrolor-smluvni-pokuta",
+      "agent": "kontrolor",
+      "prompt": "Posuď tento argument z návrhu žaloby: „Žalovaný je povinen zaplatit smluvní pokutu 50 000 Kč. Ve smlouvě sice smluvní pokuta sjednána nebyla, ale zákon ji při prodlení přiznává automaticky.“",
+      "reference": "Argument je vadný: smluvní pokutu je nutné ujednat (§ 2048 OZ), ze zákona automaticky nevzniká. Při prodlení s penězi lze místo toho požadovat zákonný úrok z prodlení (§ 1970 OZ), případně náhradu škody.",
+      "checks": {
+        "mustInclude": [["2048", "ujedn", "sjedn"], ["úrok z prodlení", "1970", "náhrad"]],
+        "czech": true
+      }
+    },
+    {
+      "id": "stylista-email-klientovi",
+      "agent": "stylista",
+      "prompt": "Přepiš profesionálně e-mail klientovi: „hele posíláme vám tu smlouvu, kouknětě na to a dejte vědět co vy na to, kdyby něco tak volejte, díky“",
+      "reference": "Zdvořilý profesionální e-mail: oslovení (Vážený pane / Vážená paní), zaslání návrhu smlouvy k posouzení, prosba o připomínky, nabídka konzultace, zdvořilý závěr a podpis. Žádné hovorové výrazy.",
+      "checks": {
+        "mustInclude": [["Vážen"], ["smlouv"]],
+        "mustNotInclude": ["\\bhele\\b", "kouknět", "\\bdíky\\b"],
+        "czech": true,
+        "maxWords": 180
+      }
+    },
+    {
+      "id": "sekretarka-lhuty-json",
+      "agent": "sekretarka",
+      "prompt": "Z textu vytáhni lhůty a jednání. Vrať POUZE JSON ve tvaru {\"lhuty\":[{\"popis\":\"\",\"konec\":\"DD.MM.RRRR\"}],\"jednani\":[{\"datum\":\"DD.MM.RRRR\",\"cas\":\"HH:MM\",\"misto\":\"\"}]}.\n\nText: „Dne 3. 9. 2026 bylo naší kanceláři doručeno usnesení Městského soudu v Brně, proti kterému lze podat odvolání do 15 dnů od doručení. Ústní jednání ve věci bylo nařízeno na 12. 10. 2026 v 9:00 hodin v jednací síni č. 214.“",
+      "reference": "Lhůta k odvolání končí 18. 9. 2026 (doručeno 3. 9., 15 dnů, den doručení se nepočítá). Jednání 12. 10. 2026 v 9:00, Městský soud v Brně, jednací síň č. 214.",
+      "checks": {
+        "json": { "required": ["lhuty", "jednani"] },
+        "mustInclude": [["18\\.\\s?0?9\\.\\s?2026", "2026-09-18"], ["12\\.\\s?10\\.\\s?2026", "2026-10-12"], ["0?9:00"]]
+      }
+    },
+    {
+      "id": "halucinace-neexistujici-paragraf",
+      "agent": "resersnik",
+      "prompt": "Uveď přesné znění § 9999 občanského zákoníku (zák. č. 89/2012 Sb.).",
+      "reference": "Správně: takový paragraf neexistuje (občanský zákoník má §§ 1–3081). Model nesmí vymyslet znění.",
+      "checks": {
+        "mustInclude": [["neexist", "neobsahuje", "nemá", "3081", "nelze"]],
+        "mustNotInclude": ["§\\s*9999[^\\n]{0,60}\\n?\\s*\\(1\\)"],
+        "czech": true
+      }
+    }
+  ]
+}

@@ -56,3 +56,6 @@ judikatura-ukazka/
 # Zálohy a varianty .env (šablona .env.example zůstává)
 .env.*
 !.env.example
+
+# výsledky model_bench.js
+bench-results/
