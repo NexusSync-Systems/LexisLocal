@@ -164,8 +164,14 @@ function enabled() {
 }
 function maxIters() { return _num(process.env.AGENT_TOOLS_MAX_ITERS, 3, 1, 6); }
 
-// Externí (CLOUD) rešerše přes LawGPT — VYP ve výchozím stavu. Zapíná AGENT_EXTERNAL_RESEARCH=1.
+// Externí (CLOUD) rešerše přes LawGPT. Přepínatelné ZA BĚHU z UI (persistováno v
+// nastavení aplikace); AGENT_EXTERNAL_RESEARCH slouží jen jako VÝCHOZÍ hodnota, když
+// uživatel volbu ještě neudělal. Výchozí stav = vypnuto.
 function _externalResearchEnabled() {
+    try {
+        const s = require('./config').readSettings();
+        if (s && typeof s.externalResearch === 'boolean') return s.externalResearch;
+    } catch (e) { /* fallback na env */ }
     const v = String(process.env.AGENT_EXTERNAL_RESEARCH == null ? '' : process.env.AGENT_EXTERNAL_RESEARCH).trim().toLowerCase();
     return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }

@@ -42,4 +42,24 @@ router.post('/ingest-dir', (req, res) => {
     }
 });
 
+// GET /api/settings/external-research — stav cloud rešerše pro roj (persistováno; env = výchozí)
+router.get('/external-research', (req, res) => {
+    const s = config.readSettings();
+    const persisted = (s && typeof s.externalResearch === 'boolean') ? s.externalResearch : null;
+    const env = ['1', 'true', 'yes', 'on'].indexOf(String(process.env.AGENT_EXTERNAL_RESEARCH || '').toLowerCase()) >= 0;
+    res.json({ enabled: persisted != null ? persisted : env, persisted: persisted, envDefault: env });
+});
+
+// POST /api/settings/external-research { enabled } — zapne/vypne cloud rešerši roje ZA BĚHU (bez restartu)
+router.post('/external-research', (req, res) => {
+    try {
+        const enabled = !!(req.body && req.body.enabled);
+        const s = config.readSettings();
+        s.externalResearch = enabled;
+        config.writeSettings(s);
+        logEvent('Nastavení', 'Externí rešerše (cloud) pro roj', enabled ? 'zapnuto' : 'vypnuto', {});
+        res.json({ success: true, enabled: enabled });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 module.exports = router;

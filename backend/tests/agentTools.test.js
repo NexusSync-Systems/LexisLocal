@@ -10,6 +10,7 @@ process.env.WATCH_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'lexis_at_'));
 jest.mock('../lib/registries', () => ({ checkSubject: async (ico) => ({ ico, name: 'TEST s.r.o.', active: true }) }));
 jest.mock('../lib/watcher', () => ({ loadInbox: async () => ({ files: {} }) }));
 const tools = require('../lib/agent_tools');
+const config = require('../lib/config');
 
 const agentRW = { id: 'resersnik', permissions: { read_files: true, query_registries: true, manage_calendar: false, write_desktop: false } };
 const agentNone = { id: 'stylista', permissions: { read_files: false, query_registries: false } };
@@ -199,7 +200,9 @@ describe('runToolLoop — degradace na modelech bez tool-callingu', () => {
 
 describe('search_caselaw_online — CLOUD rešerše gating (mlčenlivost)', () => {
     const agentR = { id: 'resersnik', permissions: { read_files: true, query_registries: true } };
+    beforeEach(() => { jest.spyOn(config, 'readSettings').mockReturnValue({}); });
     afterEach(() => {
+        jest.restoreAllMocks();
         delete process.env.AGENT_EXTERNAL_RESEARCH;
         delete process.env.AI_LOCAL_ONLY;
         delete process.env.LEXIS_PILOT_LOCAL_ONLY;
@@ -225,6 +228,15 @@ describe('search_caselaw_online — CLOUD rešerše gating (mlčenlivost)', () =
         delete process.env.AGENT_EXTERNAL_RESEARCH;
         const r = await tools.execTool(agentR, 'search_caselaw_online', { query: 'x' }, {});
         expect(r.error).toMatch(/AGENT_EXTERNAL_RESEARCH|vypnut/);
+    });
+
+    test('persistované nastavení (UI přepínač) přebije env', () => {
+        process.env.AGENT_EXTERNAL_RESEARCH = '1';
+        config.readSettings.mockReturnValue({ externalResearch: false });
+        expect(tools.toolsForAgent(agentR).map(t => t.function.name)).not.toContain('search_caselaw_online');
+        config.readSettings.mockReturnValue({ externalResearch: true });
+        delete process.env.AGENT_EXTERNAL_RESEARCH;
+        expect(tools.toolsForAgent(agentR).map(t => t.function.name)).toContain('search_caselaw_online');
     });
 });
 
