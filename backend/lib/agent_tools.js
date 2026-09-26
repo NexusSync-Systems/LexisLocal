@@ -174,8 +174,19 @@ function _localOnly() {
     try { return !!require('./ai_provider').assertLocalCompliance().localOnly; } catch (e) { return false; }
 }
 // Dotaz do veřejné LawGPT judikatury (read-only, bez účtu). Vrací trimnuté výsledky.
+// Best-effort odstranění zjevných osobních údajů PŘED odesláním do cloudu (mlčenlivost,
+// defense-in-depth). Nezasahuje do právních citací typu "89/2012 Sb." (číslo zákona má
+// ≤5 číslic před lomítkem; RČ má 6). Není záruka — hlavní obranou je system prompt role.
+function _stripPII(text) {
+    let s = String(text == null ? '' : text);
+    s = s.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]');       // e-maily
+    s = s.replace(/\b\d{6}\/\d{3,4}\b/g, '[RČ]');                // rodné číslo DDMMYY/XXXX
+    s = s.replace(/\b\d{1,6}-\d{2,10}\/\d{4}\b/g, '[účet]');     // číslo účtu předčíslí-číslo/kód
+    s = s.replace(/\b\d{9,}\b/g, '[číslo]');                     // dlouhá čísla (tel./účet bez lomítka)
+    return s.replace(/\s{2,}/g, ' ').trim();
+}
 async function _lawgptJudgments(query, limit) {
-    const q = String(query == null ? '' : query).trim();
+    const q = _stripPII(String(query == null ? '' : query).trim());
     if (!q) return { error: 'Prázdný dotaz.' };
     const n = _num(limit, 5, 1, 10);
     const url = 'https://lawgpt.cz/api/judgments/search?q=' + encodeURIComponent(q) + '&source=all&limit=' + n;
@@ -280,4 +291,4 @@ async function runToolLoop({ provider, model, messages, options, agent, ctx }) {
     return { content: (finalResp && finalResp.message && finalResp.message.content) || '', toolCalls: calls, iters };
 }
 
-module.exports = { TOOLS, toolsForAgent, isToolAllowed, execTool, runToolLoop, enabled, maxIters, _modelMaySupportTools, _isNoToolSupportError, _externalResearchEnabled };
+module.exports = { TOOLS, toolsForAgent, isToolAllowed, execTool, runToolLoop, enabled, maxIters, _modelMaySupportTools, _isNoToolSupportError, _externalResearchEnabled, _stripPII };

@@ -227,3 +227,16 @@ describe('search_caselaw_online — CLOUD rešerše gating (mlčenlivost)', () =
         expect(r.error).toMatch(/AGENT_EXTERNAL_RESEARCH|vypnut/);
     });
 });
+
+describe('_stripPII — cloud rešerše (mlčenlivost, defense-in-depth)', () => {
+    test('odstraní RČ, e-mail, číslo účtu i dlouhá čísla', () => {
+        expect(tools._stripPII('RČ 760506/1234')).not.toMatch(/760506\/1234/);
+        expect(tools._stripPII('mail a.b@example.cz')).toContain('[email]');
+        expect(tools._stripPII('účet 19-2000145399/0800')).toContain('[účet]');
+        expect(tools._stripPII('tel 774123456')).toContain('[číslo]');
+    });
+    test('NEzasáhne právní citaci ani IČO (8 číslic)', () => {
+        expect(tools._stripPII('§ 580 z. č. 89/2012 Sb.')).toBe('§ 580 z. č. 89/2012 Sb.');
+        expect(tools._stripPII('IČO 27074358')).toContain('27074358');
+    });
+});
