@@ -47,7 +47,7 @@ for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && 
 nvidia-smi || echo "!! nvidia-smi nenalezeno — běží to na GPU AMI?"
 
 # 3) Repo (jen skript a sada úloh, žádné npm install není potřeba)
-git clone --depth 1 "$REPO" /opt/LexisLocal
+git clone --depth 1 -b release-prep "$REPO" /opt/LexisLocal
 cd /opt/LexisLocal
 
 # 4) Benchmark

@@ -21,7 +21,8 @@
  *   node backend/scripts/model_bench.js --judge qwen2.5:32b   # + známka od soudce
  *   node backend/scripts/model_bench.js --only spisovatel     # jen úlohy jednoho agenta
  * Další přepínače: --cases <soubor>  --out <složka>  --num-ctx 8192  --no-pull
- *                  --timeout 600 (s na jednu odpověď)  --host http://127.0.0.1:11434
+ *                  --timeout 900 (s na jednu odpověď)  --max-tokens 1500 (strop délky odpovědi)
+ *                  --host http://127.0.0.1:11434
  *
  * DŮLEŽITÉ: do sady úloh nikdy nedávat skutečné klientské spisy — skript se pouští
  * i v cloudu. Jen syntetická nebo plně anonymizovaná data.
@@ -52,7 +53,7 @@ const DEFAULT_MODELS = [
 function parseArgs(argv) {
     const out = {
         models: null, cases: null, out: null, judge: null, only: null,
-        cpu: false, pull: true, numCtx: 8192, timeoutS: 600,
+        cpu: false, pull: true, numCtx: 8192, timeoutS: 900, maxTokens: 1500,
         host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'
     };
     for (let i = 0; i < argv.length; i++) {
@@ -66,7 +67,8 @@ function parseArgs(argv) {
         else if (a === '--cpu') out.cpu = true;
         else if (a === '--no-pull') out.pull = false;
         else if (a === '--num-ctx') out.numCtx = parseInt(next(), 10) || 8192;
-        else if (a === '--timeout') out.timeoutS = parseInt(next(), 10) || 600;
+        else if (a === '--timeout') out.timeoutS = parseInt(next(), 10) || 900;
+        else if (a === '--max-tokens') out.maxTokens = parseInt(next(), 10) || 1500;
         else if (a === '--host') out.host = next();
         else if (a === '--help' || a === '-h') out.help = true;
     }
@@ -88,6 +90,40 @@ async function ollama(host, endpoint, body, timeoutS) {
     try { return JSON.parse(text); } catch { return text; }
 }
 
+/**
+ * /api/generate se STREAMOVÁNÍM. Bez streamu pošle Ollama hlavičky až po dogenerování
+ * a Node fetch (undici) po 300 s spojení utne (headersTimeout) — pomalé modely pak
+ * padaly na „301 s“. Při streamu chodí data průběžně; vrací poslední (done) objekt
+ * se statistikami + složenou odpověď.
+ */
+async function generate(host, body, timeoutS) { return streamJson(host, '/api/generate', body, timeoutS); }
+
+async function streamJson(host, endpoint, body, timeoutS) {
+    const res = await fetch(host + endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, stream: true }),
+        signal: AbortSignal.timeout(timeoutS * 1000)
+    });
+    if (!res.ok) throw new Error(`${endpoint} HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const decoder = new TextDecoder();
+    let buf = '', response = '', last = {};
+    const handle = (line) => {
+        if (!line.trim()) return;
+        const obj = JSON.parse(line);
+        if (obj.error) throw new Error(obj.error);
+        if (obj.response) response += obj.response;
+        last = obj;
+    };
+    for await (const chunk of res.body) {
+        buf += decoder.decode(chunk, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) { handle(buf.slice(0, i)); buf = buf.slice(i + 1); }
+    }
+    handle(buf);
+    return { ...last, response };
+}
+
 async function ensureModel(host, model, pull) {
     const tags = await ollama(host, '/api/tags', null, 30);
     const have = (tags.models || []).some(m => m.name === model || m.name === model + ':latest');
@@ -95,7 +131,7 @@ async function ensureModel(host, model, pull) {
     if (!pull) return false;
     process.stdout.write(`   ⬇️  stahuji ${model} … `);
     try {
-        await ollama(host, '/api/pull', { model, name: model, stream: false }, 3600);
+        await streamJson(host, '/api/pull', { model, name: model }, 7200); // stream: velký model se stahuje > 300 s
         console.log('hotovo');
         return true;
     } catch (e) {
@@ -108,7 +144,7 @@ async function unloadAll(host) {
     try {
         const ps = await ollama(host, '/api/ps', null, 30);
         for (const m of ps.models || []) {
-            await ollama(host, '/api/generate', { model: m.name, keep_alive: 0 }, 60);
+            await generate(host, { model: m.name, keep_alive: 0 }, 60);
         }
     } catch { /* starší Ollama bez /api/ps — nevadí */ }
 }
@@ -202,8 +238,8 @@ Vrať POUZE JSON: {"znamka": <1-5>, "duvod": "<jedna věta>"}`;
 
 async function judge(host, judgeModel, testCase, answer, opts) {
     const prompt = `ZADÁNÍ:\n${testCase.prompt}\n\n${testCase.reference ? `CO MÁ ODPOVĚĎ OBSAHOVAT (reference):\n${testCase.reference}\n\n` : ''}ODPOVĚĎ:\n${answer}`;
-    const r = await ollama(host, '/api/generate', {
-        model: judgeModel, system: JUDGE_PROMPT, prompt, stream: false, format: 'json',
+    const r = await generate(host, {
+        model: judgeModel, system: JUDGE_PROMPT, prompt, format: 'json',
         options: { temperature: 0, num_ctx: opts.numCtx }
     }, opts.timeoutS);
     const obj = extractJson(r.response || '') || {};
@@ -218,12 +254,13 @@ function loadSystemPrompts() {
 
 async function benchModel(host, model, cases, prompts, opts) {
     await unloadAll(host); // férové měření načtení a paměti
-    const options = { temperature: 0.2, seed: 42, num_ctx: opts.numCtx };
+    // num_predict = strop délky odpovědi: malé modely se občas zacyklí a generují donekonečna.
+    const options = { temperature: 0.2, seed: 42, num_ctx: opts.numCtx, num_predict: opts.maxTokens };
     if (opts.cpu) options.num_gpu = 0;
 
     // Zahřátí = změření načtení modelu do paměti.
     const t0 = Date.now();
-    const warm = await ollama(host, '/api/generate', { model, prompt: 'Odpověz jedním slovem: ano.', stream: false, options }, opts.timeoutS);
+    const warm = await generate(host, { model, prompt: 'Odpověz jedním slovem: ano.', options: { ...options, num_predict: 5 } }, opts.timeoutS);
     const loadS = (warm.load_duration || (Date.now() - t0) * 1e6) / 1e9;
     const mem = await memoryOf(host, model);
 
@@ -233,18 +270,21 @@ async function benchModel(host, model, cases, prompts, opts) {
         let r, error = null;
         const started = Date.now();
         try {
-            r = await ollama(host, '/api/generate', { model, system, prompt: tc.prompt, stream: false, options }, opts.timeoutS);
+            r = await generate(host, { model, system, prompt: tc.prompt, options }, opts.timeoutS);
         } catch (e) { error = e.message; }
         const wallS = (Date.now() - started) / 1000;
         const answer = r ? (r.response || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim() : '';
         const checks = error ? [{ name: 'odpověď', pass: false, detail: error }] : runChecks(tc, answer);
+        const truncated = !!(r && r.done_reason === 'length');
+        if (truncated) checks.push({ name: 'dokončená odpověď', pass: false, detail: `utnuto na ${opts.maxTokens} tokenech (zacyklení / moc dlouhé)` });
         const genTokS = r && r.eval_duration ? r.eval_count / (r.eval_duration / 1e9) : null;
         const ttftS = r ? ((r.prompt_eval_duration || 0) + (r.load_duration || 0)) / 1e9 : null;
         const judged = null; // soudce běží až po všech modelech (viz judgeAll)
         const passed = checks.filter(c => c.pass).length;
-        results.push({ id: tc.id, agent: tc.agent, wallS, genTokS, ttftS, tokens: r ? r.eval_count : 0, passed, total: checks.length, checks, judge: judged, answer, error });
+        results.push({ id: tc.id, agent: tc.agent, truncated, wallS, genTokS, ttftS, tokens: r ? r.eval_count : 0, passed, total: checks.length, checks, judge: judged, answer, error });
         const mark = passed === checks.length ? '✅' : (passed ? '🟡' : '❌');
-        console.log(`   ${mark} ${tc.id.padEnd(34)} ${passed}/${checks.length}  ${genTokS ? genTokS.toFixed(1).padStart(6) + ' tok/s' : '     —      '}  ${wallS.toFixed(1)} s`);
+        const note = error ? `  ⚠️ ${error.split('\n')[0].slice(0, 80)}` : (truncated ? '  ✂️ utnuto' : '');
+        console.log(`   ${mark} ${tc.id.padEnd(34)} ${passed}/${checks.length}  ${genTokS ? genTokS.toFixed(1).padStart(6) + ' tok/s' : '     —      '}  ${wallS.toFixed(1)} s${note}`);
     }
     return { model, loadS, mem, results, summary: summarize(results) };
 }
