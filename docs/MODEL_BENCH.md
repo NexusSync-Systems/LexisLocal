@@ -47,6 +47,37 @@ tj. řádově **jednotky dolarů**. Instance se po doběhnutí sama smaže.
 Pojistky: tvrdé vypnutí po 240 minutách (`MAX_MINUTES`), výsledky se ukládají průběžně po
 každém modelu, log je v `/var/log/lexis-bench.log` (a nahraje se do S3).
 
+## Režim se zdroji (`--rag`)
+
+Test na 3B modelech ukázal, že **bez zdrojů si modely paragrafy vymýšlejí**. V aplikaci ale
+Rešeršník odpovídá nad svou znalostní bází (`_kb_resersnik`). Režim `--rag` měří právě tohle:
+ke každé úloze najde top pasáže v bázi agenta a přidá je modelu do systémového promptu.
+
+1. **Stáhni zákony** z [e-Sbírky](https://e-sbirka.gov.cz) (občanský zákoník 89/2012,
+   občanský soudní řád 99/1963, …) jako DOCX, případně ulož jako prostý text.
+2. **Rozděl je po paragrafech** (každý § = jeden dokument s přesnou citací):
+   ```bash
+   node backend/scripts/split-zakon.js --in ~/Downloads/89-2012.docx --zkratka OZ \
+        --cislo 89/2012 --nazev "občanský zákoník" --zneni 2026-09-01 --out ./zakony/OZ
+   node backend/scripts/split-zakon.js --in ~/Downloads/99-1963.docx --zkratka OSŘ \
+        --cislo 99/1963 --nazev "občanský soudní řád" --zneni 2026-09-01 --out ./zakony/OSR
+   ```
+   Nejdřív s `--dry-run` zkontroluj počet paragrafů a ukázku.
+3. **Nahraj do báze Rešeršníka** (běží LexisLocal + Ollama s embedding modelem):
+   ```bash
+   node backend/scripts/seed-kb.js --agent resersnik --dir ./zakony/OZ
+   node backend/scripts/seed-kb.js --agent resersnik --dir ./zakony/OSR
+   ```
+4. **Porovnej bez a se zdroji:**
+   ```bash
+   npm run bench:models -- --models llama3.2:3b
+   npm run bench:models -- --models llama3.2:3b --rag
+   ```
+   Report se zdroji má v názvu `_rag` a u každé odpovědi vypisuje, které paragrafy dostala.
+
+Přepínače: `--rag-k 3` (počet pasáží), `--rag-min 0.5` (minimální skóre shody).
+Úloha může mít vlastní `ragScopes` (např. `["_kb_resersnik", "_kb_obor_…"]`).
+
 ## Jak číst výsledek
 
 1. Vyřaď modely s kvalitou pod ~70 % nebo s chybou v úloze `halucinace-*` a `spisovatel-*`

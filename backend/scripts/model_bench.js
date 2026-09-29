@@ -20,9 +20,15 @@
  *   node backend/scripts/model_bench.js --cpu                 # simulace PC bez GPU
  *   node backend/scripts/model_bench.js --judge qwen2.5:32b   # + známka od soudce
  *   node backend/scripts/model_bench.js --only spisovatel     # jen úlohy jednoho agenta
+ *   node backend/scripts/model_bench.js --rag                 # SE ZDROJI: k úloze přidá top pasáže
+ *                                                             # ze znalostní báze agenta (_kb_<agent>)
  * Další přepínače: --cases <soubor>  --out <složka>  --num-ctx 8192  --no-pull
  *                  --timeout 900 (s na jednu odpověď)  --max-tokens 1500 (strop délky odpovědi)
- *                  --host http://127.0.0.1:11434
+ *                  --host http://127.0.0.1:11434  --rag-k 3 (počet pasáží)  --rag-min 0.5 (min. skóre)
+ *
+ * Režim --rag měří CELÝ řetězec jako v aplikaci (vyhledání v bázi → model). Bázi naplň
+ * předem: split-zakon.js + seed-kb.js (viz docs/MODEL_BENCH.md). Pasáže se hledají JEDNOU
+ * před testem modelů (embedding model EMBEDDING_MODEL musí běžet v Ollamě).
  *
  * DŮLEŽITÉ: do sady úloh nikdy nedávat skutečné klientské spisy — skript se pouští
  * i v cloudu. Jen syntetická nebo plně anonymizovaná data.
@@ -54,6 +60,7 @@ function parseArgs(argv) {
     const out = {
         models: null, cases: null, out: null, judge: null, only: null,
         cpu: false, pull: true, numCtx: 8192, timeoutS: 900, maxTokens: 1500,
+        rag: false, ragK: 3, ragMin: 0.5,
         host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'
     };
     for (let i = 0; i < argv.length; i++) {
@@ -65,6 +72,9 @@ function parseArgs(argv) {
         else if (a === '--judge') out.judge = next();
         else if (a === '--only') out.only = next();
         else if (a === '--cpu') out.cpu = true;
+        else if (a === '--rag') out.rag = true;
+        else if (a === '--rag-k') out.ragK = parseInt(next(), 10) || 3;
+        else if (a === '--rag-min') out.ragMin = Number(next());
         else if (a === '--no-pull') out.pull = false;
         else if (a === '--num-ctx') out.numCtx = parseInt(next(), 10) || 8192;
         else if (a === '--timeout') out.timeoutS = parseInt(next(), 10) || 900;
@@ -252,6 +262,39 @@ function loadSystemPrompts() {
     try { return require('../prompts.json'); } catch { return {}; }
 }
 
+/**
+ * Režim --rag: pro každou úlohu najde pasáže ve znalostní bázi agenta (stejně jako
+ * routes/agent.js). Vrací { [caseId]: { text, sources: [{fileName, score}] } }.
+ * `ragModule` lze podstrčit v testech.
+ */
+async function fetchContexts(cases, opts, ragModule) {
+    const rag = ragModule || require('../lib/rag');
+    const out = {};
+    for (const tc of cases) {
+        const scopes = tc.ragScopes || [`_kb_${tc.agent}`];
+        let matches = [];
+        try {
+            matches = await rag.searchSimilar(tc.prompt, opts.ragK, { scopes, clientAccess: false }, { lexicalFallback: true });
+        } catch (e) {
+            console.log(`   ⚠️  ${tc.id}: vyhledání v bázi selhalo (${e.message})`);
+        }
+        const good = (matches || []).filter(m => m.scope && typeof m.score === 'number' && m.score >= opts.ragMin);
+        out[tc.id] = {
+            text: good.map(m => `[Zdroj: ${m.fileName}]\n${m.text}`).join('\n\n---\n\n'),
+            sources: good.map(m => ({ fileName: m.fileName, score: Math.round(m.score * 100) / 100 }))
+        };
+        console.log(`   📚 ${tc.id.padEnd(34)} ${good.length ? good.map(g => g.fileName).join(', ') : '— nic nad prahem'}`);
+    }
+    return out;
+}
+
+/** Systémový prompt agenta + podklady z báze (formát jako v aplikaci). */
+function buildSystem(baseSystem, ctx) {
+    if (!ctx || !ctx.text) return baseSystem;
+    return `${baseSystem}\n\nPodklady ze znalostní báze (zákony, judikatura):\n${ctx.text}\n\n` +
+        'Při odpovědi vycházej z těchto podkladů a cituj jen ustanovení, která v nich jsou. Pokud podklady na otázku nestačí, řekni to.';
+}
+
 async function benchModel(host, model, cases, prompts, opts) {
     await unloadAll(host); // férové měření načtení a paměti
     // num_predict = strop délky odpovědi: malé modely se občas zacyklí a generují donekonečna.
@@ -266,7 +309,8 @@ async function benchModel(host, model, cases, prompts, opts) {
 
     const results = [];
     for (const tc of cases) {
-        const system = tc.system || prompts[tc.agent] || '';
+        const ctx = opts.contexts ? opts.contexts[tc.id] : null;
+        const system = buildSystem(tc.system || prompts[tc.agent] || '', ctx);
         let r, error = null;
         const started = Date.now();
         try {
@@ -281,7 +325,7 @@ async function benchModel(host, model, cases, prompts, opts) {
         const ttftS = r ? ((r.prompt_eval_duration || 0) + (r.load_duration || 0)) / 1e9 : null;
         const judged = null; // soudce běží až po všech modelech (viz judgeAll)
         const passed = checks.filter(c => c.pass).length;
-        results.push({ id: tc.id, agent: tc.agent, truncated, wallS, genTokS, ttftS, tokens: r ? r.eval_count : 0, passed, total: checks.length, checks, judge: judged, answer, error });
+        results.push({ id: tc.id, agent: tc.agent, ragSources: ctx ? ctx.sources : undefined, truncated, wallS, genTokS, ttftS, tokens: r ? r.eval_count : 0, passed, total: checks.length, checks, judge: judged, answer, error });
         const mark = passed === checks.length ? '✅' : (passed ? '🟡' : '❌');
         const note = error ? `  ⚠️ ${error.split('\n')[0].slice(0, 80)}` : (truncated ? '  ✂️ utnuto' : '');
         console.log(`   ${mark} ${tc.id.padEnd(34)} ${passed}/${checks.length}  ${genTokS ? genTokS.toFixed(1).padStart(6) + ' tok/s' : '     —      '}  ${wallS.toFixed(1)} s${note}`);
@@ -341,7 +385,8 @@ function toMarkdown(runs, meta) {
     L.push(`# LexisLocal — srovnání modelů`, '');
     L.push(`- Datum: ${meta.date}`);
     L.push(`- Stroj: ${meta.host} · ${meta.cpus} CPU · ${meta.ramGb} GB RAM${meta.gpu ? ' · GPU: ' + meta.gpu : ''}${meta.cpuOnly ? ' · **režim jen CPU**' : ''}`);
-    L.push(`- Úloh: ${meta.cases} · kontext ${meta.numCtx} tokenů${meta.judge ? ` · soudce: ${meta.judge}` : ''}`, '');
+    L.push(`- Úloh: ${meta.cases} · kontext ${meta.numCtx} tokenů${meta.judge ? ` · soudce: ${meta.judge}` : ''}`);
+    L.push(`- Režim: ${meta.rag ? `**se zdroji** (top ${meta.rag.k} pasáží ze znalostní báze agenta, skóre ≥ ${meta.rag.minScore})` : 'bez zdrojů (jen znalosti modelu)'}`, '');
     L.push(`| # | Model | Kvalita (kontroly) | Úlohy bez chyby | ${meta.judge ? 'Soudce ⌀ | ' : ''}Rychlost (tok/s) | Do 1. odpovědi (s) | ⌀ úloha (s) | Načtení (s) | Paměť (GB) |`);
     L.push(`|---|---|---|---|${meta.judge ? '---|' : ''}---|---|---|---|---|`);
     rankRows(runs).forEach((r, i) => {
@@ -365,6 +410,7 @@ function toMarkdown(runs, meta) {
         L.push(`<details><summary><b>${r.model}</b></summary>`, '');
         for (const x of r.results) {
             L.push(`#### ${x.id} (${x.passed}/${x.total}${x.judge && x.judge.score ? `, soudce ${x.judge.score}/5 — ${x.judge.reason}` : ''})`, '');
+            if (x.ragSources) L.push(`Podklady: ${x.ragSources.length ? x.ragSources.map(s => `${s.fileName} (${s.score})`).join(', ') : 'žádné'}`, '');
             L.push('```', (x.error || x.answer || '').slice(0, 4000), '```', '');
         }
         L.push('</details>', '');
@@ -402,14 +448,23 @@ async function main() {
     const meta = {
         date: new Date().toISOString(), host: os.hostname(), cpus: os.cpus().length,
         ramGb: Math.round(os.totalmem() / 1e9), gpu: opts.cpu ? null : await detectGpu(),
-        cpuOnly: opts.cpu, cases: cases.length, numCtx: opts.numCtx, judge: opts.judge
+        cpuOnly: opts.cpu, cases: cases.length, numCtx: opts.numCtx, judge: opts.judge,
+        rag: opts.rag ? { k: opts.ragK, minScore: opts.ragMin } : null
     };
     console.log(`\n🔬 LexisLocal model bench — ${models.length} modelů × ${cases.length} úloh${meta.gpu ? ` na ${meta.gpu}` : ''}${opts.cpu ? ' (jen CPU)' : ''}\n`);
     if (opts.judge && !(await ensureModel(opts.host, opts.judge, opts.pull))) throw new Error(`Soudce ${opts.judge} není k dispozici.`);
 
+    if (opts.rag) {
+        console.log(`📚 Režim SE ZDROJI — hledám podklady ve znalostních bázích (top ${opts.ragK}, skóre ≥ ${opts.ragMin})…`);
+        opts.contexts = await fetchContexts(cases, opts);
+        const found = Object.values(opts.contexts).filter(c => c.sources.length).length;
+        if (!found) console.log('   ⚠️  Žádná úloha nedostala podklady — je báze naplněná a běží embedding model?');
+        console.log('');
+    }
+
     const outDir = opts.out || path.join(process.cwd(), 'bench-results');
     fs.mkdirSync(outDir, { recursive: true });
-    const stamp = meta.date.replace(/[:.]/g, '-').slice(0, 19);
+    const stamp = meta.date.replace(/[:.]/g, '-').slice(0, 19) + (opts.rag ? '_rag' : '');
     const runs = [];
     const save = () => {
         fs.writeFileSync(path.join(outDir, `model_bench_${stamp}.json`), JSON.stringify({ meta, runs }, null, 2));
@@ -446,4 +501,4 @@ if (require.main === module) {
     main().catch(e => { console.error('❌ ' + e.message); process.exit(1); });
 }
 
-module.exports = { runChecks, englishRatio, extractJson, summarize, toMarkdown, parseArgs };
+module.exports = { runChecks, englishRatio, extractJson, summarize, toMarkdown, parseArgs, fetchContexts, buildSystem };
