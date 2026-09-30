@@ -24,7 +24,13 @@
  *                                                             # ze znalostní báze agenta (_kb_<agent>)
  * Další přepínače: --cases <soubor>  --out <složka>  --num-ctx 8192  --no-pull
  *                  --timeout 900 (s na jednu odpověď)  --max-tokens 1500 (strop délky odpovědi)
- *                  --host http://127.0.0.1:11434  --rag-k 3 (počet pasáží)  --rag-min 0.5 (min. skóre)
+ *                  --host http://127.0.0.1:11434  --rag-k 3 (počet pasáží)  --rag-min (min. skóre; výchozí RAG_MIN_SCORE z .env)
+ *
+ * --kb-dir <složka|.tar.gz>: místo šifrované báze LexisLocalu si postaví DOČASNÝ index
+ *   z textových souborů (např. výstup split-zakon.js) — stejné dělení na úseky, stejný
+ *   embedding model a stejné skórování (hybrid/sémantika) jako lib/rag.js. Pro GPU běh
+ *   v cloudu, kde tvoje báze není. Vektory se cachují vedle (.kb-index-<model>.json).
+ *   Implikuje --rag. Příklad: --kb-dir backend/eval/kb/zakony.tar.gz
  *
  * Režim --rag měří CELÝ řetězec jako v aplikaci (vyhledání v bázi → model). Bázi naplň
  * předem: split-zakon.js + seed-kb.js (viz docs/MODEL_BENCH.md). Pasáže se hledají JEDNOU
@@ -38,6 +44,10 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+
+// Stejná konfigurace jako server (EMBEDDING_MODEL, RAG_MIN_SCORE, DATA_DIR…). Bez toho by
+// režim --rag hledal jiným embedding modelem než ten, kterým je báze zaindexovaná.
+try { require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') }); } catch { /* dotenv volitelný */ }
 
 // Kandidáti, pokud nejsou zadány --models. Pořadí = pořadí testu (malé napřed).
 // Tagy, které v Ollamě neexistují, se přeskočí s varováním.
@@ -60,7 +70,7 @@ function parseArgs(argv) {
     const out = {
         models: null, cases: null, out: null, judge: null, only: null,
         cpu: false, pull: true, numCtx: 8192, timeoutS: 900, maxTokens: 1500,
-        rag: false, ragK: 3, ragMin: 0.5,
+        rag: false, kbDir: null, ragK: 3, ragMin: Number(process.env.RAG_MIN_SCORE || 0.5),
         host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'
     };
     for (let i = 0; i < argv.length; i++) {
@@ -73,6 +83,7 @@ function parseArgs(argv) {
         else if (a === '--only') out.only = next();
         else if (a === '--cpu') out.cpu = true;
         else if (a === '--rag') out.rag = true;
+        else if (a === '--kb-dir') { out.kbDir = next(); out.rag = true; }
         else if (a === '--rag-k') out.ragK = parseInt(next(), 10) || 3;
         else if (a === '--rag-min') out.ragMin = Number(next());
         else if (a === '--no-pull') out.pull = false;
@@ -288,6 +299,77 @@ async function fetchContexts(cases, opts, ragModule) {
     return out;
 }
 
+/**
+ * --kb-dir: dočasný index z .txt souborů (rekurzivně). Používá funkce z lib/rag.js
+ * (chunkText, getEmbedding, cosineSimilarity, lexicalScore, blendScore), takže úseky
+ * i skóre odpovídají aplikaci. Vrací objekt s metodou searchSimilar() kompatibilní s rag.js.
+ */
+async function buildKbIndex(kbPath, ragModule) {
+    const rag = ragModule || require('../lib/rag');
+    let dir = kbPath;
+    if (/\.t(ar\.)?gz$/i.test(kbPath)) {
+        // Archiv → rozbalit do dočasné složky (vestavěný tar na macOS i Linuxu).
+        const { execFileSync } = require('child_process');
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lexis-kb-'));
+        execFileSync('tar', ['-xzf', kbPath, '-C', dir]);
+    }
+    const files = [];
+    (function walk(d) {
+        for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+            const fp = path.join(d, e.name);
+            if (e.isDirectory()) walk(fp);
+            else if (e.isFile() && e.name.toLowerCase().endsWith('.txt')) files.push(fp);
+        }
+    })(dir);
+    if (!files.length) throw new Error(`--kb-dir: ve „${kbPath}" nejsou žádné .txt soubory.`);
+
+    const model = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
+    const cacheFile = path.join(fs.statSync(kbPath).isDirectory() ? kbPath : path.dirname(kbPath),
+        `.kb-index-${model.replace(/[^\w.-]/g, '_')}.json`);
+    let cache = {};
+    try { cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch { /* první běh */ }
+    const crypto = require('crypto');
+    const chunks = [];
+    let embedded = 0, reused = 0;
+    const started = Date.now();
+    for (let i = 0; i < files.length; i++) {
+        const fileName = path.basename(files[i]);
+        const text = fs.readFileSync(files[i], 'utf8');
+        const parts = rag.chunkText(text);
+        for (let j = 0; j < parts.length; j++) {
+            const key = crypto.createHash('sha1').update(parts[j]).digest('hex');
+            let vector = cache[key];
+            if (!vector) {
+                try { vector = await rag.getEmbedding(parts[j]); cache[key] = vector; embedded++; }
+                catch (e) { throw new Error(`Embedding selhal (${model}): ${e.message}. Běží Ollama a je stažený ${model}?`); }
+            } else reused++;
+            chunks.push({ fileName, text: parts[j], vector, scope: '_kb_dir', chunkIndex: j, totalChunks: parts.length });
+        }
+        if ((i + 1) % 250 === 0 || i === files.length - 1) {
+            process.stdout.write(`\r   📦 index: ${i + 1}/${files.length} souborů, ${chunks.length} úseků (nově ${embedded}, z cache ${reused}) — ${Math.round((Date.now() - started) / 1000)} s`);
+        }
+    }
+    console.log('');
+    try { fs.writeFileSync(cacheFile, JSON.stringify(cache)); } catch { /* cache je jen urychlení */ }
+
+    const truthy = (v) => /^(1|true|yes|on)$/i.test(String(v || '').trim());
+    const hybrid = truthy(process.env.RAG_HYBRID);
+    const alphaEnv = parseFloat(process.env.RAG_HYBRID_ALPHA);
+    const alpha = Number.isFinite(alphaEnv) && alphaEnv >= 0 && alphaEnv <= 1 ? alphaEnv : 0.8;
+    return {
+        size: chunks.length,
+        mode: hybrid ? `hybrid α=${alpha}` : 'semantic',
+        async searchSimilar(query, limit = 5) {
+            const qv = await rag.getEmbedding(query);
+            return chunks.map(c => {
+                const sem = rag.cosineSimilarity(qv, c.vector);
+                const score = hybrid ? rag.blendScore(sem, rag.lexicalScore(query, c.text), alpha) : sem;
+                return { fileName: c.fileName, text: c.text, score, scope: c.scope };
+            }).sort((a, b) => b.score - a.score).slice(0, limit);
+        }
+    };
+}
+
 /** Systémový prompt agenta + podklady z báze (formát jako v aplikaci). */
 function buildSystem(baseSystem, ctx) {
     if (!ctx || !ctx.text) return baseSystem;
@@ -386,7 +468,7 @@ function toMarkdown(runs, meta) {
     L.push(`- Datum: ${meta.date}`);
     L.push(`- Stroj: ${meta.host} · ${meta.cpus} CPU · ${meta.ramGb} GB RAM${meta.gpu ? ' · GPU: ' + meta.gpu : ''}${meta.cpuOnly ? ' · **režim jen CPU**' : ''}`);
     L.push(`- Úloh: ${meta.cases} · kontext ${meta.numCtx} tokenů${meta.judge ? ` · soudce: ${meta.judge}` : ''}`);
-    L.push(`- Režim: ${meta.rag ? `**se zdroji** (top ${meta.rag.k} pasáží ze znalostní báze agenta, skóre ≥ ${meta.rag.minScore})` : 'bez zdrojů (jen znalosti modelu)'}`, '');
+    L.push(`- Režim: ${meta.rag ? `**se zdroji** (top ${meta.rag.k} pasáží, zdroj: ${meta.rag.source || "znalostní báze agenta"}, skóre ≥ ${meta.rag.minScore})` : 'bez zdrojů (jen znalosti modelu)'}`, '');
     L.push(`| # | Model | Kvalita (kontroly) | Úlohy bez chyby | ${meta.judge ? 'Soudce ⌀ | ' : ''}Rychlost (tok/s) | Do 1. odpovědi (s) | ⌀ úloha (s) | Načtení (s) | Paměť (GB) |`);
     L.push(`|---|---|---|---|${meta.judge ? '---|' : ''}---|---|---|---|---|`);
     rankRows(runs).forEach((r, i) => {
@@ -449,14 +531,20 @@ async function main() {
         date: new Date().toISOString(), host: os.hostname(), cpus: os.cpus().length,
         ramGb: Math.round(os.totalmem() / 1e9), gpu: opts.cpu ? null : await detectGpu(),
         cpuOnly: opts.cpu, cases: cases.length, numCtx: opts.numCtx, judge: opts.judge,
-        rag: opts.rag ? { k: opts.ragK, minScore: opts.ragMin } : null
+        rag: opts.rag ? { k: opts.ragK, minScore: opts.ragMin, source: opts.kbDir || 'znalostní báze LexisLocal' } : null
     };
     console.log(`\n🔬 LexisLocal model bench — ${models.length} modelů × ${cases.length} úloh${meta.gpu ? ` na ${meta.gpu}` : ''}${opts.cpu ? ' (jen CPU)' : ''}\n`);
     if (opts.judge && !(await ensureModel(opts.host, opts.judge, opts.pull))) throw new Error(`Soudce ${opts.judge} není k dispozici.`);
 
     if (opts.rag) {
         console.log(`📚 Režim SE ZDROJI — hledám podklady ve znalostních bázích (top ${opts.ragK}, skóre ≥ ${opts.ragMin})…`);
-        opts.contexts = await fetchContexts(cases, opts);
+        let ragModule = null;
+        if (opts.kbDir) {
+            console.log(`📦 Stavím dočasný index z ${opts.kbDir} (embedding ${process.env.EMBEDDING_MODEL || 'nomic-embed-text'})…`);
+            ragModule = await buildKbIndex(opts.kbDir);
+            console.log(`   ${ragModule.size} úseků, skórování: ${ragModule.mode}`);
+        }
+        opts.contexts = await fetchContexts(cases, opts, ragModule);
         const found = Object.values(opts.contexts).filter(c => c.sources.length).length;
         if (!found) console.log('   ⚠️  Žádná úloha nedostala podklady — je báze naplněná a běží embedding model?');
         console.log('');
@@ -501,4 +589,4 @@ if (require.main === module) {
     main().catch(e => { console.error('❌ ' + e.message); process.exit(1); });
 }
 
-module.exports = { runChecks, englishRatio, extractJson, summarize, toMarkdown, parseArgs, fetchContexts, buildSystem };
+module.exports = { runChecks, englishRatio, extractJson, summarize, toMarkdown, parseArgs, fetchContexts, buildSystem, buildKbIndex };

@@ -18,6 +18,11 @@ RESULTS_BUCKET="lexislocal-bench-results-485237569555"   # S3 bucket na výsledk
 MODELS=""                   # prázdné = výchozí kandidáti ze skriptu; jinak "llama3,qwen2.5:7b,…"
 JUDGE="qwen2.5:32b"         # soudce (známka 1–5); "" = bez soudce
 MAX_MINUTES=240             # tvrdý limit běhu instance
+# Režim: "plain" = jen znalosti modelu | "rag" = se zdroji (zákony z KB) | "both" = obojí
+MODE="rag"
+KB="backend/eval/kb/zakony.tar.gz"   # archiv .txt souborů (split-zakon.js) — veřejné zákony, žádná klientská data
+# Vyhledávání nastav STEJNĚ jako v .env aplikace (jinak se výsledky neporovnají):
+export EMBEDDING_MODEL="bge-m3" RAG_HYBRID=1 RAG_HYBRID_ALPHA=0.8 RAG_MIN_SCORE=0.14
 REPO="https://github.com/Zdenekdi/LexisLocal.git"
 
 exec > >(tee -a /var/log/lexis-bench.log) 2>&1
@@ -50,9 +55,25 @@ nvidia-smi || echo "!! nvidia-smi nenalezeno — běží to na GPU AMI?"
 git clone --depth 1 -b release-prep "$REPO" /opt/LexisLocal
 cd /opt/LexisLocal
 
-# 4) Benchmark
+# 4) Režim se zdroji potřebuje z npm jen klienta Ollamy (lib/rag.js) — bez celého
+#    `npm install` aplikace (canvas, tesseract…). Verze z package-lock.json.
+if [ "$MODE" != "plain" ]; then
+  OLLAMA_VER=$(node -e 'const p=require("./package-lock.json").packages||{};console.log((p["node_modules/ollama"]||{}).version||"0.5")')
+  npm install --prefix /opt/nodeps --no-audit --no-fund "ollama@$OLLAMA_VER" dotenv
+  export NODE_PATH=/opt/nodeps/node_modules
+  ollama pull "$EMBEDDING_MODEL"
+  [ -f "$KB" ] || echo "!! $KB v repu chybí — režim se zdroji nepůjde"
+fi
+
+# 5) Benchmark
 ARGS=(--out /opt/bench-results --timeout 900)
 [ -n "$MODELS" ] && ARGS+=(--models "$MODELS")
 [ -n "$JUDGE" ]  && ARGS+=(--judge "$JUDGE")
-node backend/scripts/model_bench.js "${ARGS[@]}"
-echo "=== benchmark doběhl (exit $?)"
+if [ "$MODE" = "plain" ] || [ "$MODE" = "both" ]; then
+  node backend/scripts/model_bench.js "${ARGS[@]}"
+  echo "=== benchmark bez zdrojů doběhl (exit $?)"
+fi
+if [ "$MODE" = "rag" ] || [ "$MODE" = "both" ]; then
+  node backend/scripts/model_bench.js "${ARGS[@]}" --kb-dir "$KB"
+  echo "=== benchmark se zdroji doběhl (exit $?)"
+fi

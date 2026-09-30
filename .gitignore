@@ -59,3 +59,6 @@ judikatura-ukazka/
 
 # výsledky model_bench.js
 bench-results/
+
+# texty zákonů po split-zakon.js (do repa jde jen archiv backend/eval/kb/zakony.tar.gz)
+zakony/

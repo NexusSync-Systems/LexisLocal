@@ -75,8 +75,23 @@ ke každé úloze najde top pasáže v bázi agenta a přidá je modelu do syst�
    ```
    Report se zdroji má v názvu `_rag` a u každé odpovědi vypisuje, které paragrafy dostala.
 
-Přepínače: `--rag-k 3` (počet pasáží), `--rag-min 0.5` (minimální skóre shody).
+Přepínače: `--rag-k 3` (počet pasáží), `--rag-min` (minimální skóre shody, výchozí `RAG_MIN_SCORE` z `.env`).
 Úloha může mít vlastní `ragScopes` (např. `["_kb_resersnik", "_kb_obor_…"]`).
+
+### Se zdroji na GPU v AWS (`--kb-dir`)
+
+Tvoje znalostní báze je šifrovaná jen na Macu, proto si srovnávač na instanci postaví
+dočasný index z archivu `backend/eval/kb/zakony.tar.gz` (výstup `split-zakon.js`, veřejné
+zákony). Dělení na úseky, embedding model (`bge-m3`) i hybridní skórování jsou stejné jako
+v `lib/rag.js`. Archiv obnovíš po přidání dalších zákonů:
+
+```bash
+tar -czf backend/eval/kb/zakony.tar.gz -C zakony .
+```
+
+Ve `scripts/aws/bench-gpu-userdata.sh` pak `MODE="rag"` (jen se zdroji), `"plain"` nebo `"both"`.
+Nastavení vyhledávání (`EMBEDDING_MODEL`, `RAG_HYBRID*`, `RAG_MIN_SCORE`) drž stejné jako v `.env`.
+Lokálně jde totéž: `npm run bench:models -- --kb-dir ./zakony`.
 
 ## Jak číst výsledek
 
