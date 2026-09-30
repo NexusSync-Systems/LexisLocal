@@ -44,8 +44,9 @@ tj. řádově **jednotky dolarů**. Instance se po doběhnutí sama smaže.
      `scripts/aws/bench-gpu-userdata.sh`
 4. Výsledky se objeví v S3 bucketu ve složce s datem (`.md` stáhnout a otevřít).
 
-Pojistky: tvrdé vypnutí po 240 minutách (`MAX_MINUTES`), výsledky se ukládají průběžně po
-každém modelu, log je v `/var/log/lexis-bench.log` (a nahraje se do S3).
+Pojistky: tvrdé vypnutí po 240 minutách (`MAX_MINUTES`); benchmark sám končí o 15 min dřív.
+Výsledky i log se do S3 nahrávají **průběžně každých 5 minut** (a hned na startu se ověří,
+že zápis do S3 funguje — soubor `_started.txt`). Při vypršení limitu tak zůstane vše hotové.
 
 ## Režim se zdroji (`--rag`)
 
