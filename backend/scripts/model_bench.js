@@ -285,7 +285,7 @@ async function fetchContexts(cases, opts, ragModule) {
         const scopes = tc.ragScopes || [`_kb_${tc.agent}`];
         let matches = [];
         try {
-            matches = await rag.searchSimilar(tc.prompt, opts.ragK, { scopes, clientAccess: false }, { lexicalFallback: true });
+            matches = await rag.searchSimilar(tc.prompt, opts.ragK, { scopes, clientAccess: false }, { lexicalFallback: true, dedupeKb: true });
         } catch (e) {
             console.log(`   ⚠️  ${tc.id}: vyhledání v bázi selhalo (${e.message})`);
         }
@@ -361,11 +361,12 @@ async function buildKbIndex(kbPath, ragModule) {
         mode: hybrid ? `hybrid α=${alpha}` : 'semantic',
         async searchSimilar(query, limit = 5) {
             const qv = await rag.getEmbedding(query);
-            return chunks.map(c => {
+            const ranked = chunks.map(c => {
                 const sem = rag.cosineSimilarity(qv, c.vector);
                 const score = hybrid ? rag.blendScore(sem, rag.lexicalScore(query, c.text), alpha) : sem;
-                return { fileName: c.fileName, text: c.text, score, scope: c.scope };
-            }).sort((a, b) => b.score - a.score).slice(0, limit);
+                return { fileName: c.fileName, text: c.text, score, scope: c.scope || '_kb_bench' };
+            }).sort((a, b) => b.score - a.score);
+            return rag.dedupeKbResults(ranked).slice(0, limit); // jako aplikace: 1 úsek na paragraf
         }
     };
 }

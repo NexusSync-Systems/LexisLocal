@@ -40,9 +40,11 @@ function generateIcs(id, title, dateStr, timeStr, location, context, isCancelled
 }
 
 async function checkAllHearings(WATCH_DIR) {
-    console.log("🚨 Hlídač soudních jednání: Spouštím kontrolu...");
     const hearings = loadMonitoredHearings(WATCH_DIR);
+    // Běží každou hodinu — bez sledovaných jednání nic nelogovat (jinak log zaplaví
+    // stovky řádků „Spouštím kontrolu…“ a zanikne v nich to důležité).
     if (hearings.length === 0) return { checked: 0, updated: 0 };
+    console.log(`🚨 Hlídač soudních jednání: kontroluji ${hearings.length} sledovaných jednání…`);
     
     let checked = 0;
     let updated = 0;

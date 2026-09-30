@@ -13,13 +13,15 @@
 # Do benchmarku nikdy nedávat skutečné klientské spisy — jen syntetická data.
 # =============================================================================
 set -uo pipefail
+# cloud-init spouští user-data bez $HOME — ollama CLI pak spadne („panic: $HOME is not defined“).
+export HOME="${HOME:-/root}"
 
 RESULTS_BUCKET="lexislocal-bench-results-485237569555"   # S3 bucket na výsledky ("" = nenahrávat)
-MODELS="llama3.2:3b,qwen2.5:7b,llama3.1:8b,gemma3:12b,qwen2.5:14b"   # prázdné = výchozí kandidáti ze skriptu
+MODELS="llama3.1:8b,gemma3:12b"   # prázdné = výchozí kandidáti ze skriptu
 JUDGE=""                    # soudce (známka 1–5), např. "qwen2.5:32b" — prodlouží běh o ~1 h; "" = bez soudce
 MAX_MINUTES=240             # tvrdý limit běhu instance
 # Režim: "plain" = jen znalosti modelu | "rag" = se zdroji (zákony z KB) | "both" = obojí
-MODE="both"
+MODE="rag"
 KB="backend/eval/kb/zakony.tar.gz"   # archiv .txt souborů (split-zakon.js) — veřejné zákony, žádná klientská data
 # Vyhledávání nastav STEJNĚ jako v .env aplikace (jinak se výsledky neporovnají):
 export EMBEDDING_MODEL="bge-m3" RAG_HYBRID=1 RAG_HYBRID_ALPHA=0.8 RAG_MIN_SCORE=0.14
@@ -86,11 +88,32 @@ if [ "$MODE" != "plain" ]; then
   OLLAMA_VER=$(node -e 'const p=require("./package-lock.json").packages||{};console.log((p["node_modules/ollama"]||{}).version||"0.5")')
   npm install --prefix /opt/nodeps --no-audit --no-fund "ollama@$OLLAMA_VER" dotenv
   export NODE_PATH=/opt/nodeps/node_modules
-  ollama pull "$EMBEDDING_MODEL"
+  # stažení přes API (nezávislé na CLI/$HOME); čeká, až je model celý stažený
+  curl -sf http://127.0.0.1:11434/api/pull -d "{\"model\":\"$EMBEDDING_MODEL\",\"stream\":false}" >/dev/null \
+    && echo "embedding $EMBEDDING_MODEL stažen" || echo "!! stažení $EMBEDDING_MODEL selhalo"
   [ -f "$KB" ] || echo "!! $KB v repu chybí — režim se zdroji nepůjde"
 fi
 
-# 5) Benchmark
+# 5) Předem stáhnout modely s opakováním — stahování z registry Ollamy občas spadne
+#    („terminated“) a srovnávač by model jen přeskočil.
+IFS=',' read -ra _MS <<< "$MODELS"
+for m in "${_MS[@]}"; do
+  for try in 1 2 3; do
+    curl -sf --max-time 3600 http://127.0.0.1:11434/api/pull -d "{\"model\":\"$m\",\"stream\":false}" >/dev/null \
+      && { echo "model $m stažen"; break; } || { echo "!! stažení $m selhalo (pokus $try)"; sleep 20; }
+  done
+done
+
+# 5b) Zahřát každý model jednou předem (bez časového limitu). První načtení z čerstvého
+#     disku může trvat přes 300 s a Node fetch pak spojení utne („fetch failed“).
+for m in "${_MS[@]}"; do
+  t=$(date +%s)
+  curl -s --max-time 1800 http://127.0.0.1:11434/api/generate \
+    -d "{\"model\":\"$m\",\"prompt\":\"ano\",\"stream\":false,\"options\":{\"num_predict\":1,\"num_ctx\":8192}}" >/dev/null \
+    && echo "model $m zahřát za $(( $(date +%s) - t )) s" || echo "!! zahřátí $m selhalo"
+done
+
+# 6) Benchmark
 ARGS=(--out /opt/bench-results --timeout 900)
 [ -n "$MODELS" ] && ARGS+=(--models "$MODELS")
 [ -n "$JUDGE" ]  && ARGS+=(--judge "$JUDGE")

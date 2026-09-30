@@ -35,7 +35,7 @@
       "id": "resersnik-najem-vypoved",
       "agent": "resersnik",
       "prompt": "Jaká je výpovědní doba, když pronajímatel vypovídá nájem bytu na dobu neurčitou z důvodů podle občanského zákoníku?",
-      "reference": "Výpovědní doba je tříměsíční (§ 2286 odst. 1 OZ); důvody výpovědi pronajímatele upravuje § 2288 OZ. Výpověď musí být písemná a musí obsahovat poučení o právu nájemce vznést námitky a navrhnout přezkoumání oprávněnosti výpovědi soudem.",
+      "reference": "Výpovědní doba je tříměsíční a důvody výpovědi pronajímatele vyjmenovává § 2288 odst. 1 OZ; písemnou formu, běh výpovědní doby od 1. dne následujícího měsíce a povinné poučení o námitkách upravuje § 2286 OZ. Výpověď musí být písemná a musí obsahovat poučení o právu nájemce vznést námitky a navrhnout přezkoumání oprávněnosti výpovědi soudem.",
       "checks": {
         "mustInclude": [["tři měsíce", "3 měsíce", "tříměsíční"], ["2286", "2288"]],
         "czech": true

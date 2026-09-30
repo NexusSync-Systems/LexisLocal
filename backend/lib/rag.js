@@ -893,9 +893,23 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     // RRF: fúze pořadí ze sémantického a lexikálního žebříčku (r.semantic/r.lexical).
     if (rrf && results.length) _applyRrf(results, _rrfK());
 
-    return results
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit);
+    results.sort((a, b) => b.score - a.score);
+    // dedupeKb: z téhož souboru ZNALOSTNÍ BÁZE (např. „§ 204“) max. 1 úsek — dlouhý
+    // paragraf jinak zabere víc míst v top-k a vytlačí další relevantní ustanovení.
+    // Klientské spisy se nededuplikují (u dlouhé smlouvy chceme víc jejích částí).
+    return (opts && opts.dedupeKb ? dedupeKbResults(results) : results).slice(0, limit);
+}
+
+/** Ponechá z každého KB souboru (scope `_kb_*`) jen první = nejlépe skórovaný úsek. Čistá funkce. */
+function dedupeKbResults(sorted) {
+    const seen = new Set();
+    return sorted.filter(r => {
+        if (!(typeof r.scope === 'string' && r.scope.indexOf(KB_PREFIX) === 0)) return true;
+        const key = r.scope + '/' + r.fileName;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
 }
 
 /**
@@ -916,6 +930,7 @@ function _applyRrf(results, K = 60) {
 }
 
 module.exports = {
+    dedupeKbResults,
     indexDocument,
     deleteDocumentIndex,
     searchSimilar,
