@@ -17,11 +17,13 @@ set -uo pipefail
 export HOME="${HOME:-/root}"
 
 RESULTS_BUCKET="lexislocal-bench-results-485237569555"   # S3 bucket na výsledky ("" = nenahrávat)
-MODELS="llama3.1:8b,gemma3:12b"   # prázdné = výchozí kandidáti ze skriptu
+MODELS="qwen2.5:7b,qwen2.5:14b"   # prázdné = výchozí kandidáti ze skriptu
 JUDGE=""                    # soudce (známka 1–5), např. "qwen2.5:32b" — prodlouží běh o ~1 h; "" = bez soudce
-MAX_MINUTES=240             # tvrdý limit běhu instance
+MAX_MINUTES=150             # tvrdý limit běhu instance
 # Režim: "plain" = jen znalosti modelu | "rag" = se zdroji (zákony z KB) | "both" = obojí
 MODE="rag"
+# Zátěžový test (load_bench.js): úrovně souběhu = kolik advokátů se ptá naráz; "" = nespouštět
+LOAD_LEVELS="1,2,4,8"
 KB="backend/eval/kb/zakony.tar.gz"   # archiv .txt souborů (split-zakon.js) — veřejné zákony, žádná klientská data
 # Vyhledávání nastav STEJNĚ jako v .env aplikace (jinak se výsledky neporovnají):
 export EMBEDDING_MODEL="bge-m3" RAG_HYBRID=1 RAG_HYBRID_ALPHA=0.8 RAG_MIN_SCORE=0.14
@@ -126,4 +128,24 @@ if [ "$MODE" = "rag" ] || [ "$MODE" = "both" ]; then
   LEFT=$(( BENCH_SECONDS - ($(date +%s) - START_TS) )); [ "$LEFT" -lt 120 ] && LEFT=120
   timeout "$LEFT" node backend/scripts/model_bench.js "${ARGS[@]}" --kb-dir "$KB"
   echo "=== benchmark se zdroji doběhl (exit $?; 124 = vypršel čas)"
+fi
+
+# 7) Zátěžový test — kolik souběžných uživatelů zvládne jedna GPU. Kontext každého
+#    dotazu = jiný úsek zákonů z KB (≈ RAG pasáže), žádná klientská data.
+if [ -n "$LOAD_LEVELS" ]; then
+  tar -xzf "$KB" -O 2>/dev/null | head -c 400000 > /opt/ctx.txt
+  # Až TEĎ zapnout souběžné sloty (Ollama vyhradí paměť num_ctx × sloty — kdyby to platilo
+  # už pro benchmark kvality, 14b by se nevešel celý do VRAM). num_ctx 4096 stačí:
+  # ~2000 tokenů kontextu + 400 odpovědi.
+  MAXPAR=$(echo "$LOAD_LEVELS" | tr ',' '\n' | sort -n | tail -1)
+  mkdir -p /etc/systemd/system/ollama.service.d
+  printf '[Service]\nEnvironment=OLLAMA_NUM_PARALLEL=%s\nEnvironment=OLLAMA_MAX_LOADED_MODELS=1\n' "$MAXPAR" \
+    > /etc/systemd/system/ollama.service.d/parallel.conf
+  systemctl daemon-reload && systemctl restart ollama
+  for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 2; done
+  export OLLAMA_NUM_PARALLEL="$MAXPAR"
+  LEFT=$(( BENCH_SECONDS - ($(date +%s) - START_TS) )); [ "$LEFT" -lt 120 ] && LEFT=120
+  timeout "$LEFT" node backend/scripts/load_bench.js --models "$MODELS" --levels "$LOAD_LEVELS" \
+    --context-file /opt/ctx.txt --out /opt/bench-results --rounds 2 --num-ctx 4096
+  echo "=== zátěžový test doběhl (exit $?; 124 = vypršel čas)"
 fi
