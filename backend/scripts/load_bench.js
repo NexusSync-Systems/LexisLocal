@@ -25,6 +25,15 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Node fetch (undici) utne spojení, když server do 300 s nepošle hlavičky. Ollama je pošle
+// až po NAČTENÍ modelu — a první načtení na čerstvém GPU serveru trvá i přes 5 min
+// („fetch failed“). Je-li k dispozici balíček undici, vypneme ty limity (vlastní
+// timeout si řídíme přes AbortSignal).
+try {
+    const { setGlobalDispatcher, Agent } = require('undici');
+    setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
+} catch { /* undici není nainstalováno — platí výchozí limity Node */ }
+
 function parseArgs(argv) {
     const o = { models: [], levels: [1, 3, 5, 10], ctxChars: 6000, maxTokens: 400, numCtx: 8192, rounds: 2,
         out: 'bench-results', host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434', contextFile: null, timeoutS: 900 };

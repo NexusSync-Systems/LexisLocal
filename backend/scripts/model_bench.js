@@ -49,6 +49,15 @@ const os = require('os');
 // režim --rag hledal jiným embedding modelem než ten, kterým je báze zaindexovaná.
 try { require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') }); } catch { /* dotenv volitelný */ }
 
+// Node fetch (undici) utne spojení, když server do 300 s nepošle hlavičky. Ollama je pošle
+// až po NAČTENÍ modelu — a první načtení na čerstvém GPU serveru trvá i přes 5 min
+// („fetch failed“). Je-li k dispozici balíček undici, vypneme ty limity (vlastní
+// timeout si řídíme přes AbortSignal).
+try {
+    const { setGlobalDispatcher, Agent } = require('undici');
+    setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
+} catch { /* undici není nainstalováno — platí výchozí limity Node */ }
+
 // Kandidáti, pokud nejsou zadány --models. Pořadí = pořadí testu (malé napřed).
 // Tagy, které v Ollamě neexistují, se přeskočí s varováním.
 const DEFAULT_MODELS = [
@@ -151,14 +160,20 @@ async function ensureModel(host, model, pull) {
     if (have) return true;
     if (!pull) return false;
     process.stdout.write(`   ⬇️  stahuji ${model} … `);
-    try {
-        await streamJson(host, '/api/pull', { model, name: model }, 7200); // stream: velký model se stahuje > 300 s
-        console.log('hotovo');
-        return true;
-    } catch (e) {
-        console.log(`nelze (${e.message.split('\n')[0]})`);
-        return false;
+    // Stahování z registry Ollamy občas spadne („terminated") — zkusit 3×, pak přeskočit.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            await streamJson(host, '/api/pull', { model, name: model }, 7200); // stream: velký model se stahuje > 300 s
+            console.log(attempt > 1 ? `hotovo (pokus ${attempt})` : 'hotovo');
+            return true;
+        } catch (e) {
+            const msg = e.message.split('\n')[0];
+            if (attempt === 3) { console.log(`nelze (${msg})`); return false; }
+            process.stdout.write(`chyba (${msg}), znovu … `);
+            await new Promise(r => setTimeout(r, 15000));
+        }
     }
+    return false;
 }
 
 async function unloadAll(host) {

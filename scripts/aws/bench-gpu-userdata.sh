@@ -17,13 +17,14 @@ set -uo pipefail
 export HOME="${HOME:-/root}"
 
 RESULTS_BUCKET="lexislocal-bench-results-485237569555"   # S3 bucket na výsledky ("" = nenahrávat)
-MODELS="qwen2.5:7b,qwen2.5:14b"   # prázdné = výchozí kandidáti ze skriptu
+MODELS="qwen2.5:14b,qwen2.5:32b"   # prázdné = výchozí kandidáti ze skriptu
 JUDGE=""                    # soudce (známka 1–5), např. "qwen2.5:32b" — prodlouží běh o ~1 h; "" = bez soudce
 MAX_MINUTES=150             # tvrdý limit běhu instance
 # Režim: "plain" = jen znalosti modelu | "rag" = se zdroji (zákony z KB) | "both" = obojí
 MODE="rag"
 # Zátěžový test (load_bench.js): úrovně souběhu = kolik advokátů se ptá naráz; "" = nespouštět
 LOAD_LEVELS="1,2,4,8"
+LOAD_MODELS="qwen2.5:14b"   # modely pro zátěžový test (32b se s 8 souběžnými sloty do 24 GB nevejde)
 KB="backend/eval/kb/zakony.tar.gz"   # archiv .txt souborů (split-zakon.js) — veřejné zákony, žádná klientská data
 # Vyhledávání nastav STEJNĚ jako v .env aplikace (jinak se výsledky neporovnají):
 export EMBEDDING_MODEL="bge-m3" RAG_HYBRID=1 RAG_HYBRID_ALPHA=0.8 RAG_MIN_SCORE=0.14
@@ -64,6 +65,9 @@ SYNC_PID=$!
 finish() {
   echo "=== konec $(date -Is), nahrávám a vypínám za 2 minuty"
   kill "$SYNC_PID" 2>/dev/null
+  # Diagnostika: verze a log samotné Ollamy (proč se model načítá pomalu / padá).
+  { ollama -v 2>&1; nvidia-smi 2>&1; journalctl -u ollama --no-pager 2>&1 | tail -n 400; } \
+    > /opt/bench-results/ollama-diag.log 2>/dev/null
   upload
   shutdown -c 2>/dev/null; shutdown -h +2 "LexisLocal bench hotov"
 }
@@ -72,7 +76,13 @@ trap 'echo "!! přijat signál, ukončuji"; exit 143' TERM INT
 
 # 2) Ollama + Node.js 22
 curl -fsSL https://ollama.com/install.sh | sh
+# Ollama vzdá načtení modelu po 5 min (OLLAMA_LOAD_TIMEOUT). První načtení na čerstvém
+# serveru trvá i 4–5 min → prodloužit na 15 min.
+mkdir -p /etc/systemd/system/ollama.service.d
+printf '[Service]\nEnvironment=OLLAMA_LOAD_TIMEOUT=15m\n' > /etc/systemd/system/ollama.service.d/load-timeout.conf
+systemctl daemon-reload
 systemctl enable --now ollama
+systemctl restart ollama
 if ! command -v node >/dev/null || [ "$(node -v | cut -c2- | cut -d. -f1)" -lt 18 ]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y nodejs
@@ -86,34 +96,19 @@ cd /opt/LexisLocal
 
 # 4) Režim se zdroji potřebuje z npm jen klienta Ollamy (lib/rag.js) — bez celého
 #    `npm install` aplikace (canvas, tesseract…). Verze z package-lock.json.
+# undici: srovnávače jím vypnou 300s limit Node fetch na odpověď (pomalé první načtení modelu).
+OLLAMA_VER=$(node -e 'const p=require("./package-lock.json").packages||{};console.log((p["node_modules/ollama"]||{}).version||"0.5")')
+npm install --prefix /opt/nodeps --no-audit --no-fund "ollama@$OLLAMA_VER" dotenv undici
+export NODE_PATH=/opt/nodeps/node_modules
 if [ "$MODE" != "plain" ]; then
-  OLLAMA_VER=$(node -e 'const p=require("./package-lock.json").packages||{};console.log((p["node_modules/ollama"]||{}).version||"0.5")')
-  npm install --prefix /opt/nodeps --no-audit --no-fund "ollama@$OLLAMA_VER" dotenv
-  export NODE_PATH=/opt/nodeps/node_modules
   # stažení přes API (nezávislé na CLI/$HOME); čeká, až je model celý stažený
   curl -sf http://127.0.0.1:11434/api/pull -d "{\"model\":\"$EMBEDDING_MODEL\",\"stream\":false}" >/dev/null \
     && echo "embedding $EMBEDDING_MODEL stažen" || echo "!! stažení $EMBEDDING_MODEL selhalo"
   [ -f "$KB" ] || echo "!! $KB v repu chybí — režim se zdroji nepůjde"
 fi
 
-# 5) Předem stáhnout modely s opakováním — stahování z registry Ollamy občas spadne
-#    („terminated“) a srovnávač by model jen přeskočil.
-IFS=',' read -ra _MS <<< "$MODELS"
-for m in "${_MS[@]}"; do
-  for try in 1 2 3; do
-    curl -sf --max-time 3600 http://127.0.0.1:11434/api/pull -d "{\"model\":\"$m\",\"stream\":false}" >/dev/null \
-      && { echo "model $m stažen"; break; } || { echo "!! stažení $m selhalo (pokus $try)"; sleep 20; }
-  done
-done
-
-# 5b) Zahřát každý model jednou předem (bez časového limitu). První načtení z čerstvého
-#     disku může trvat přes 300 s a Node fetch pak spojení utne („fetch failed“).
-for m in "${_MS[@]}"; do
-  t=$(date +%s)
-  curl -s --max-time 1800 http://127.0.0.1:11434/api/generate \
-    -d "{\"model\":\"$m\",\"prompt\":\"ano\",\"stream\":false,\"options\":{\"num_predict\":1,\"num_ctx\":8192}}" >/dev/null \
-    && echo "model $m zahřát za $(( $(date +%s) - t )) s" || echo "!! zahřátí $m selhalo"
-done
+# 5) Modely stahuje sám srovnávač (streamovaně, 3 pokusy). Dřívější předstažení a zahřátí
+#    curlem se neosvědčilo — po něm se každý model načítal přes 5 min.
 
 # 6) Benchmark
 ARGS=(--out /opt/bench-results --timeout 900)
@@ -145,7 +140,7 @@ if [ -n "$LOAD_LEVELS" ]; then
   for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 2; done
   export OLLAMA_NUM_PARALLEL="$MAXPAR"
   LEFT=$(( BENCH_SECONDS - ($(date +%s) - START_TS) )); [ "$LEFT" -lt 120 ] && LEFT=120
-  timeout "$LEFT" node backend/scripts/load_bench.js --models "$MODELS" --levels "$LOAD_LEVELS" \
+  timeout "$LEFT" node backend/scripts/load_bench.js --models "${LOAD_MODELS:-$MODELS}" --levels "$LOAD_LEVELS" \
     --context-file /opt/ctx.txt --out /opt/bench-results --rounds 2 --num-ctx 4096
   echo "=== zátěžový test doběhl (exit $?; 124 = vypršel čas)"
 fi
