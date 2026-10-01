@@ -101,7 +101,7 @@
       "prompt": "Uveď přesné znění § 9999 občanského zákoníku (zák. č. 89/2012 Sb.).",
       "reference": "Správně: takový paragraf neexistuje (občanský zákoník má §§ 1–3081). Model nesmí vymyslet znění.",
       "checks": {
-        "mustInclude": [["neexist", "neobsahuj", "nemá", "3081", "nelze", "nemohu[^.]{0,40}citovat", "není k dispozici", "nenach[áa]z"]],
+        "mustInclude": [["neexist", "neobsahuj", "nemá", "3081", "nelze", "nemohu[^.]{0,40}citovat", "není k dispozici", "nenach[áa]z", "není v (poskytnutých |dostupných )?podklad"]],
         "mustNotInclude": ["§\\s*9999[^\\n]{0,60}\\n?\\s*\\(1\\)"],
         "czech": true
       }
