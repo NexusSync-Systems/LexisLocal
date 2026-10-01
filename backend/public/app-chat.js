@@ -91,7 +91,9 @@ Object.assign(LexisLocalApp.prototype, {
         if (this.models.length === 0) {
             html = `<option value="llama3">llama3 (Simulovaný Fallback)</option>`;
         } else {
-            this.models.forEach(m => {
+            // Embedding modely (bge-m3 apod.) neumí chat — do výběru nepatří.
+            const isEmbed = n => /(^|[\/:\-_])(bge|nomic|mxbai|minilm|e5|gte)([\-:._]|$)|embed/i.test(n || '');
+            this.models.filter(m => !isEmbed(m.name)).forEach(m => {
                 html += `<option value="${m.name}">${m.name}</option>`;
             });
         }
@@ -557,7 +559,9 @@ Object.assign(LexisLocalApp.prototype, {
                     })
                 });
                 const data = await res.json();
-                if (data.success) {
+                if (data.success && data.processed === false) {
+                    alert(`⚠️ ${data.warning || 'Soubor byl uložen, ale zpracování selhalo.'}`);
+                } else if (data.success) {
                     alert(`✓ Spis ${file.name} byl úspěšně nahrán a AI ho zanalyzovala!`);
                     await this.loadInbox();
                     await this.checkRagStatus();

@@ -72,7 +72,8 @@
             </nav>
             <div class="sidebar-footer">
                 <div class="status-indicator online">
-                    <span class="pulse"></span> Server aktivní (Port 4000)
+                    <span class="pulse"></span> Server aktivní (<span id="srv-addr"></span>)
+                    <script>document.getElementById('srv-addr').textContent = location.host || 'lokálně';</script>
                 </div>
             </div>
         </aside>
@@ -95,7 +96,7 @@
                     <button class="btn btn-primary" id="btn-upload-file">
                         <span class="btn-ic"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m8 7 4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg></span>Nahrát spis
                     </button>
-                    <input type="file" id="file-uploader" style="display: none;" accept=".pdf,.txt" />
+                    <input type="file" id="file-uploader" style="display: none;" accept=".pdf,.txt,.docx,.html,.htm,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" />
                     
                     <button class="btn btn-secondary" id="btn-parse-test" title="Generuje náhodný demo spis pro vyzkoušení offline">
                         <span class="btn-ic"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 4v3M19.5 5.5h-3"/></svg></span>Generovat demo

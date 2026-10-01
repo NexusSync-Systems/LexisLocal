@@ -135,6 +135,13 @@ for d in /opt/zakony/*/; do
   NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --agent resersnik --dir "$d" \
     --api https://127.0.0.1 --token "$TOKEN" --delay 0 2>&1 | tail -n 3
 done
+# 5b) Judikatura → oborové báze (_kb_obor_<slug>); podsložka archivu = obor
+JUD="backend/eval/kb/judikatura.tar.gz"
+if [ -f "$JUD" ]; then
+  mkdir -p /opt/judikatura && tar -xzf "$JUD" -C /opt/judikatura
+  NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --root /opt/judikatura \
+    --api https://127.0.0.1 --token "$TOKEN" --delay 0 2>&1 | tail -n 5
+fi
 echo "=== báze naplněna $(date -Is)"
 echo "Báze zákonů naplněna: $(date -Is)" >> "$OUT/_connect.txt"
 upload

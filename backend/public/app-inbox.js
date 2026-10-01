@@ -152,8 +152,12 @@ Object.assign(LexisLocalApp.prototype, {
 
         // Group files by caseNumber (spisová značka)
         const groups = {};
+        // Dokumenty BEZ zjištěné sp. zn. se NESMÍ slévat do jednoho „spisu“ — dřív
+        // nesouvisející e-mail, smlouva a dopis skončily pod „Neznámá sp. zn.“ se
+        // sdílenými (cizími) účastníky a lhůtou. Každý takový dokument = vlastní skupina.
+        const hasRealCaseNo = cn => !!cn && !/^(nezn[aá]m|nezji[sš]t|bez sp)/i.test(String(cn).trim());
         filtered.forEach(doc => {
-            const caseNum = doc.caseNumber || "Bez sp. zn.";
+            const caseNum = hasRealCaseNo(doc.caseNumber) ? doc.caseNumber : `Bez sp. zn. — ${doc.fileName}`;
             if (!groups[caseNum]) {
                 groups[caseNum] = [];
             }
@@ -183,8 +187,9 @@ Object.assign(LexisLocalApp.prototype, {
             const filesWithDeadline = files.filter(f => f.deadlineDays && f.deadlineDate);
             let closestFile = null;
             if (filesWithDeadline.length > 0) {
+                // Nejbližší = nejdřívější DATUM konce lhůty (ne nejkratší délka lhůty).
                 closestFile = filesWithDeadline.reduce((closest, f) => {
-                    return (!closest || f.deadlineDays < closest.deadlineDays) ? f : closest;
+                    return (!closest || String(f.deadlineDate) < String(closest.deadlineDate)) ? f : closest;
                 }, null);
             }
 
@@ -195,7 +200,9 @@ Object.assign(LexisLocalApp.prototype, {
             // Group deadline html
             let deadlineHtml = '';
             if (closestFile) {
-                const isCritical = closestFile.deadlineDays <= 3;
+                // Kritické = do konce lhůty zbývají ≤ 3 dny (dřív se brala délka lhůty).
+                const daysLeft = Math.ceil((new Date(closestFile.deadlineDate + 'T23:59:59') - new Date()) / 86400000);
+                const isCritical = daysLeft <= 3;
                 const criticalClass = isCritical ? 'critical' : '';
                 const warningEmoji = isCritical ? '🚨' : '📅';
                 deadlineHtml = `
@@ -258,7 +265,7 @@ Object.assign(LexisLocalApp.prototype, {
                     </div>
                     <div class="inbox-info" style="flex-grow: 1;">
                         <div class="inbox-info-header" style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                            <h4 style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Spis sp. zn.: ${escapeHtml(caseNum)}</h4>
+                            <h4 style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${caseNum.startsWith('Bez sp. zn. — ') ? 'Dokument bez sp. zn.: ' + escapeHtml(caseNum.slice(14)) : 'Spis sp. zn.: ' + escapeHtml(caseNum)}</h4>
                             ${insolWarning}
                         </div>
                         <div class="parties-text" style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 12px;">
@@ -495,7 +502,10 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async analyzeEntireCase(caseNum) {
-        const groupFiles = this.inbox.filter(f => f.caseNumber === caseNum);
+        const SOLO = 'Bez sp. zn. — ';
+        const groupFiles = String(caseNum).startsWith(SOLO)
+            ? this.inbox.filter(f => f.fileName === String(caseNum).slice(SOLO.length))
+            : this.inbox.filter(f => f.caseNumber === caseNum);
         if (groupFiles.length === 0) {
             alert("Ve spisu nebyly nalezeny žádné dokumenty.");
             return;

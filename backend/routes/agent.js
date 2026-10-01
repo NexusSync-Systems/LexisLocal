@@ -19,6 +19,9 @@ const ollama = require('../lib/ai_provider'); // Ollama | OpenAI | Anthropic (st
 const { generateAgentFallback } = require('../lib/agent_fallback');
 const { buildRagScope } = require('../lib/rag_request');
 const agentTools = require('../lib/agent_tools'); // interní tool-registry (Fáze 1, za AGENT_TOOLS=1)
+const { buildDateFacts } = require('../lib/date_facts');
+const { guardInventedIdentifiers, checkLawNames, buildWarnings } = require('../lib/output_guard');
+const { agentNumCtx, isEmbeddingModel, isModelMissingError } = require('../lib/agent_options');
 
 // POST /api/agent/:agentId - Volání agenta s modelem dle výběru
 router.post('/:agentId', async (req, res) => {
@@ -34,6 +37,11 @@ router.post('/:agentId', async (req, res) => {
 
     // Choose model (default to llama3 if not specified)
     const selectedModel = model || CHAT_MODEL;
+    // Embedding model (bge-m3 apod.) neumí chat — dřív to skončilo „simulovaným fallbackem“
+    // s HTTP 200 a hláškou, že neběží Ollama. Teď jasná chyba 400.
+    if (isEmbeddingModel(selectedModel)) {
+        return res.status(400).json({ error: `Model „${selectedModel}“ je vyhledávací (embedding) model a neumí odpovídat. Zvolte chatovací model.` });
+    }
     console.log(`🤖 Volám agenta [${agent.name}] s modelem [${selectedModel}]`);
 
     // systemPromptText musí být viditelný i ve větvi catch (fallback loguje jeho hash).
@@ -70,6 +78,9 @@ router.post('/:agentId', async (req, res) => {
 
         // Retrieve relevant historical context from RAG memory
         let ragSources = [];
+        // Pasáže, které model skutečně dostal — kontrola citací je musí znát, jinak
+        // označí za neověřené i § doslovně citované z báze zákonů.
+        let ragContextChunks = [];
         try {
             if (resolvedFilters) {
                 console.log(`🧠 RAG: Aktivní filtry pro vyhledávání: ${JSON.stringify(resolvedFilters)}`);
@@ -86,17 +97,30 @@ router.post('/:agentId', async (req, res) => {
                 // Úroveň přístupu 'redacted': klientské pasáže (scope=null) předáme
                 // ANONYMIZOVANĚ; vlastní znalostní báze agenta (scope=_kb_*) zůstává beze změny.
                 const redact = !!(resolvedFilters && resolvedFilters.redactClient);
-                const ragContextText = highConfidenceMatches
-                    .map(m => {
-                        const passage = (redact && !m.scope) ? anonymizeText(m.text) : m.text;
-                        return `[Zdrojový spis: ${m.fileName}, Shoda: ${Math.round(m.score * 100)}%]:\n${passage}`;
-                    })
-                    .join('\n\n---\n\n');
-
-                messages.push({
-                    role: 'system',
-                    content: `Historický kontext a zjištěné precedenty z klientských spisů v archivu:\n${ragContextText}\n\nVýše uvedené historické pasáže a informace využij k přesnější argumentaci a přizpůsobení stylu, pokud je to vhodné.`
-                });
+                const isKb = m => typeof m.scope === 'string' && m.scope.startsWith('_kb_');
+                const fmt = m => {
+                    const passage = (redact && !m.scope) ? anonymizeText(m.text) : m.text;
+                    ragContextChunks.push({ text: passage, fileName: m.fileName });
+                    return `[Zdroj: ${m.fileName}, Shoda: ${Math.round(m.score * 100)}%]:\n${passage}`;
+                };
+                const kbMatches = highConfidenceMatches.filter(isKb);
+                const clientMatches = highConfidenceMatches.filter(m => !isKb(m));
+                // Zákony/judikatura z báze NESMÍ být podané jako „klientské spisy“ — model
+                // pak píše „podle zadaných spisů“ a s ustanoveními zachází volně (změřeno
+                // 1. 10. 2026: odvolání „do dvou měsíců“ místo 15 dnů). Rámec jako v model_bench.
+                if (kbMatches.length > 0) {
+                    messages.push({
+                        role: 'system',
+                        content: `Podklady ze znalostní báze (zákony, judikatura):\n${kbMatches.map(fmt).join('\n\n---\n\n')}\n\n` +
+                            'Při odpovědi vycházej z těchto podkladů a cituj jen ustanovení, která v nich jsou. Lhůty a čísla přebírej doslovně. Pokud podklady na otázku nestačí, řekni to.'
+                    });
+                }
+                if (clientMatches.length > 0) {
+                    messages.push({
+                        role: 'system',
+                        content: `Historický kontext a zjištěné precedenty z klientských spisů v archivu:\n${clientMatches.map(fmt).join('\n\n---\n\n')}\n\nVýše uvedené historické pasáže a informace využij k přesnější argumentaci a přizpůsobení stylu, pokud je to vhodné.`
+                    });
+                }
                 console.log(`🧠 RAG: Obohatil jsem systémovou zprávu agenta [${agent.name}] o ${highConfidenceMatches.length} sémantických pasáží.`);
             }
         } catch (ragErr) {
@@ -108,9 +132,21 @@ router.post('/:agentId', async (req, res) => {
             messages.push({ role: 'system', content: `Kontext dokumentu / spisové podklady:\n${anonymizedContext}` });
         }
 
+        // Datumovou aritmetiku dělá program, ne model (viz lib/date_facts.js).
+        const dateFacts = buildDateFacts(`${prompt || ''}\n${context || ''}`);
+        if (dateFacts) messages.push({ role: 'system', content: dateFacts.text });
+
         messages.push({ role: 'user', content: prompt });
 
-        const chatOptions = { temperature: agentTemperature(agent, 0.3) };
+        // Okno kontextu: bez num_ctx Ollama použije výchozí malé okno (2–4k tokenů) a dlouhý
+        // spis TIŠE ořízne zepředu — změřeno 1. 10. 2026: u 40článkové smlouvy model viděl
+        // jen konec a riziko v čl. 31 nenašel. AGENT_NUM_CTX (výchozí 8192).
+        const numCtx = agentNumCtx();
+        const chatOptions = { temperature: agentTemperature(agent, 0.3), num_ctx: numCtx };
+        // Hrubý odhad tokenů (čeština ~3 znaky/token); při přetečení to advokátovi řekneme.
+        const approxTokens = Math.round(messages.reduce((n, m) => n + String(m.content || '').length, 0) / 3);
+        const contextOverflow = approxTokens > numCtx * 0.85;
+        if (contextOverflow) console.warn(`⚠️ Vstup agenta ~${approxTokens} tokenů > okno ${numCtx} — část textu model neuvidí.`);
         // Tool-calling (Fáze 1, read-only): agent si smí sám došáhnout pro fakta (search_rag,
         // get_document, check_registry) v mezích svých oprávnění. Za AGENT_TOOLS=1; jinak
         // beze změny. RAG kontext je už předvyplněný výše — tooly slouží ke zpřesnění.
@@ -142,7 +178,7 @@ router.post('/:agentId', async (req, res) => {
         let citationCheck = null;
         try {
             const { verifyCitationsWithSources } = require('../lib/citation_verifier');
-            const cc = await verifyCitationsWithSources(response.message.content, {});
+            const cc = await verifyCitationsWithSources(response.message.content, { contextChunks: ragContextChunks });
             citationCheck = cc ? {
                 total: cc.total,
                 unverifiedCount: cc.unverifiedCount,
@@ -152,6 +188,20 @@ router.post('/:agentId', async (req, res) => {
             } : null;
         } catch (ccErr) {
             console.warn('⚠️ Agent: ověření citací selhalo (nekritické):', ccErr.message);
+        }
+
+        // Deterministická kontrola výstupu: vymyšlené identifikátory → pole k doplnění,
+        // nesoulad čísla a názvu předpisu, neověřené citace → upozornění pod odpovědí.
+        let outputGuard = null;
+        try {
+            const sourceText = [prompt, context, ...ragContextChunks.map(c => c.text)].filter(Boolean).join('\n');
+            const g = guardInventedIdentifiers(response.message.content, sourceText);
+            const lawIssues = checkLawNames(g.text);
+            const warn = buildWarnings({ replaced: g.replaced, lawIssues, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0 });
+            response.message.content = g.text + warn;
+            outputGuard = { replaced: g.replaced, lawIssues };
+        } catch (gErr) {
+            console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);
         }
 
         const durationMs = Date.now() - startTime;
@@ -198,10 +248,16 @@ router.post('/:agentId', async (req, res) => {
             oborDetected: oborDetection,
             citationCheck: citationCheck,
             toolsUsed: toolsUsed,
+            contextOverflow: contextOverflow ? { approxTokens, numCtx } : null,
+            dateFacts: dateFacts ? dateFacts.facts : null,
+            outputGuard: outputGuard,
             timestamp: new Date().toISOString()
         });
 
      } catch (err) {
+        if (isModelMissingError(err)) {
+            return res.status(400).json({ error: `Model „${selectedModel}“ není na serveru nainstalován. Zvolte jiný model nebo ho stáhněte v Nastavení.` });
+        }
         console.warn(`⚠️ Selhalo spojení s Ollama (${err.message}). Používám robustní lokální simulovaný fallback.`);
         const fallbackResponse = generateAgentFallback(agentId, prompt);
         const durationMs = Date.now() - startTime;

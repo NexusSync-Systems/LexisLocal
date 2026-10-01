@@ -4,6 +4,7 @@
  * agents with model-tiering, accumulates context, and synthesizes a final response.
  */
 
+const { agentNumCtx } = require('./agent_options');
 const { loadAgents, agentTemperature } = require('./agents');
 const { CHAT_MODEL, RAG_MIN_SCORE } = require('./model_config');
 const { anonymizeText } = require('./anonymizer'); // GDPR: kontext se anonymizuje před modelem
@@ -175,7 +176,7 @@ class ChiefOrchestrator {
                 const response = await ollama.chat({
                     model: stepModel,
                     messages: messages,
-                    options: { temperature: agentTemperature(agent, 0.2) }
+                    options: { temperature: agentTemperature(agent, 0.2), num_ctx: agentNumCtx() }
                 });
 
                 const stepResult = response.message.content;
@@ -276,7 +277,7 @@ class ChiefOrchestrator {
             const response = await ollama.chat({
                 model: globalModel,
                 messages: synthesisMessages,
-                options: { temperature: 0.1 }
+                options: { temperature: 0.1, num_ctx: agentNumCtx() }
             });
             finalResponse = response.message.content;
 
@@ -350,7 +351,7 @@ class ChiefOrchestrator {
         const response = await ollama.chat({
             model: usedModel,
             messages: messages,
-            options: { temperature: agentTemperature(agent, 0.2) }
+            options: { temperature: agentTemperature(agent, 0.2), num_ctx: agentNumCtx() }
         });
         const content = (response && response.message && response.message.content) || '';
         const durationMs = Date.now() - t0;
@@ -449,7 +450,7 @@ Vytvoř maximálně 2 až 4 logické a vysoce efektivní kroky tak, aby na sebe 
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: prompt }
                 ],
-                options: { temperature: 0.1 }
+                options: { temperature: 0.1, num_ctx: agentNumCtx() }
             });
 
             const contentText = response.message.content.trim();

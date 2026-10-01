@@ -15,7 +15,7 @@ const { extractLexisSpecFromDocx } = require('./lexis-spec');
 const { logEvent } = require('./audit');
 const Mutex = require('./mutex');
 const { anonymizeText } = require('./anonymizer');
-const { calculateDeadlineDate, collectUnitDeadlines, runAIExtractor } = require('./extraction'); // sdílený AI-extraktor
+const { calculateDeadlineDate, collectUnitDeadlines, runAIExtractor, extractDeliveryDates } = require('./extraction'); // sdílený AI-extraktor
 
 const { WATCH_DIR, dataPath } = require('./config'); // jeden zdroj pravdy, viz lib/config.js
 const { getIngestDir } = require('./config');
@@ -190,7 +190,7 @@ async function processDocument(filePath) {
             if (refinedMetadata.defendant) metadata.defendant = refinedMetadata.defendant;
             if (refinedMetadata.deadlineDays !== undefined) {
                 metadata.deadlineDays = refinedMetadata.deadlineDays;
-                metadata.deadlineDate = calculateDeadlineDate(refinedMetadata.deadlineDays);
+                metadata.deadlineDate = calculateDeadlineDate(refinedMetadata.deadlineDays, metadata.deliveryDate || undefined);
             }
             if (refinedMetadata.summary) metadata.summary = refinedMetadata.summary;
         }
@@ -243,8 +243,13 @@ async function processDocument(filePath) {
         defendant: metadata.defendant || "Nezjištěn",
         deadlineDays: metadata.deadlineDays || 0,
         deadlineDate: metadata.deadlineDate || null,
+        deadlineBase: metadata.deadlineBase || null,
+        deliveryDate: metadata.deliveryDate || null,
+        deliveryConflict: !!metadata.deliveryConflict,
         detectedDeadlines: unitDeadlines,
-        summary: metadata.summary || "Nově stažený dokument připravený ke zpracování.",
+        summary: (metadata.deliveryConflict
+            ? `⚠️ ROZPOR V DATU DORUČENÍ (${(metadata.deliveryDates || []).join(' × ')}) — lhůta počítána od nejdřívějšího, OVĚŘIT. `
+            : '') + (metadata.summary || "Nově stažený dokument připravený ke zpracování."),
         ico: metadata.ico || null,
         inInsolvency: registryData ? registryData.inInsolvency : false,
         insolvencyCase: registryData ? registryData.insolvencyCase : null,
@@ -311,10 +316,16 @@ function runRegexExtractor(text) {
     // 2. Lhůta v dnech: e.g. "lhůta 15 dnů", "do 15 dnů", "ve lhůtě 8 dnů"
     const deadlineReg = /(?:lhůt[aěuouí-]+\s*(?:k\s*vyjádření\s*)?(?:činí|v\s*délce)?\s*|do\s*|ve\s*lhůtě\s*)(\d+)\s*(?:dn[ůía-z]*)/i;
     const matchDeadline = text.match(deadlineReg);
+    // Lhůta běží od DORUČENÍ, ne ode dne zpracování spisu.
+    const delivery = extractDeliveryDates(text);
+    metadata.deliveryDate = delivery.date;
+    metadata.deliveryDates = delivery.all;
+    metadata.deliveryConflict = delivery.conflict;
     if (matchDeadline) {
         const days = parseInt(matchDeadline[1]);
         metadata.deadlineDays = days;
-        metadata.deadlineDate = calculateDeadlineDate(days);
+        metadata.deadlineDate = calculateDeadlineDate(days, delivery.date || undefined);
+        metadata.deadlineBase = delivery.date ? 'doručení' : 'zpracování (datum doručení nenalezeno — OVĚŘIT)';
     }
     
     // 3. Strany sporu

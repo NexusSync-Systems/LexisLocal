@@ -87,6 +87,10 @@ app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
+    // HSTS jen při HTTPS (na http://localhost by prohlížeč zbytečně vynucoval TLS).
+    if (req.secure || process.env.USE_HTTPS === 'true') {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+    }
     next();
 });
 app.use(express.json({ limit: '50mb' }));

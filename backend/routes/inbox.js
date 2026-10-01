@@ -217,14 +217,27 @@ router.post('/upload', async (req, res) => {
         await fs.promises.writeFile(filePath, buffer);
         console.log(`📥 Nahraný soubor uložen na disk: ${filePath}`);
 
+        // Uložené jméno (po sanitizaci) — dřív odpověď opakovala surový vstup, např. „../../x“.
+        const storedName = path.basename(filePath);
+
         // Trigger manual file processing immediately
+        let processingError = null;
         try {
             await processDocument(filePath);
         } catch (procErr) {
-            console.warn(`⚠️ Watcher: Nepodařilo se vynutit okamžité zpracování souboru ${fileName}:`, procErr.message);
+            processingError = procErr.message;
+            console.warn(`⚠️ Watcher: Nepodařilo se vynutit okamžité zpracování souboru ${storedName}:`, procErr.message);
         }
 
-        res.json({ success: true, message: `Soubor ${fileName} byl úspěšně nahrán a zařazen ke zpracování.` });
+        if (processingError) {
+            // Soubor je uložený (watcher ho zkusí znovu), ale advokát musí vědět, že
+            // metadata/lhůty zatím nejsou — dřív API hlásilo úspěch i při chybě.
+            return res.status(202).json({
+                success: true, processed: false, fileName: storedName,
+                warning: `Soubor ${storedName} byl uložen, ale zpracování selhalo: ${processingError}. Lhůty a metadata zatím nejsou k dispozici.`
+            });
+        }
+        res.json({ success: true, processed: true, fileName: storedName, message: `Soubor ${storedName} byl úspěšně nahrán a zpracován.` });
     } catch (err) {
         res.status(500).json({ error: `Chyba při nahrávání souboru: ${err.message}` });
     }

@@ -5,6 +5,7 @@
  * Montuje se v server.js na /api/agent-swarm.
  */
 'use strict';
+const { agentNumCtx } = require('../lib/agent_options');
 
 const express = require('express');
 const { CHAT_MODEL, RAG_MIN_SCORE } = require('../lib/model_config');
@@ -92,7 +93,7 @@ router.post('/debate', async (req, res) => {
         const response1 = await ollama.chat({
             model: selectedModel,
             messages: messages1,
-            options: { temperature: agentTemperature(agent1, 0.3) }
+            options: { temperature: agentTemperature(agent1, 0.3), num_ctx: agentNumCtx() }
         });
 
         const answer1 = response1.message.content;
@@ -123,7 +124,7 @@ router.post('/debate', async (req, res) => {
         const response2 = await ollama.chat({
             model: selectedModel,
             messages: messages2,
-            options: { temperature: agentTemperature(agent2, 0.2) }
+            options: { temperature: agentTemperature(agent2, 0.2), num_ctx: agentNumCtx() }
         });
 
         const answer2 = response2.message.content;

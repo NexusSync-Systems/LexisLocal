@@ -11,6 +11,7 @@
  *   • auto-odpověď smí jít VÝHRADNĚ zpět na authorized_sender.
  */
 'use strict';
+const { agentNumCtx } = require('./agent_options');
 
 const db = require('./database');
 const { logEvent } = require('./audit');
@@ -125,7 +126,7 @@ async function processEmailTask(input) {
                 const r = await withTimeout(ollama.chat({
                     model: agent.preferredModel || CHAT_MODEL,
                     messages: [{ role: 'system', content: agent.systemPrompt }, { role: 'user', content: cleanBody }],
-                    options: { temperature: 0.3 }
+                    options: { temperature: 0.3, num_ctx: agentNumCtx() }
                 }), AI_TIMEOUT_MS);
                 output = r.message.content;
             } catch (e) {
