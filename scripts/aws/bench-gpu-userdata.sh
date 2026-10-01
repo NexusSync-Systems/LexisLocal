@@ -17,14 +17,15 @@ set -uo pipefail
 export HOME="${HOME:-/root}"
 
 RESULTS_BUCKET="lexislocal-bench-results-485237569555"   # S3 bucket na výsledky ("" = nenahrávat)
-MODELS="qwen2.5:14b,qwen2.5:32b"   # prázdné = výchozí kandidáti ze skriptu
+MODELS="qwen2.5:7b,qwen2.5:32b"    # prázdné = výchozí kandidáti ze skriptu
 JUDGE=""                    # soudce (známka 1–5), např. "qwen2.5:32b" — prodlouží běh o ~1 h; "" = bez soudce
-MAX_MINUTES=150             # tvrdý limit běhu instance
+MAX_MINUTES=120             # tvrdý limit běhu instance
 # Režim: "plain" = jen znalosti modelu | "rag" = se zdroji (zákony z KB) | "both" = obojí
 MODE="rag"
 # Zátěžový test (load_bench.js): úrovně souběhu = kolik advokátů se ptá naráz; "" = nespouštět
-LOAD_LEVELS="1,2,4,8"
+LOAD_LEVELS=""
 LOAD_MODELS="qwen2.5:14b"   # modely pro zátěžový test (32b se s 8 souběžnými sloty do 24 GB nevejde)
+RAG_KS="3,5"                # počty pasáží k porovnání (každý = samostatný běh do podsložky k<N>)
 KB="backend/eval/kb/zakony.tar.gz"   # archiv .txt souborů (split-zakon.js) — veřejné zákony, žádná klientská data
 # Vyhledávání nastav STEJNĚ jako v .env aplikace (jinak se výsledky neporovnají):
 export EMBEDDING_MODEL="bge-m3" RAG_HYBRID=1 RAG_HYBRID_ALPHA=0.8 RAG_MIN_SCORE=0.14
@@ -121,8 +122,12 @@ if [ "$MODE" = "plain" ] || [ "$MODE" = "both" ]; then
 fi
 if [ "$MODE" = "rag" ] || [ "$MODE" = "both" ]; then
   LEFT=$(( BENCH_SECONDS - ($(date +%s) - START_TS) )); [ "$LEFT" -lt 120 ] && LEFT=120
-  timeout "$LEFT" node backend/scripts/model_bench.js "${ARGS[@]}" --kb-dir "$KB"
-  echo "=== benchmark se zdroji doběhl (exit $?; 124 = vypršel čas)"
+  for K in ${RAG_KS//,/ }; do
+    LEFT=$(( BENCH_SECONDS - ($(date +%s) - START_TS) )); [ "$LEFT" -lt 120 ] && LEFT=120
+    mkdir -p "/opt/bench-results/k$K"
+    timeout "$LEFT" node backend/scripts/model_bench.js "${ARGS[@]}" --kb-dir "$KB" --rag-k "$K" --out "/opt/bench-results/k$K"
+    echo "=== benchmark se zdroji (k=$K) doběhl (exit $?; 124 = vypršel čas)"
+  done
 fi
 
 # 7) Zátěžový test — kolik souběžných uživatelů zvládne jedna GPU. Kontext každého
