@@ -10,7 +10,7 @@ const { CHAT_MODEL, RAG_MIN_SCORE } = require('../lib/model_config');
 const router = express.Router();
 const crypto = require('crypto');
 const { loadAgents, agentTemperature } = require('../lib/agents');
-const { searchSimilar } = require('../lib/rag');
+const { searchSimilar, agentRagK } = require('../lib/rag');
 const { anonymizeText } = require('../lib/anonymizer');
 const { logEvent } = require('../lib/audit');
 const { calculateInferenceMetrics } = require('../lib/green_monitor');
@@ -74,7 +74,7 @@ router.post('/:agentId', async (req, res) => {
             if (resolvedFilters) {
                 console.log(`🧠 RAG: Aktivní filtry pro vyhledávání: ${JSON.stringify(resolvedFilters)}`);
             }
-            const matches = await searchSimilar(prompt, 3, resolvedFilters, { dedupeKb: true });
+            const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true });
             const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
             ragSources = highConfidenceMatches.map(m => ({
                 fileName: m.fileName,

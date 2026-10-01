@@ -24,7 +24,7 @@
  *                                                             # ze znalostní báze agenta (_kb_<agent>)
  * Další přepínače: --cases <soubor>  --out <složka>  --num-ctx 8192  --no-pull
  *                  --timeout 900 (s na jednu odpověď)  --max-tokens 1500 (strop délky odpovědi)
- *                  --host http://127.0.0.1:11434  --rag-k 3 (počet pasáží)  --rag-min (min. skóre; výchozí RAG_MIN_SCORE z .env)
+ *                  --host http://127.0.0.1:11434  --rag-k 5 (počet pasáží; výchozí RAG_AGENT_K nebo 5)  --rag-min (min. skóre; výchozí RAG_MIN_SCORE z .env)
  *
  * --kb-dir <složka|.tar.gz>: místo šifrované báze LexisLocalu si postaví DOČASNÝ index
  *   z textových souborů (např. výstup split-zakon.js) — stejné dělení na úseky, stejný
@@ -79,7 +79,7 @@ function parseArgs(argv) {
     const out = {
         models: null, cases: null, out: null, judge: null, only: null,
         cpu: false, pull: true, numCtx: 8192, timeoutS: 900, maxTokens: 1500,
-        rag: false, kbDir: null, ragK: 3, ragMin: Number(process.env.RAG_MIN_SCORE || 0.5),
+        rag: false, kbDir: null, ragK: require('../lib/rag').agentRagK(), ragMin: Number(process.env.RAG_MIN_SCORE || 0.5),
         host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'
     };
     for (let i = 0; i < argv.length; i++) {
@@ -93,7 +93,7 @@ function parseArgs(argv) {
         else if (a === '--cpu') out.cpu = true;
         else if (a === '--rag') out.rag = true;
         else if (a === '--kb-dir') { out.kbDir = next(); out.rag = true; }
-        else if (a === '--rag-k') out.ragK = parseInt(next(), 10) || 3;
+        else if (a === '--rag-k') out.ragK = parseInt(next(), 10) || 5;
         else if (a === '--rag-min') out.ragMin = Number(next());
         else if (a === '--no-pull') out.pull = false;
         else if (a === '--num-ctx') out.numCtx = parseInt(next(), 10) || 8192;
@@ -373,6 +373,7 @@ async function buildKbIndex(kbPath, ragModule) {
     const alpha = Number.isFinite(alphaEnv) && alphaEnv >= 0 && alphaEnv <= 1 ? alphaEnv : 0.8;
     return {
         size: chunks.length,
+        chunks, // pro diagnostiku (kb_rank_probe.js)
         mode: hybrid ? `hybrid α=${alpha}` : 'semantic',
         async searchSimilar(query, limit = 5) {
             const qv = await rag.getEmbedding(query);
