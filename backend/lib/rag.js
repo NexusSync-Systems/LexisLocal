@@ -55,12 +55,12 @@ function _rrfK() {
     return (Number.isFinite(k) && k > 0) ? k : 60;
 }
 // Blend sémantického a lexikálního skóre (obě v [0,1]).
-// Počet pasáží z báze pro agenty (rešeršník, spisovatel…). Default 5: při k=3 vypadával
-// u dotazů na promlčení § 629 OZ (4. místo za § 636, § 637 a OSŘ § 194) — model pak
-// zaměnil subjektivní a objektivní lhůtu. Přepis přes RAG_AGENT_K (1–10).
+// Počet pasáží z báze pro agenty (rešeršník, spisovatel…). Default 3. Změřeno na L4
+// (2026-10-01, 10 úloh): k=5 qwen2.5:7b zhoršilo z 92 % na 86 % (víc šumu → špatný §
+// u nájmu i odvolání), qwen2.5:32b beze změny (98 % při k=3 i k=5). Přepis RAG_AGENT_K (1–10).
 function agentRagK() {
     const k = parseInt(process.env.RAG_AGENT_K, 10);
-    return (Number.isFinite(k) && k >= 1 && k <= 10) ? k : 5;
+    return (Number.isFinite(k) && k >= 1 && k <= 10) ? k : 3;
 }
 
 function blendScore(semantic, lexical, alpha) {

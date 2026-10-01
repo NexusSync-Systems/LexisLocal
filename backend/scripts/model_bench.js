@@ -24,7 +24,7 @@
  *                                                             # ze znalostní báze agenta (_kb_<agent>)
  * Další přepínače: --cases <soubor>  --out <složka>  --num-ctx 8192  --no-pull
  *                  --timeout 900 (s na jednu odpověď)  --max-tokens 1500 (strop délky odpovědi)
- *                  --host http://127.0.0.1:11434  --rag-k 5 (počet pasáží; výchozí RAG_AGENT_K nebo 5)  --rag-min (min. skóre; výchozí RAG_MIN_SCORE z .env)
+ *                  --host http://127.0.0.1:11434  --rag-k 3 (počet pasáží; výchozí RAG_AGENT_K nebo 3)  --rag-min (min. skóre; výchozí RAG_MIN_SCORE z .env)
  *
  * --kb-dir <složka|.tar.gz>: místo šifrované báze LexisLocalu si postaví DOČASNÝ index
  *   z textových souborů (např. výstup split-zakon.js) — stejné dělení na úseky, stejný
@@ -93,7 +93,7 @@ function parseArgs(argv) {
         else if (a === '--cpu') out.cpu = true;
         else if (a === '--rag') out.rag = true;
         else if (a === '--kb-dir') { out.kbDir = next(); out.rag = true; }
-        else if (a === '--rag-k') out.ragK = parseInt(next(), 10) || 5;
+        else if (a === '--rag-k') out.ragK = parseInt(next(), 10) || 3;
         else if (a === '--rag-min') out.ragMin = Number(next());
         else if (a === '--no-pull') out.pull = false;
         else if (a === '--num-ctx') out.numCtx = parseInt(next(), 10) || 8192;
