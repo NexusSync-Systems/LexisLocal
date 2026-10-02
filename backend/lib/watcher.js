@@ -174,7 +174,9 @@ async function processDocument(filePath) {
     
     if (!text || !text.trim()) {
         console.warn(`⚠️ Soubor ${fileName} je prázdný nebo nelze přečíst.`);
-        return;
+        // Volající (upload) musí vědět, že dokument NEBYL zpracován — dřív API hlásilo
+        // úspěch a dokument se v doručené poště vůbec neobjevil (test 2. 10. 2026).
+        return { ok: false, reason: 'z dokumentu nejde přečíst text (prázdný či poškozený soubor, nebo selhalo OCR)' };
     }
     
     // 1. Step: Run High-Quality Czech Heuristic Regex Engine (Bulletproof Fallback)

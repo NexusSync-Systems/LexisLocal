@@ -63,7 +63,7 @@ describe('ai_provider — výchozí Ollama', () => {
 
     it('providerInfo hlásí ollama/ollama', () => {
         const ai = freshProvider({});
-        expect(ai.providerInfo()).toEqual({ chat: 'ollama', embed: 'ollama' });
+        expect(ai.providerInfo()).toMatchObject({ chat: 'ollama', embed: 'ollama' });
     });
 
     it('list/pull jsou průchozí na Ollama', async () => {

@@ -37,6 +37,12 @@ function timeItem(hours, rate) {
 function normalizeItem(raw) {
     raw = raw || {};
     const popis = String(raw.popis || 'Položka').trim();
+    // Záporné či nečíselné položky odmítnout (test 2. 10. 2026: faktura s −500 Kč prošla).
+    for (const k of ['qty', 'unitPrice', 'amount']) {
+        if (raw[k] != null && (!Number.isFinite(Number(raw[k])) || Number(raw[k]) < 0)) {
+            throw new Error(`Položka „${popis}“: ${k} musí být nezáporné číslo.`);
+        }
+    }
     // qty × unitPrice má přednost; jinak přímá amount.
     if (raw.qty != null && raw.unitPrice != null) {
         const qty = Number(raw.qty) || 0;

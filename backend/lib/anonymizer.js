@@ -36,6 +36,18 @@ function anonymizeText(text) {
     // 2. Anonymize Czech Birth Numbers (rodná čísla: e.g. 850708/1234 or 901231/123)
     result = result.replace(/\b\d{6}\/\d{3,4}\b/g, '[RODNÉ ČÍSLO]');
     
+    // 2b. Bankovní účty a IBAN (test 2. 10. 2026: „účet 123456789/0800“ zůstal čitelný).
+    //     Spisové značky („12 C 45/2026“) mají za lomítkem rok — proto bez kontextu
+    //     redigujeme jen čísla s ≥ 6 číslicemi před lomítkem, s kontextem (účet, č. ú.,
+    //     bankovní spojení) i kratší.
+    result = result.replace(/\bCZ\d{2}(?:\s?\d{4}){5}\b/g, '[ÚČET]');
+    result = result.replace(/((?:č\.\s?ú\.|čísl[oa]\s+účtu|účt?[uě]?|účet|bankovní\s+spojení|bank\.\s*spoj\.)\s*(?:č\.\s*)?:?\s*)((?:\d{1,6}-)?\d{2,10}\s?\/\s?\d{4})\b/gi, '$1[ÚČET]');
+    result = result.replace(/\b(?:\d{1,6}-)?\d{6,10}\/\d{4}\b/g, '[ÚČET]');
+
+    // 2c. Adresa bydliště fyzické osoby („bytem Okružní 5, Jihlava“). Sídlo firmy
+    //     je veřejný údaj, proto jen bytem / bydliště / trvalý pobyt.
+    result = result.replace(/\b(bytem|trvale\s+bytem|bydli[šs]t[eě]m?|trval[ýé]m?\s+pobytem|adresa\s+bydli[šs]t[eě])(\s*:?\s*)([^\n;]{3,120}?)(?=\.\s|\.$|;|\n|$)/gi, '$1$2[ADRESA]');
+
     // 3. Anonymize Czech Phone Numbers. Dřívější vzor bral JAKÉKOLI 9místné číslo
     //    (spisové značky, částky, IČO). Nově vyžadujeme předvolbu, oddělovače,
     //    nebo telefonní klíčové slovo, aby nedocházelo k nadměrné redakci.

@@ -20,6 +20,10 @@ describe('isPublicPath', () => {
     test('API cesty veřejné nejsou', () => {
         expect(auth.isPublicPath('GET', '/api/status')).toBe(false);
         expect(auth.isPublicPath('POST', '/api/email/send')).toBe(false);
+        // přípona statického souboru NESMÍ odemknout API (obejití tokenu)
+        expect(auth.isPublicPath('GET', '/api/x.js')).toBe(false);
+        expect(auth.isPublicPath('DELETE', '/api/agent-knowledge/resersnik/zakon.js')).toBe(false);
+        expect(auth.isPublicPath('GET', '/API/spisy/abc.ico')).toBe(false);
     });
 });
 

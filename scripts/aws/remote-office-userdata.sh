@@ -150,5 +150,15 @@ upload
 node backend/scripts/remote_probe.js --base https://127.0.0.1 --token "$TOKEN" --insecure \
   --levels 1,2,4 --rounds 2 --label server-loopback --out "$OUT" || echo "!! loopback test selhal"
 upload
+
+# 7) Celý serverový test (server_suite.js) přes loopback → report do S3 (*_remote/suite/).
+#    RUN_SUITE=0 vypne. Běží na pozadí serveru; testovací objekty mají prefix E2E-.
+if [ "${RUN_SUITE:-1}" = "1" ] && [ -f backend/scripts/server_suite.js ]; then
+  echo "=== server_suite start $(date -Is)"
+  node backend/scripts/server_suite.js --base https://127.0.0.1 --token "$TOKEN" --insecure \
+    --label server-loopback --out "$OUT/suite" 2>&1 | tail -n 60 || echo "!! server_suite skončil s chybou"
+  echo "=== server_suite hotovo $(date -Is)"
+  upload
+fi
 echo "=== připraveno pro vzdálený test, server běží do vypnutí $(date -Is)"
 wait "$SYNC_PID"

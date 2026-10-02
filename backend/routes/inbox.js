@@ -223,7 +223,8 @@ router.post('/upload', async (req, res) => {
         // Trigger manual file processing immediately
         let processingError = null;
         try {
-            await processDocument(filePath);
+            const pr = await processDocument(filePath);
+            if (pr && pr.ok === false) processingError = pr.reason;
         } catch (procErr) {
             processingError = procErr.message;
             console.warn(`⚠️ Watcher: Nepodařilo se vynutit okamžité zpracování souboru ${storedName}:`, procErr.message);

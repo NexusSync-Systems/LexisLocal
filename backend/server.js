@@ -17,6 +17,7 @@ const aiProvider = require('./lib/ai_provider'); // AI backend + pojistka mlčen
 require('./lib/node_check').warnIfUnsupported();
 
 const app = express();
+app.disable('x-powered-by'); // neprozrazovat technologii serveru
 const PORT = process.env.PORT || 4000;
 // Vazba na rozhraní: VÝCHOZÍ loopback (127.0.0.1) — bezpečné pro solo režim,
 // nedostupné z LAN. Firemní/vícouživatelský režim vědomě nastaví BIND_HOST=0.0.0.0
@@ -95,6 +96,15 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Chybné tělo požadavku (nevalidní JSON, příliš velké) → stručná JSON chyba. Dřív Express
+// vrátil HTML se stack trace a cestami na serveru (test 2. 10. 2026).
+app.use((err, req, res, next) => {
+    if (err && (err.type === 'entity.parse.failed' || err.type === 'entity.too.large' || err instanceof SyntaxError)) {
+        const tooLarge = err.type === 'entity.too.large';
+        return res.status(tooLarge ? 413 : 400).json({ error: tooLarge ? 'Požadavek je příliš velký.' : 'Neplatný JSON v těle požadavku.' });
+    }
+    return next(err);
+});
 // Je požadavek z loopbacku (stejný stroj)? Jen tehdy je bezpečné vstříknout
 // token přímo do HTML — přes LAN by to byl únik tokenu komukoli na síti.
 // Pozn.: běžíme bez reverzní proxy, takže se díváme na skutečnou remoteAddress
@@ -200,6 +210,13 @@ app.use('/api/agent', require('./routes/agent'));
 app.use('/api/agent-swarm', require('./routes/agentSwarm'));
 app.use('/api/agent-knowledge', require('./routes/agentKnowledge'));
 app.use('/api/knowledge', require('./routes/knowledge')); // oborová báze (dělený RAG)
+
+// Poslední záchranná síť: neošetřená chyba v routě → 500 bez stack trace a cest.
+app.use((err, req, res, next) => {
+    console.error(`❌ Neošetřená chyba ${req.method} ${req.path}:`, err && err.stack || err);
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: 'Interní chyba serveru.' });
+});
 
 // Root Status
 app.get('/api/status', (req, res) => {

@@ -34,6 +34,9 @@ router.post('/:agentId', async (req, res) => {
     if (!agent) {
         return res.status(404).json({ error: "Agent nebyl nalezen." });
     }
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({ error: 'Zadání (prompt) je povinné.' });
+    }
 
     // Choose model (default to llama3 if not specified)
     const selectedModel = model || CHAT_MODEL;

@@ -1,5 +1,5 @@
 /**
- * routes/registries.js — rozšířená lustrace (ARES + ISIR + SIMULOVANÉ CEE/Katastr)
+ * routes/registries.js — rozšířená lustrace (ARES + ISIR + CEE/Katastr, jsou-li nakonfigurovány)
  * a ukládání prověrky do složky spisu.
  * Montuje se v server.js na /api/registries.
  */
@@ -20,36 +20,11 @@ router.get('/check', async (req, res) => {
     try {
         const result = await checkSubject(ico);
 
-        // Add Simulated Executions (CEE) and Simulated Cadastre (Katastr) for full professional coverage
-        const cleanIco = ico.replace(/\s+/g, '').trim();
-        const lastDigit = parseInt(cleanIco.slice(-1)) || 0;
-
-        // CEE Simulation based on deterministic seed (ICO last digit)
-        // simulated:true je strojově čitelný příznak — frontend NESMÍ tato data
-        // prezentovat jako ověřená (jde o odhad, ne o reálné dotazy do CEE).
-        if (lastDigit % 3 === 0) {
-            result.cee = {
-                simulated: true,
-                activeExecutions: 2,
-                totalAmount: 184500,
-                disclaimer: "SIMULOVÁNO (neověřeno) z CEE. Pro ostrý přístup doplňte přihlašovací údaje Exekutorské komory v nastavení."
-            };
-        } else {
-            result.cee = {
-                simulated: true,
-                activeExecutions: 0,
-                totalAmount: 0,
-                disclaimer: "SIMULOVÁNO (neověřeno) z CEE. Pro ostrý přístup doplňte přihlašovací údaje Exekutorské komory v nastavení."
-            };
-        }
-
-        // Katastr Simulation based on seed
-        result.katastr = {
-            simulated: true,
-            propertiesCount: lastDigit % 2 === 0 ? 1 : 0,
-            hasPlomba: lastDigit % 4 === 0,
-            disclaimer: "SIMULOVÁNO (neověřeno) z Katastru nemovitostí (dálkový přístup)."
-        };
+        // CEE a Katastr: jen skutečná data z lib/registries (s přístupovými údaji). Dřív
+        // tu routa dopočítávala „simulované“ exekuce a plombu z poslední číslice IČO —
+        // advokát by v lustraci viděl smyšlené údaje. Bez přístupu → available:false.
+        if (!result.cee) result.cee = { available: false, configured: false, reason: 'CEE není nakonfigurováno (doplňte přístup Exekutorské komory v nastavení).' };
+        if (!result.katastr) result.katastr = { available: false, configured: false, reason: 'Dálkový přístup do Katastru není nakonfigurován.' };
 
         res.json(result);
     } catch (err) {

@@ -63,3 +63,4 @@ bench-results/
 # texty zákonů po split-zakon.js (do repa jde jen archiv backend/eval/kb/zakony.tar.gz)
 zakony/
 backend/eval/kb/.kb-index-*.json
+backend/eval/server_suite/reports/
