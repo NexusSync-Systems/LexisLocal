@@ -139,17 +139,30 @@ function pseudonymizeText(text) {
     return { text: out, map };
 }
 
-/** Vrátí originální údaje místo symbolů z pseudonymizeText (i „[OSOBA 1]“, „[osoba_1]“). */
-function restorePseudonyms(text, map) {
-    if (!text || !map) return text;
+/**
+ * Vrátí originální údaje místo symbolů z pseudonymizeText.
+ * Automaticky se vrací jen JMÉNA a ADRESY (potřebné v podáních). Rodné číslo, číslo
+ * účtu, telefon a e-mail se NEvracejí — model je mohl vložit i tam, kam nepatří
+ * (test 2. 10. 2026, W3: dopis protistraně obsahoval rodné číslo klientky). Místo
+ * nich zůstane pole „[doplňte: …]“, které advokát vyplní vědomě.
+ * Symbol, který v mapě není (model si vymyslel [ADRESA_2]), se také nahradí polem.
+ */
+const RESTORE_DEFAULT = ['OSOBA', 'ADRESA'];
+const FILL_LABEL = { 'RČ': 'rodné číslo', 'ÚČET': 'číslo účtu', 'TELEFON': 'telefon', 'E-MAIL': 'e-mail', 'OSOBA': 'jméno', 'ADRESA': 'adresa' };
+function restorePseudonyms(text, map, opts = {}) {
+    if (!text) return text;
+    const restoreKinds = new Set(opts.restoreKinds || RESTORE_DEFAULT);
     let out = String(text);
-    Object.keys(map).forEach(ph => {
+    Object.keys(map || {}).forEach(ph => {
         const m = ph.match(/^\[(.+)_(\d+)\]$/);
         if (!m) return;
         const label = m[1].replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
         const re = new RegExp('\\[\\s*' + label + '[_\\s-]?' + m[2] + '\\s*\\]', 'gi');
-        out = out.replace(re, () => map[ph]);
+        out = out.replace(re, () => restoreKinds.has(m[1]) ? map[ph] : `[doplňte: ${FILL_LABEL[m[1]] || 'údaj'}]`);
     });
+    // zbylé (neznámé) symboly → pole k doplnění
+    out = out.replace(/\[\s*(OSOBA|ADRESA|RČ|ÚČET|TELEFON|E-MAIL)[_\s-]?\d+\s*\]/gi,
+        (all, lab) => `[doplňte: ${FILL_LABEL[lab.toUpperCase()] || 'údaj'}]`);
     return out;
 }
 

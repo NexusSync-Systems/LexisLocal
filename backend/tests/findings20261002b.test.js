@@ -67,16 +67,17 @@ describe('3) vratná pseudonymizace', () => {
         const { text, map } = pseudonymizeText(src);
         expect(text).not.toMatch(/Horák|Okružní|jan@example|123456789/);
         expect(text).toMatch(/\[OSOBA_1\]/);
-        const out = restorePseudonyms('Zmocnitel [OSOBA_1], bytem [ADRESA_1], e-mail [E-MAIL_1].', map);
-        expect(out).toBe('Zmocnitel Jan Horák, bytem Okružní 5, Jihlava, e-mail jan@example.cz.');
+        const out = restorePseudonyms('Zmocnitel [OSOBA_1], bytem [ADRESA_1], e-mail [E-MAIL_1], účet [ÚČET_1], [ADRESA_7].', map);
+        // jména a adresy zpět; e-mail/účet jen jako pole k doplnění; vymyšlený symbol taky
+        expect(out).toBe('Zmocnitel Jan Horák, bytem Okružní 5, Jihlava, e-mail [doplňte: e-mail], účet [doplňte: číslo účtu], [doplňte: adresa].');
     });
     test('samotné příjmení dostane stejný symbol', () => {
         const { text } = pseudonymizeText(src);
         expect((text.match(/\[OSOBA_1\]/g) || []).length).toBe(2);
     });
-    test('restore toleruje „[osoba 1]“ a nezamění [OSOBA_11]', () => {
+    test('restore toleruje „[osoba 1]“ a [OSOBA_11] nezamění s [OSOBA_1]', () => {
         const map = { '[OSOBA_1]': 'Jan Horák' };
-        expect(restorePseudonyms('[osoba 1] / [OSOBA_11]', map)).toBe('Jan Horák / [OSOBA_11]');
+        expect(restorePseudonyms('[osoba 1] / [OSOBA_11]', map)).toBe('Jan Horák / [doplňte: jméno]'); // [OSOBA_11] v mapě není → pole, ne záměna
     });
     test('nevratná anonymizace se nezměnila', () => {
         expect(anonymizeText('Jan Horák, tel. 777 123 456')).toBe('[JMÉNO A PŘÍJMENÍ] tel. [TELEFON]');
@@ -121,5 +122,18 @@ describe('5) pokyn pro AI v dokumentu', () => {
     });
     test('běžná smlouva bez falešného poplachu', () => {
         expect(g.detectInjection('Zhotovitel provede dílo do 30 dnů. Objednatel nese riziko škody. Pokyny objednatele jsou závazné.')).toEqual([]);
+    });
+});
+
+describe('W3 (test 2. 10. 2026): rodné číslo se do výstupu nevrací', () => {
+    const { pseudonymizeText, restorePseudonyms } = require('../lib/anonymizer');
+    test('model napíše symbol RČ → výstup má pole k doplnění, ne číslo', () => {
+        const { text, map } = pseudonymizeText('Klientka: Jana Fiktivní, rodné číslo 855712/1234, bytem Okružní 5, Jihlava. Účet 123456789/0800.');
+        const rc = Object.keys(map).find(k => k.startsWith('[RČ_'));
+        expect(rc).toBeTruthy();
+        const out = restorePseudonyms(`Věřitelka [OSOBA_1], r. č. ${rc}, účet [ÚČET_1].`, map);
+        expect(out).not.toMatch(/855712|123456789/);
+        expect(out).toMatch(/Jana Fiktivní/);
+        expect(out).toMatch(/\[doplňte: rodné číslo\]/);
     });
 });
