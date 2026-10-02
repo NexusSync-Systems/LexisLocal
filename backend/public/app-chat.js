@@ -2,6 +2,25 @@
 // Načítá se v index.html PO app.js. Metody se přidávají na LexisLocalApp.prototype.
 Object.assign(LexisLocalApp.prototype, {
 
+    // Text pro tlačítka „do Editoru“ se do onclick NEvkládá (výstup modelu by mohl
+    // rozbít atribut → XSS); uloží se do paměti a onclick nese jen klíč.
+    _chatKeep(text) {
+        this._chatStore = this._chatStore || {};
+        const k = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        this._chatStore[k] = String(text == null ? '' : text);
+        return k;
+    },
+    _chatOut(k) { return (this._chatStore && this._chatStore[k]) || ''; },
+
+    // Odkaz na koncept, který agent uložil (sdílené Koncepty).
+    draftBadgeHtml(draft) {
+        if (!draft) return '';
+        if (draft.error) return `<div style="font-size:0.75rem;color:var(--accent-red);margin-top:6px;">⚠️ Koncept se neuložil: ${escapeHtml(draft.error)}</div>`;
+        if (!draft.id) return '';
+        return `<div style="margin-top:8px;"><button class="btn btn-secondary" style="font-size:0.75rem;padding:4px 10px;" onclick="window.appInstance.openDraft('${_lexEscJsAttr(draft.id)}')">📝 ${draft.created ? 'Uloženo do Konceptů' : 'Nová verze konceptu'} (ke kontrole) — otevřít</button></div>`;
+    },
+
+
     // Odznak „detekován obor" pod odpovědí agenta s judikaturou. `det` = objekt
     // oborDetected z odpovědi API (nebo null → prázdný řetězec).
     oborBadgeHtml(det) {
@@ -205,7 +224,8 @@ Object.assign(LexisLocalApp.prototype, {
                     headers: this.getHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         prompt: userText,
-                        model: modelName
+                        model: modelName,
+                        saveDraft: 'auto' // výstup se uloží do sdílených Konceptů „ke kontrole“
                     })
                 });
                 const data = await res.json();
@@ -224,7 +244,7 @@ Object.assign(LexisLocalApp.prototype, {
                 
                 (data.steps || []).forEach(step => {
                     const agentEmoji = emojis[step.agentId] || step.agentEmoji || "🤖";
-                    const formattedOutput = step.output
+                    const formattedOutput = escapeHtml(step.output || '')
                         .replace(/\n/g, '<br>')
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
                         
@@ -234,15 +254,15 @@ Object.assign(LexisLocalApp.prototype, {
                         <div style="border-left: 2px solid var(--accent-blue); padding-left: 15px; margin-bottom: 20px; position: relative;">
                             <div style="position: absolute; left: -9px; top: 0; background: var(--bg-card); border: 2px solid var(--accent-blue); border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 0.5rem;"></div>
                             <div style="font-size: 0.8rem; font-weight: bold; color: var(--text-primary); display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
-                                <span>${agentEmoji}</span> Krok ${step.step}: ${step.agentName} <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-left: 5px;">${carbon}</span>
+                                <span>${agentEmoji}</span> Krok ${escapeHtml(step.step)}: ${escapeHtml(step.agentName)} <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-left: 5px;">${carbon}</span>
                             </div>
-                            <div style="font-size: 0.75rem; font-style: italic; color: var(--text-muted); margin-bottom: 5px;">Instrukce: "${step.instruction}"</div>
+                            <div style="font-size: 0.75rem; font-style: italic; color: var(--text-muted); margin-bottom: 5px;">Instrukce: "${escapeHtml(step.instruction)}"</div>
                             <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; background: var(--sf-01); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-glass);">${formattedOutput}</div>
                         </div>
                     `;
                 });
 
-                const formattedFinal = data.finalOutput
+                const formattedFinal = escapeHtml(data.finalOutput || '')
                     .replace(/\n/g, '<br>')
                     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
@@ -271,7 +291,8 @@ Object.assign(LexisLocalApp.prototype, {
                         </div>
                         
                         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px;">
-                            <button class="btn btn-secondary" onclick="window.appInstance.sendTextToLexisEditor('${data.finalOutput.replace(/'/g, "\\'").replace(/\n/g, '\\n')}', 'Orchestrované stanovisko')" style="font-size: 0.75rem; padding: 5px 10px;">
+                            ${this.draftBadgeHtml(data.sharedDraft)}
+                            <button class="btn btn-secondary" onclick="window.appInstance.sendTextToLexisEditor(window.appInstance._chatOut('${this._chatKeep(data.finalOutput)}'), 'Orchestrované stanovisko')" style="font-size: 0.75rem; padding: 5px 10px;">
                                 ✍️ Vložit do Editoru
                             </button>
                         </div>
@@ -313,18 +334,19 @@ Object.assign(LexisLocalApp.prototype, {
                 const emoji1 = emojis[agentId] || "🤖";
                 const emoji2 = emojis[agentId2] || "⚖️";
 
-                const formatted1 = data.agent1.response
+                if (!res.ok || !data.agent1 || !data.agent2) throw new Error(data.error || `HTTP ${res.status}`);
+                const formatted1 = escapeHtml(data.agent1.response || '')
                     .replace(/\n/g, '<br>')
                     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
                     
-                const formatted2 = data.agent2.response
+                const formatted2 = escapeHtml(data.agent2.response || '')
                     .replace(/\n/g, '<br>')
                     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
                 output.innerHTML += `
                     <div class="chat-message agent" style="border-left: 3px solid var(--accent-blue); padding-left: 15px; margin-bottom: 20px; background: rgba(0, 102, 204, 0.02); border-radius: 4px 12px 12px 4px; width: 100%;">
                         <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-blue); font-weight: bold; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
-                            <span>👥</span> Spuštěna oponentní diskuse asistentů (Model: ${data.model})
+                            <span>👥</span> Spuštěna oponentní diskuse asistentů (Model: ${escapeHtml(data.model)})
                         </div>
                         ${this.oborBadgeHtml(data.oborDetected)}
 
@@ -335,7 +357,7 @@ Object.assign(LexisLocalApp.prototype, {
                             </div>
                             <div class="message-content" style="flex: 1;">
                                 <span style="font-weight: bold; color: var(--text-primary); font-size: 0.85rem; display: block; margin-bottom: 4px;">
-                                    Prvotní vypracování (${data.agent1.name}):
+                                    Prvotní vypracování (${escapeHtml(data.agent1.name)}):
                                 </span>
                                 <p style="margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--text-muted);">${formatted1}</p>
                             </div>
@@ -350,14 +372,14 @@ Object.assign(LexisLocalApp.prototype, {
                             </div>
                             <div class="message-content" style="flex: 1;">
                                 <span style="font-weight: bold; color: #fca5a5; font-size: 0.85rem; display: block; margin-bottom: 4px;">
-                                    Oponentní posudek & Revize (${data.agent2.name}):
+                                    Oponentní posudek & Revize (${escapeHtml(data.agent2.name)}):
                                 </span>
                                 <p style="margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--text-primary); background: var(--sf-02); padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-glass);">${formatted2}</p>
                             </div>
                         </div>
                         
                         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px;">
-                            <button class="btn btn-secondary" onclick="window.appInstance.sendTextToLexisEditor('=== NÁVRH OD ${data.agent1.name} ===\\n${data.agent1.response.replace(/'/g, "\\'").replace(/\n/g, '\\n')}\\n\\n=== REVIZE A OPONENTURA OD ${data.agent2.name} ===\\n${data.agent2.response.replace(/'/g, "\\'").replace(/\n/g, '\\n')}', 'Oponentní diskuse: ${data.agent1.name} & ${data.agent2.name}')" style="font-size: 0.75rem; padding: 5px 10px;">
+                            <button class="btn btn-secondary" onclick="window.appInstance.sendTextToLexisEditor(window.appInstance._chatOut('${this._chatKeep('=== NÁVRH OD ' + data.agent1.name + ' ===\n' + data.agent1.response + '\n\n=== REVIZE A OPONENTURA OD ' + data.agent2.name + ' ===\n' + data.agent2.response)}'), window.appInstance._chatOut('${this._chatKeep('Oponentní diskuse: ' + data.agent1.name + ' & ' + data.agent2.name)}'))" style="font-size: 0.75rem; padding: 5px 10px;">
                                 ✍️ Odeslat diskusi do Editoru
                             </button>
                         </div>
@@ -380,17 +402,19 @@ Object.assign(LexisLocalApp.prototype, {
                 headers: this.getHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     prompt: userText,
-                    model: modelName
+                    model: modelName,
+                    saveDraft: 'auto' // agent píšící dokumenty (Spisovatel) uloží koncept „ke kontrole“
                 })
             });
             const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
             
             // Remove typing indicator
             const typingEl = document.getElementById(typingId);
             if (typingEl) typingEl.remove();
 
             // Format response content dynamically
-            const formatted = data.response
+            const formatted = escapeHtml(data.response || '')
                 .replace(/\n/g, '<br>')
                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
@@ -403,8 +427,9 @@ Object.assign(LexisLocalApp.prototype, {
                     <div class="message-content">
                         ${this.oborBadgeHtml(data.oborDetected)}
                         <p>${formatted}</p>
+                        ${this.draftBadgeHtml(data.draft)}
                         <span class="subtext" style="display:block; margin-top:5px; font-size:0.7rem; color:var(--text-muted);">
-                            Model: ${data.model} | ${new Date(data.timestamp).toLocaleTimeString('cs-CZ')}
+                            Model: ${escapeHtml(data.model)} | ${new Date(data.timestamp).toLocaleTimeString('cs-CZ')}
                         </span>
                     </div>
                 </div>

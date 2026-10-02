@@ -43,7 +43,7 @@ Object.assign(LexisLocalApp.prototype, {
                     </div>
                 </div>
                 <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-secondary" onclick="window.appInstance.sendTextToLexisEditor('POZOR: Sledovaný subjekt ${alert.name} (IČO: ${alert.ico}) je v INSOLVENCI! Spisová značka: ${alert.caseNumber}, Stav: ${alert.insolvencyStatus}. Bezodkladně přihlaste pohledávky.', 'Insolvenční varování')" style="font-size: 0.8rem; padding: 6px 12px; border: 1px solid var(--border-glass); background: var(--sf-02);">
+                    <button class="btn btn-secondary" onclick="window.appInstance.sendTextToLexisEditor('${_lexEscJsAttr(`POZOR: Sledovaný subjekt ${alert.name} (IČO: ${alert.ico}) je v INSOLVENCI! Spisová značka: ${alert.caseNumber}, Stav: ${alert.insolvencyStatus}. Bezodkladně přihlaste pohledávky.`)}', 'Insolvenční varování')" style="font-size: 0.8rem; padding: 6px 12px; border: 1px solid var(--border-glass); background: var(--sf-02);">
                         ✍️ Odeslat do Editoru
                     </button>
                     <button class="btn btn-primary" onclick="window.appInstance.dismissAlert('${alert.id}')" style="font-size: 0.8rem; padding: 6px 12px; background: rgba(239, 68, 68, 0.8); border: none;">

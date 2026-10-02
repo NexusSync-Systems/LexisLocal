@@ -34,6 +34,10 @@
                     <span class="icon">📥</span> Doručené Spisy
                     <span class="badge" id="inbox-badge" style="display: none;">0</span>
                 </button>
+                <button class="nav-btn" data-tab="drafts">
+                    <span class="icon">📝</span> Koncepty
+                    <span class="badge" id="drafts-badge" style="display: none;" title="Koncepty čekající na kontrolu">0</span>
+                </button>
                 <button class="nav-btn" data-tab="registries">
                     <span class="icon">🔍</span> Lustrační centrum
                 </button>
@@ -950,6 +954,26 @@
                 </section>
 
                 <!-- TAB: MANAGERIAL INTELLIGENCE -->
+                <section class="tab-pane" id="tab-drafts">
+                    <div class="drafts-layout">
+                        <div class="glass drafts-col">
+                            <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+                                <button class="btn btn-primary" onclick="window.appInstance.newDraft()">➕ Nový koncept</button>
+                                <select id="drafts-filter" onchange="window.appInstance.loadDraftsTab()" style="padding:6px 8px;border:1px solid var(--border-glass);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);">
+                                    <option value="">Všechny</option>
+                                    <option value="ke_kontrole">Ke kontrole</option>
+                                    <option value="koncept">Koncept</option>
+                                    <option value="schvaleno">Schváleno</option>
+                                </select>
+                            </div>
+                            <div id="drafts-list" style="display:flex;flex-direction:column;gap:8px;">Načítám…</div>
+                        </div>
+                        <div class="glass drafts-col">
+                            <div id="draft-detail" style="opacity:0.7;">Vyberte koncept vlevo. Koncepty od AI agentů čekají „ke kontrole“ — schvaluje vždy advokát, podpis a odeslání zůstávají v LexisEditoru.</div>
+                        </div>
+                    </div>
+                </section>
+
                 <section class="tab-pane" id="tab-spisova">
                     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
                         <button class="btn btn-primary" onclick="window.appInstance.syncSpisy()">🔄 Synchronizovat z inboxu</button>
@@ -1247,6 +1271,7 @@
     <script src="app-managerial.js"></script>
     <script src="app-email.js"></script>
     <script src="app-spisova.js"></script>
+    <script src="app-drafts.js"></script>
     <!-- Sjednocení emoji → Lucide-style čárové ikony (i pro dynamický obsah) -->
     <script src="app-icons.js"></script>
     <script>

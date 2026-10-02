@@ -2305,3 +2305,33 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .stat-icon .licon { width: 1em; height: 1em; }
 /* v boční navigaci sjednocená velikost s původními ikonami */
 .nav-btn .licon { width: 19px; height: 19px; }
+
+
+/* ── Koncepty (webový LexisEditor Lite) ─────────────────────────────────────── */
+.drafts-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.drafts-col { padding: 18px; border-radius: 16px; border: 1px solid var(--border-glass); min-width: 0; }
+.draft-row { padding: 10px 12px; border: 1px solid var(--border-glass); border-radius: 10px; cursor: pointer; background: var(--sf-02, transparent); }
+.draft-row:hover, .draft-row.active { border-color: var(--m-accent, var(--accent-blue)); }
+.draft-status { display: inline-block; font-size: 0.68rem; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border-glass); white-space: nowrap; }
+.draft-status.st-ke_kontrole { background: rgba(200,134,10,0.15); color: var(--accent-yellow); border-color: rgba(200,134,10,0.35); }
+.draft-status.st-schvaleno { background: rgba(90,138,74,0.15); color: var(--accent-green); border-color: rgba(90,138,74,0.35); }
+.draft-ai { display: inline-block; font-size: 0.68rem; padding: 1px 7px; border-radius: 10px; margin: 0 4px; background: rgba(158,53,38,0.1); color: var(--accent-purple); }
+.draft-toolbar { display: flex; gap: 4px; flex-wrap: wrap; margin: 12px 0 0 0; padding: 6px; border: 1px solid var(--border-glass); border-bottom: none; border-radius: 8px 8px 0 0; }
+.draft-tb { font-size: 0.75rem !important; padding: 3px 9px !important; min-width: 30px; }
+.draft-page { margin-top: 12px; padding: 32px 40px; background: #fff; color: #201e1d; border: 1px solid var(--border-glass); border-radius: 4px; min-height: 420px; max-width: 820px; font-family: 'Times New Roman', Georgia, serif; font-size: 12pt; line-height: 1.5; overflow-wrap: anywhere; box-shadow: var(--shadow-premium); }
+.draft-toolbar + .draft-page { margin-top: 0; border-radius: 0 0 4px 4px; }
+.draft-page.editing { outline: 2px solid var(--m-accent, var(--accent-blue)); outline-offset: -2px; }
+.draft-page h1 { font-size: 15pt; margin: 14px 0 8px; } .draft-page h2 { font-size: 13pt; margin: 12px 0 6px; } .draft-page h3 { font-size: 12pt; }
+.draft-page p { margin: 0 0 6px; } .draft-page hr { border: none; border-top: 1px dashed #bbb; margin: 14px 0; }
+.draft-page p[data-footnote]::after { content: ' [pozn.: ' attr(data-footnote) ']'; color: #7d7979; font-size: 10pt; }
+.draft-table { border-collapse: collapse; width: 100%; margin: 8px 0; } .draft-table td { border: 1px solid #999; padding: 4px 6px; vertical-align: top; }
+.draft-side { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; max-width: 820px; }
+.draft-side summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+.draft-comment { border-left: 3px solid var(--accent-yellow); padding: 6px 10px; margin-top: 8px; font-size: 0.85rem; }
+.draft-comment.resolved { opacity: 0.55; border-left-color: var(--accent-green); }
+.draft-version { display: flex; justify-content: space-between; gap: 8px; font-size: 0.78rem; padding: 5px 0; border-bottom: 1px solid var(--border-glass); flex-wrap: wrap; }
+.draft-version-banner { font-size: 0.8rem; padding: 6px 10px; margin-bottom: 10px; border-radius: 6px; background: rgba(200,134,10,0.12); color: #6b4a00; font-family: system-ui, sans-serif; }
+@media (max-width: 900px) {
+    .drafts-layout { grid-template-columns: 1fr; }
+    .draft-page { padding: 18px 16px; font-size: 11pt; }
+}

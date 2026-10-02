@@ -205,6 +205,7 @@ app.use('/api/case', require('./routes/case'));
 app.use('/api/campaigns', require('./routes/campaigns'));
 app.use('/api/inbox', require('./routes/inbox'));
 app.use('/api/spisy', require('./routes/spisy'));
+app.use('/api/drafts', require('./routes/drafts')); // sdílené koncepty (webový LexisEditor Lite)
 app.use('/api/citations', require('./routes/citations'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/lhutnik', require('./routes/lhutnik'));

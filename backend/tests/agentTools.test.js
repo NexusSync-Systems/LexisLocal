@@ -18,7 +18,7 @@ const agentNone = { id: 'stylista', permissions: { read_files: false, query_regi
 describe('toolsForAgent — per-agent allow-list', () => {
     test('agent s read_files+query_registries dostane search_rag, get_document, check_registry', () => {
         const names = tools.toolsForAgent(agentRW).map(t => t.function.name).sort();
-        expect(names).toEqual(['check_registry', 'get_document', 'search_rag']);
+        expect(names).toEqual(['check_registry', 'get_document', 'get_draft', 'list_drafts', 'search_rag']);
     });
     test('agent bez oprávnění nedostane žádný tool', () => {
         expect(tools.toolsForAgent(agentNone)).toEqual([]);
@@ -26,7 +26,7 @@ describe('toolsForAgent — per-agent allow-list', () => {
     test('read_files bez query_registries → bez check_registry', () => {
         const a = { permissions: { read_files: true, query_registries: false } };
         const names = tools.toolsForAgent(a).map(t => t.function.name).sort();
-        expect(names).toEqual(['get_document', 'search_rag']);
+        expect(names).toEqual(['get_document', 'get_draft', 'list_drafts', 'search_rag']);
     });
     test('definice mají JSON schema (ollama formát)', () => {
         const t = tools.toolsForAgent(agentRW)[0];

@@ -82,6 +82,44 @@ const TOOLS = {
             return { fileName, content: String(content || '').slice(0, 8000) };
         }
     },
+    list_drafts: {
+        permission: 'read_files',
+        description: 'Seznam rozpracovaných konceptů dokumentů (sdílené koncepty kanceláře), volitelně jen pro jeden spis.',
+        parameters: {
+            type: 'object',
+            properties: { spisId: { type: 'string', description: 'ID spisu (nepovinné).' } }
+        },
+        impl: async (args, ctx) => {
+            const D = require('./drafts');
+            const principal = (ctx && ctx.principal) || null;
+            const list = D.listDrafts({ spisId: args && args.spisId ? String(args.spisId) : null })
+                .filter(d => !D.checkAccess(principal, d.spisId, 'read'))
+                .slice(0, 20)
+                .map(d => ({ id: d.id, title: d.title, spisId: d.spisId, status: d.statusLabel, version: d.version, updatedAt: d.updatedAt }));
+            return { drafts: list };
+        }
+    },
+    get_draft: {
+        permission: 'read_files',
+        description: 'Vrátí text konceptu dokumentu (aktuální verzi) a otevřené připomínky advokáta podle ID konceptu.',
+        parameters: {
+            type: 'object',
+            properties: { id: { type: 'string', description: 'ID konceptu (drf_…).' } },
+            required: ['id']
+        },
+        impl: async (args, ctx) => {
+            const D = require('./drafts');
+            const d = D.getDraft(String(args && args.id || ''));
+            if (!d) return { error: 'Koncept nenalezen.' };
+            if (D.checkAccess((ctx && ctx.principal) || null, d.spisId, 'read')) return { error: 'Ke konceptu nemáte přístup.' };
+            const text = D.specToText(d.versions[d.versions.length - 1].spec);
+            return {
+                id: d.id, title: d.title, status: d.status, version: d.version,
+                text: text.slice(0, 8000),
+                openComments: (d.comments || []).filter(c => !c.resolved).map(c => c.text).slice(0, 20)
+            };
+        }
+    },
     check_registry: {
         permission: 'query_registries',
         description: 'Ověří subjekt ve veřejných registrech (ARES apod.) podle IČO (8 číslic).',

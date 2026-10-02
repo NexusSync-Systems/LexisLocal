@@ -27,7 +27,8 @@ const { agentNumCtx, isEmbeddingModel, isModelMissingError } = require('../lib/a
 // POST /api/agent/:agentId - Volání agenta s modelem dle výběru
 router.post('/:agentId', async (req, res) => {
     const { agentId } = req.params;
-    const { prompt, context, model } = req.body;
+    const { prompt, model } = req.body;
+    let { context } = req.body;
     const startTime = Date.now();
 
     const agents = loadAgents();
@@ -37,6 +38,29 @@ router.post('/:agentId', async (req, res) => {
     }
     if (typeof prompt !== 'string' || !prompt.trim()) {
         return res.status(400).json({ error: 'Zadání (prompt) je povinné.' });
+    }
+
+    // Koncepty (webový LexisEditor Lite): draftId = agent reviduje existující koncept
+    // (dostane jeho znění + otevřené připomínky); saveDraft true/'auto' = výstup se uloží
+    // jako koncept „ke kontrole“. Bez těchto polí (např. volání z LexisEditoru) beze změny.
+    const Drafts = require('../lib/drafts');
+    const callerPrincipal = req.principal || { userId: 'local', kind: 'implicit', scopes: ['read', 'write', 'admin'] };
+    let draftTarget = null;
+    if (req.body.draftId) {
+        const dd = Drafts.getDraft(String(req.body.draftId));
+        if (!dd) return res.status(404).json({ error: 'Koncept nenalezen.' });
+        const denied = Drafts.checkAccess(callerPrincipal, dd.spisId, 'write');
+        if (denied) return res.status(denied.status).json({ error: denied.error });
+        if (dd.status === 'schvaleno') return res.status(409).json({ error: 'Koncept je schválený — agent ho nemůže revidovat.' });
+        if (dd.lock && Date.parse(dd.lock.until) > Date.now()) return res.status(423).json({ error: `Koncept právě upravuje ${dd.lock.name} — revizi AI spusťte po uložení.`, code: 'locked' });
+        draftTarget = { id: dd.id, baseVersion: dd.version, text: Drafts.specToText(dd.versions[dd.versions.length - 1].spec) };
+        context = [context, Drafts.revisionContext(dd)].filter(Boolean).join('\n\n');
+    }
+    const draftSpisId = req.body.spisId ? String(req.body.spisId) : null;
+    const wantDraft = !!draftTarget || req.body.saveDraft === true || (req.body.saveDraft === 'auto' && Drafts.autoDraftFor(agentId, agent));
+    if (wantDraft && !draftTarget) {
+        const denied = Drafts.checkAccess(callerPrincipal, draftSpisId, 'write');
+        if (denied) return res.status(denied.status).json({ error: denied.error });
     }
 
     // Choose model (default to llama3 if not specified)
@@ -178,6 +202,7 @@ router.post('/:agentId', async (req, res) => {
         if (agentTools.enabled() && agentTools.toolsForAgent(agent).length > 0) {
             const ctx = {
                 ragFilters: resolvedFilters, // search_rag respektuje scope/přístup agenta
+                principal: callerPrincipal, // koncepty: ACL spisu podle volajícího
                 audit: (ev) => {
                     try {
                         logEvent('LexisEditor', `AI Agent nástroj (${agent.name})`, 'Volání nástroje', {
@@ -197,7 +222,9 @@ router.post('/:agentId', async (req, res) => {
         }
 
         if (pseudoMap && response && response.message) {
-            response.message.content = restorePseudonyms(response.message.content, pseudoMap);
+            // Při revizi konceptu se vrací i údaje, které v konceptu už stály (např. RČ v plné moci).
+            response.message.content = restorePseudonyms(response.message.content, pseudoMap,
+                draftTarget ? { alwaysRestore: (v) => !!v && draftTarget.text.includes(v) } : {});
         }
 
         // #2: Antihalucinační kontrola citací i v single-agent routě (dřív jen v
@@ -226,12 +253,14 @@ router.post('/:agentId', async (req, res) => {
         // Deterministická kontrola výstupu: vymyšlené identifikátory → pole k doplnění,
         // nesoulad čísla a názvu předpisu, neověřené citace → upozornění pod odpovědí.
         let outputGuard = null;
+        let draftBody = null, draftWarn = '';
         try {
             const sourceText = [prompt, context, ...ragContextChunks.map(c => c.text)].filter(Boolean).join('\n');
             const g = guardInventedIdentifiers(response.message.content, sourceText);
             const lawIssues = checkLawNames(g.text);
             const warn = buildWarnings({ replaced: g.replaced, lawIssues, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits)] });
             response.message.content = g.text + warn;
+            draftBody = g.text; draftWarn = warn;
             outputGuard = { replaced: g.replaced, lawIssues, injection: injectionHits };
         } catch (gErr) {
             console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);
@@ -272,10 +301,22 @@ router.post('/:agentId', async (req, res) => {
             }
         });
 
+        let draft = null;
+        if (wantDraft) {
+            draft = Drafts.saveAgentOutput({
+                text: draftBody != null ? draftBody : response.message.content, warnings: draftWarn,
+                agentId, agentName: agent.name, model: selectedModel, transparencyId: transparencyRecord.id,
+                spisId: draftSpisId, title: req.body.draftTitle, draftId: draftTarget && draftTarget.id,
+                baseVersion: draftTarget && draftTarget.baseVersion
+            });
+            if (draft && draft.id) logEvent('Koncepty', draft.created ? 'Koncept od AI agenta' : 'Revize konceptu AI agentem', agent.name, { draftId: draft.id, version: draft.version, spisId: draftSpisId });
+        }
+
         res.json({
             agent: agent.name,
             model: selectedModel,
             response: response.message.content,
+            draft,
             transparencyId: transparencyRecord.id,
             greenMetrics,
             oborDetected: oborDetection,

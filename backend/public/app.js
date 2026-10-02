@@ -540,6 +540,10 @@ class LexisLocalApp {
                 title: "Hlídač rizik & Legislativa",
                 sub: "Detektor střetu zájmů klienta a kontrola souladu doložek s judikaturou Nejvyššího soudu."
             },
+            drafts: {
+                title: "Koncepty",
+                sub: "Sdílené koncepty dokumentů — úpravy v prohlížeči, verze, připomínky, schválení. Koncepty od AI čekají na kontrolu advokáta."
+            },
             spisova: {
                 title: "Spisová služba",
                 sub: "Spisy jako entita, centrální lhůtník, skartační režim a fakturace na jednom místě."
@@ -583,6 +587,8 @@ class LexisLocalApp {
             this.loadRisksTab();
         } else if (tabName === 'managerial') {
             this.loadManagerialTab();
+        } else if (tabName === 'drafts') {
+            if (typeof this.loadDraftsTab === 'function') this.loadDraftsTab();
         } else if (tabName === 'spisova') {
             this.loadSpisovaTab();
         } else if (tabName === 'aml') {

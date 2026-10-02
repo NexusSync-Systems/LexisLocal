@@ -146,6 +146,8 @@ function pseudonymizeText(text) {
  * (test 2. 10. 2026, W3: dopis protistraně obsahoval rodné číslo klientky). Místo
  * nich zůstane pole „[doplňte: …]“, které advokát vyplní vědomě.
  * Symbol, který v mapě není (model si vymyslel [ADRESA_2]), se také nahradí polem.
+ * opts.alwaysRestore(value, kind) → true = vrátit i jiný druh údaje (např. rodné číslo, které
+ * už stálo v revidovaném konceptu — to není únik, ale původní obsah dokumentu).
  */
 const RESTORE_DEFAULT = ['OSOBA', 'ADRESA'];
 const FILL_LABEL = { 'RČ': 'rodné číslo', 'ÚČET': 'číslo účtu', 'TELEFON': 'telefon', 'E-MAIL': 'e-mail', 'OSOBA': 'jméno', 'ADRESA': 'adresa' };
@@ -158,7 +160,7 @@ function restorePseudonyms(text, map, opts = {}) {
         if (!m) return;
         const label = m[1].replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
         const re = new RegExp('\\[\\s*' + label + '[_\\s-]?' + m[2] + '\\s*\\]', 'gi');
-        out = out.replace(re, () => restoreKinds.has(m[1]) ? map[ph] : `[doplňte: ${FILL_LABEL[m[1]] || 'údaj'}]`);
+        out = out.replace(re, () => (restoreKinds.has(m[1]) || (typeof opts.alwaysRestore === 'function' && opts.alwaysRestore(map[ph], m[1]))) ? map[ph] : `[doplňte: ${FILL_LABEL[m[1]] || 'údaj'}]`);
     });
     // zbylé (neznámé) symboly → pole k doplnění
     out = out.replace(/\[\s*(OSOBA|ADRESA|RČ|ÚČET|TELEFON|E-MAIL)[_\s-]?\d+\s*\]/gi,

@@ -233,7 +233,7 @@ router.post('/orchestrate', async (req, res) => {
         // Volitelné bezpečné uložení konceptu do složky spisu (fail-closed).
         // Aktivuje se jen když klient pošle spisId + saveDraft. Odmítnutí kvůli
         // nedostatku podkladů se NEUKLÁDÁ jako koncept.
-        if (spisId && saveDraft && result && result.finalOutput) {
+        if (spisId && saveDraft === true && result && result.finalOutput) {
             const txt = String(result.finalOutput);
             const refused = /^\s*Nedostatek podkladů/i.test(txt);
             if (refused) {
@@ -250,6 +250,22 @@ router.post('/orchestrate', async (req, res) => {
                 } catch (e) {
                     result.draftError = e.message;
                 }
+            }
+        }
+
+        // Sdílený koncept (webový LexisEditor Lite) — výstup orchestrace „ke kontrole“.
+        if (result && result.finalOutput && (saveDraft === true || saveDraft === 'auto')) {
+            const Drafts = require('../lib/drafts');
+            const principal = req.principal || { userId: 'local', kind: 'implicit', scopes: ['read', 'write', 'admin'] };
+            const denied = Drafts.checkAccess(principal, spisId || null, 'write');
+            if (denied) result.sharedDraft = { error: denied.error };
+            else {
+                const tIds = (result.steps || []).map(st => st && st.transparencyId).filter(Boolean);
+                result.sharedDraft = Drafts.saveAgentOutput({
+                    text: result.finalOutput, type: 'orchestrator', agentId: 'orchestrator', agentName: 'Chief Orchestrator',
+                    model: selectedModel, transparencyId: tIds[0], spisId: spisId || null,
+                    title: req.body.draftTitle || prompt.substring(0, 80)
+                });
             }
         }
 
