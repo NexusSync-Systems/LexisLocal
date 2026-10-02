@@ -185,7 +185,11 @@ router.get('/events', async (req, res) => {
             events.push({
                 id: hearing.id,
                 type: 'hearing',
-                title: hearing.title,
+                title: (hearing.status === 'needs_review' ? '❓ K potvrzení: ' : hearing.status === 'cancelled' ? '❌ ZRUŠENO: ' : hearing.status === 'updated' ? '⚠️ PŘESUNUTO: ' : '') + hearing.title,
+                needsReview: hearing.status === 'needs_review',
+                advokat: hearing.advokat || null,
+                lastVerifiedAt: hearing.lastVerifiedAt || null,
+                lastCheckError: hearing.lastCheckError || null,
                 date: hearing.dueDate,
                 time: hearing.time || '',
                 status: hearing.status,
@@ -209,6 +213,40 @@ router.get('/events', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: `Nelze načíst kalendářní události: ${err.message}` });
     }
+});
+
+// GET /api/calendar/hearings/status — stav hlídače jednání (pro UI a readiness):
+// dostupnost InfoJednání, počty jednání k potvrzení, spisy, které nejde hlídat.
+router.get('/hearings/status', (req, res) => {
+    try {
+        const hh = require('../lib/hearings_health');
+        const src = require('../lib/court_hearings_source');
+        const hearings = HearingsWatcher.loadMonitoredHearings(WATCH_DIR) || [];
+        const spisyList = (db.get('spisy') || []).filter(s => (s.stav || 'aktivni') === 'aktivni' && src.parseSpisZn(s.spisZn));
+        const unmonitorable = spisyList.filter(s => !src.resolveCourtCode(s.soudKod, s.soud))
+            .map(s => ({ id: s.id, spisZn: s.spisZn, soud: s.soud || null }));
+        const cfg = src.config();
+        res.json({
+            health: hh.summary(WATCH_DIR),
+            source: { url: cfg.url, enabled: cfg.enabled, verified: cfg.verified },
+            hearings: {
+                total: hearings.length,
+                needsReview: hearings.filter(h => h.status === 'needs_review').length,
+                upcoming: hearings.filter(h => !['past', 'cancelled'].includes(h.status)).length
+            },
+            spisy: { active: spisyList.length, unmonitorable }
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/calendar/hearings/:id/confirm — advokát potvrdí navržené jednání.
+router.post('/hearings/:id/confirm', (req, res) => {
+    const h = HearingsWatcher.confirmHearing(WATCH_DIR, req.params.id);
+    if (!h) return res.status(404).json({ error: 'Jednání nenalezeno.' });
+    try { logEvent('Kalendář', 'Potvrzení jednání', h.spisZn || h.title, { hearingId: h.id, date: h.dueDate }); } catch (e) {}
+    res.json({ success: true, hearing: h });
 });
 
 // POST /api/calendar/availability — kontrola volného termínu / návrh volných slotů.
@@ -265,7 +303,9 @@ router.post('/book', async (req, res) => {
 router.post('/sync', async (req, res) => {
     try {
         const result = await HearingsWatcher.checkAllHearings(WATCH_DIR);
-        res.json({ success: true, ...result });
+        const spisyResult = await HearingsWatcher.checkSpisy(WATCH_DIR);
+        const health = require('../lib/hearings_health').summary(WATCH_DIR);
+        res.json({ success: true, ...result, spisy: spisyResult, health });
     } catch (err) {
         res.status(500).json({ error: `Chyba při synchronizaci jednání: ${err.message}` });
     }

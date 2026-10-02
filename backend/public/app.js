@@ -49,7 +49,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return origFetch(input, init).then(res => {
             try {
                 const url = typeof input === 'string' ? input : (input && input.url) || '';
-                if (res.status === 401 && url.indexOf('/api/') !== -1) {
+                // Jen když požadavek nesl UŽIVATELŮV token (nebo žádný) — 401 na požadavek
+                // s jiným, explicitně zadaným tokenem lištu nevyvolá.
+                let sentTok = null;
+                try {
+                    const h = (init && init.headers) || {};
+                    sentTok = (typeof h.get === 'function') ? h.get('X-API-Token') : (h['X-API-Token'] || h['x-api-token'] || null);
+                } catch (e) { /* bez hlaviček */ }
+                let stored = ''; try { stored = localStorage.getItem('lexis_api_token') || ''; } catch (e) {}
+                const ownToken = !sentTok || sentTok === stored || sentTok === (window.LEXIS_API_TOKEN || '');
+                if (res.status === 401 && url.indexOf('/api/') !== -1 && ownToken) {
                     let had = false; try { had = !!localStorage.getItem('lexis_api_token'); } catch (e) {}
                     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => showBanner(had));
                     else showBanner(had);

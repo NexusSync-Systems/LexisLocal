@@ -92,6 +92,30 @@ router.get('/', async (req, res) => {
         }
     } catch (e) { /* ai_provider nedostupný */ }
 
+    // 7) Hlídač soudních jednání (InfoJednání). Výpadek zdroje = advokát musí ověřit ručně.
+    try {
+        const hh = require('../lib/hearings_health').summary(WATCH_DIR);
+        const hearings = require('../lib/hearings').loadMonitoredHearings(WATCH_DIR) || [];
+        const review = hearings.filter(h => h.status === 'needs_review').length;
+        const fmt = iso => iso ? new Date(iso).toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+        const rv = review ? ` · ${review} jednání k potvrzení` : '';
+        if (hh.status === 'down') {
+            add('hlidac_jednani', 'Hlídač soudních jednání', 'fail',
+                `InfoJednání nedostupné od ${fmt(hh.outageSince)} (${hh.lastError || 'bez odpovědi'})${rv}`,
+                'Termíny jednání ověřte ručně (datová schránka, web soudu). Hlídač to zkouší dál sám.');
+        } else if (hh.status === 'degraded') {
+            add('hlidac_jednani', 'Hlídač soudních jednání', 'warn',
+                `poslední kontrola selhala (${hh.lastError || 'bez odpovědi'}), naposledy ověřeno ${fmt(hh.lastSuccessAt)}${rv}`, null);
+        } else if (hh.status === 'ok') {
+            add('hlidac_jednani', 'Hlídač soudních jednání', review ? 'warn' : 'ok',
+                `naposledy ověřeno ${fmt(hh.lastSuccessAt)}${rv}`, review ? 'Potvrďte navržená jednání v kalendáři.' : null);
+        } else {
+            add('hlidac_jednani', 'Hlídač soudních jednání', 'warn',
+                `zatím neproběhla žádná kontrola${rv}`,
+                'Doplňte u aktivních spisů soud (a případně kód soudu pro InfoJednání).');
+        }
+    } catch (e) { /* hlídač nedostupný */ }
+
     const summary = {
         ok: checks.filter(c => c.status === 'ok').length,
         warn: checks.filter(c => c.status === 'warn').length,

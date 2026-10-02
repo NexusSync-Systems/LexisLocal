@@ -238,6 +238,34 @@ async function processDocument(filePath) {
             unitDeadlines.map(d => `${d.amount} ${lbl[d.unit] || d.unit} → ${d.deadlineDate}`).join(', ') + '.';
     }
 
+    // 2.8 Step: Nařízené jednání v dokumentu (předvolání, vyrozumění) → návrh ke sledování.
+    //     Hlídač pak termín ověřuje na InfoJednání; advokát ho musí potvrdit.
+    let hearingsFound = [];
+    try {
+        const { extractHearings } = require('./hearing_extract');
+        const { detectCourtName } = require('./court_hearings_source');
+        metadata.court = detectCourtName(text);
+        hearingsFound = extractHearings(text);
+        const HW = require('./hearings');
+        let spis = null;
+        try { spis = require('./spisy').findByCase(metadata.caseNumber); } catch (e) { /* bez spisu */ }
+        hearingsFound.forEach(hf => {
+            if (!hf.spisZn && metadata.caseNumber) hf.spisZn = metadata.caseNumber;
+            if (!hf.spisZn) return;
+            const reg = HW.registerHearing(WATCH_DIR, { // stejný soubor jako kalendář (routes/calendar.js)
+                spisZn: hf.spisZn, date: hf.date, time: hf.time, room: hf.room,
+                court: hf.court || metadata.court, spisId: spis ? spis.id : null,
+                advokat: spis ? spis.odpovednyAdvokat || null : null,
+                source: 'dokument:' + fileName, needsReview: true
+            });
+            hf.hearingId = reg.hearing.id;
+        });
+        if (hearingsFound.length) {
+            metadata.summary = (metadata.summary || '') + ' ⚖️ JEDNÁNÍ K POTVRZENÍ: ' +
+                hearingsFound.map(h => `${h.date} ${h.time}${h.room ? ', síň ' + h.room : ''}`.trim()).join('; ') + '.';
+        }
+    } catch (e) { console.warn('⚠️ Rozpoznání jednání selhalo (nekritické):', e.message); }
+
     // 3. Save to inbox
     const inbox = await loadInbox();
     const relativePath = path.relative(_watchedDir, filePath);
@@ -253,6 +281,8 @@ async function processDocument(filePath) {
         deadlineDate: metadata.deadlineDate || null,
         deadlineBase: metadata.deadlineBase || null,
         deadlineContext: metadata.deadlineContext || null,
+        court: metadata.court || null,
+        hearings: hearingsFound,
         deliveryDate: metadata.deliveryDate || null,
         deliveryConflict: !!metadata.deliveryConflict,
         detectedDeadlines: unitDeadlines,

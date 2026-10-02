@@ -77,3 +77,17 @@ describe('lanIPv4 / buildUrls', () => {
     ]);
   });
 });
+
+describe('buildUrls na HTTPS serveru (test 2. 10. 2026)', () => {
+  const pairing = require('../lib/pairing');
+  test('https schéma, bez :443 a s adresou panelu jako první', () => {
+    const urls = pairing.buildUrls(443, 'abc', { https: true, host: '3.125.157.86' });
+    expect(urls[0]).toBe('https://3.125.157.86/m?pair=abc');
+    expect(urls.every(u => u.startsWith('https://'))).toBe(true);
+    expect(urls.some(u => /:443\//.test(u))).toBe(false);
+  });
+  test('podezřelý Host se nepoužije', () => {
+    const urls = pairing.buildUrls(4000, 'abc', { host: 'evil.com/<script>' });
+    expect(urls.some(u => u.includes('evil'))).toBe(false);
+  });
+});

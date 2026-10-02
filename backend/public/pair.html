@@ -70,6 +70,12 @@ button.primary:hover{background:var(--amber2);color:#fff}
   </div>
 
   <div id="urls" class="urls hide"></div>
+  <div id="editorbox" class="state hide" style="margin-top:14px">
+    <b style="color:var(--text)">LexisEditor</b> — v editoru otevřete Nastavení → <i>Spárovat s LexisLocal</i> a vložte tento odkaz:
+    <div class="mono" id="editorlink" style="margin-top:6px;word-break:break-all;font-size:12px;color:var(--text)"></div>
+    <div style="margin-top:6px">Otisk klíče serveru: <b class="mono" id="editorpin"></b> — editor ho po spárování ukáže; musí se shodovat.</div>
+    <button id="copylink" type="button" style="margin-top:8px">Zkopírovat odkaz</button>
+  </div>
 
   <div class="meta">
     <span class="count" id="count"></span>
@@ -2385,7 +2391,7 @@ var qrcode = function() {
 </script>
 <script>
 (function(){
-  var token = window.LEXIS_API_TOKEN || '';
+  var token = window.LEXIS_API_TOKEN || (function(){ try { return localStorage.getItem('lexis_api_token') || ''; } catch(e){ return ''; } })();
   var qrbox=document.getElementById('qrbox'), codeEl=document.getElementById('code'),
       codeWrap=document.getElementById('codewrap'), urlsEl=document.getElementById('urls'),
       countEl=document.getElementById('count'), refreshBtn=document.getElementById('refresh'),
@@ -2429,6 +2435,13 @@ var qrcode = function() {
           urlsEl.classList.remove('hide');
           urlsEl.innerHTML='Na telefonu otevřete <b>http://&lt;IP-počítače&gt;:'+(location.port||'4000')+'/m?pair='+d.code+'</b><br>nebo v editoru přes ⚙ zadejte kód ručně.';
         }
+        var eb=document.getElementById('editorbox');
+        if(d.editor && d.editor.connectUrl){
+          document.getElementById('editorlink').textContent=d.editor.connectUrl;
+          document.getElementById('editorpin').textContent=d.editor.pinShort||'';
+          document.getElementById('copylink').onclick=function(){ try{ navigator.clipboard.writeText(d.editor.connectUrl); this.textContent='Zkopírováno ✓'; }catch(e){} };
+          eb.classList.remove('hide');
+        } else { eb.classList.add('hide'); }
         startCountdown(d.ttl||120);
       })
       .catch(function(e){
@@ -2439,7 +2452,7 @@ var qrcode = function() {
   }
 
   refreshBtn.addEventListener('click', newCode);
-  if(!token){ showState('Tato stránka musí běžet z tohoto počítače (127.0.0.1); jinak se token nevkládá.', true); }
+  if(!token){ showState('Tato stránka potřebuje přístupový token: otevřete ji z tohoto počítače (127.0.0.1), nebo nejdřív zadejte token v dashboardu.', true); }
   newCode();
 })();
 </script>

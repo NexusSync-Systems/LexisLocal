@@ -172,7 +172,12 @@ app.use(authenticate);
 // URL do QR (http://<LAN-IP>:PORT/m?pair=<kód>). Token v odpovědi NENÍ.
 app.post('/api/pair/new', (req, res) => {
     const { code, ttl } = pairing.createCode(API_TOKEN);
-    res.json({ code, ttl, urls: pairing.buildUrls(PORT, code) });
+    const isHttps = req.secure || process.env.USE_HTTPS === 'true';
+    // Pro LexisEditor: odkaz s otiskem klíče serveru (párování bez slepé důvěry v certifikát).
+    const tlsPin = isHttps ? (app.locals.tlsPin || null) : null;
+    const tlsId = require('./lib/tls_identity');
+    res.json({ code, ttl, urls: pairing.buildUrls(PORT, code, { https: isHttps, host: req.headers.host }),
+        editor: tlsPin ? { connectUrl: tlsId.buildConnectUrl({ host: req.headers.host, pin: tlsPin, code }), pin: tlsPin, pinShort: tlsId.shortPin(tlsPin) } : null });
 });
 
 // ─── Modulární routery (postupné rozbití monolitu) ───────────────────────────
@@ -235,18 +240,24 @@ app.get('/api/status', (req, res) => {
 // Pod testy (JEST_WORKER_ID) NEspouštět — jinak timer drží event loop a jest
 // nemůže korektně skončit. V produkci timer .unref(), ať nikdy neblokuje ukončení.
 if (typeof process.env.JEST_WORKER_ID === 'undefined') {
-    const _hearingsTimer = setInterval(() => {
-        HearingsWatcher.checkAllHearings(WATCH_DIR).catch(err => {
-            console.error("⚠️ Background monitored hearings check error:", err.message);
-        });
-    }, 60 * 60 * 1000);
+    // Hlídač: 1) ověř sledovaná jednání, 2) najdi nová jednání v aktivních spisech.
+    // Interval LEXIS_HEARINGS_INTERVAL_MIN (výchozí 60). Při výpadku InfoJednání
+    // eviduje lib/hearings_health.js a po LEXIS_HEARINGS_OUTAGE_ALERT_H upozorní.
+    const _runHearings = () => HearingsWatcher.checkAllHearings(WATCH_DIR)
+        .then(() => HearingsWatcher.checkSpisy(WATCH_DIR))
+        .catch(err => console.error("⚠️ Background monitored hearings check error:", err.message));
+    const _hearingsTimer = setInterval(_runHearings,
+        (parseInt(process.env.LEXIS_HEARINGS_INTERVAL_MIN || '', 10) || 60) * 60 * 1000);
+    // První kontrola krátce po startu (po obnovení serveru se nečeká hodinu).
+    const _hearingsFirst = setTimeout(_runHearings, 2 * 60 * 1000);
+    if (_hearingsFirst && typeof _hearingsFirst.unref === 'function') _hearingsFirst.unref();
     if (_hearingsTimer && typeof _hearingsTimer.unref === 'function') _hearingsTimer.unref();
 }
 
 const USE_HTTPS = process.env.USE_HTTPS === 'true';
 
-const SSL_KEY_PATH = process.env.SSL_KEY_PATH || 'key.pem';
-const SSL_CERT_PATH = process.env.SSL_CERT_PATH || 'cert.pem';
+let SSL_KEY_PATH = process.env.SSL_KEY_PATH || 'key.pem';
+let SSL_CERT_PATH = process.env.SSL_CERT_PATH || 'cert.pem';
 
 if (require.main === module) {
     // Pojistka mlčenlivosti: v lokálním/pilotním režimu (LEXIS_PILOT_LOCAL_ONLY)
@@ -299,6 +310,23 @@ if (require.main === module) {
         }
     }
 
+    // HTTPS bez certifikátu: dřív tichý pád na HTTP. Teď si server vytvoří dlouhodobý
+    // self-signed certifikát (adresář klíčů) a jeho otisk se použije pro párování editoru.
+    if (USE_HTTPS && !(fs.existsSync(SSL_KEY_PATH) && fs.existsSync(SSL_CERT_PATH)) && !process.env.SSL_KEY_PATH) {
+        const tlsId = require('./lib/tls_identity').ensureCertificate();
+        if (tlsId.error) console.warn('⚠️ ' + tlsId.error);
+        else {
+            SSL_KEY_PATH = tlsId.keyPath; SSL_CERT_PATH = tlsId.certPath;
+            if (tlsId.created) console.log(`🔐 Vytvořen certifikát serveru (${require('./lib/tls_identity').CERT_DAYS} dní): ${tlsId.certPath}`);
+        }
+    }
+    if (USE_HTTPS && fs.existsSync(SSL_KEY_PATH) && fs.existsSync(SSL_CERT_PATH)) {
+        try {
+            const pin = require('./lib/tls_identity').spkiPin(fs.readFileSync(SSL_CERT_PATH));
+            app.locals.tlsPin = pin;
+            console.log(`🔑 Otisk klíče serveru (pro párování LexisEditoru): ${pin}`);
+        } catch (e) { console.warn('⚠️ Otisk certifikátu nejde spočítat:', e.message); }
+    }
     if (USE_HTTPS && fs.existsSync(SSL_KEY_PATH) && fs.existsSync(SSL_CERT_PATH)) {
         try {
             const https = require('https');

@@ -10,7 +10,15 @@ function unitLabelCs(unit, amount) {
     if (n >= 2 && n <= 4) return F[1];
     return F[2];
 }
-if (typeof module !== 'undefined' && module.exports) module.exports = Object.assign(module.exports || {}, { unitLabelCs });
+// Zbývající dny lhůty česky: „zbývá 5 dnů“, „dnes“, „2 dny po lhůtě“ (dřív „-2 dní“).
+function daysLeftCs(d) {
+    if (d === null || d === undefined || isNaN(d)) return '—';
+    if (d === 0) return 'dnes';
+    const n = Math.abs(d);
+    const w = n === 1 ? 'den' : (n <= 4 ? 'dny' : 'dnů');
+    return d > 0 ? `${n} ${w}` : `${n} ${w} po lhůtě`;
+}
+if (typeof module !== 'undefined' && module.exports) module.exports = Object.assign(module.exports || {}, { unitLabelCs, daysLeftCs });
 
 /**
  * app-spisova.js — dashboard: Spisová služba (spisy, lhůtník, skartace,
@@ -88,6 +96,13 @@ Object.assign(LexisLocalApp.prototype, {
                 <div style="font-size:0.85rem;opacity:0.8;margin-bottom:12px;">
                     Klient: ${escapeHtml(s.klient || '—')} · Protistrana: ${escapeHtml(s.protistrana || '—')} · Stav: <b>${escapeHtml(s.stav)}</b>
                     ${s.retentionUntil ? ' · Retence do: ' + escapeHtml(s.retentionUntil) : ''}
+                </div>
+                <div style="font-size:0.82rem;margin:-6px 0 12px;">
+                    ⚖️ Soud: <b>${escapeHtml(s.soud || '—')}</b>${s.soudKod ? ' (kód ' + escapeHtml(s.soudKod) + ')' : ''} · Advokát: <b>${escapeHtml(s.odpovednyAdvokat || '—')}</b> ·
+                    ${!(s.soud || s.soudKod) ? '<span style="color:#d97706;">jednání se nehlídají — doplňte soud</span>'
+                        : s.hearingsCheckError ? '<span style="color:#d97706;">InfoJednání neověřeno: ' + escapeHtml(s.hearingsCheckError) + '</span>'
+                        : s.hearingsCheckedAt ? 'InfoJednání ověřeno ' + escapeHtml(new Date(s.hearingsCheckedAt).toLocaleString('cs-CZ')) : 'čeká na první kontrolu'}
+                    <button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px;margin-left:6px;" onclick="window.appInstance.upravitSoudSpisu('${String(s.id).replace(/[^A-Za-z0-9_.:-]/g, '')}')">Upravit soud / advokáta</button>
                 </div>
                 <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-size:0.85rem;">
                     <span>📄 Dokumentů: <b>${m.documentsCount}</b></span>
@@ -232,9 +247,25 @@ Object.assign(LexisLocalApp.prototype, {
         const spisZn = prompt('Spisová značka (např. 23 C 120/2026):');
         if (spisZn === null) return;
         const klient = prompt('Klient (nepovinné):') || '';
+        const soud = prompt('Soud (např. Okresní soud v Jihlavě) — nutné pro hlídání jednání na InfoJednání:') || '';
         try {
-            await this.ssSend('/spisy', 'POST', { spisZn: spisZn, klient: klient });
+            await this.ssSend('/spisy', 'POST', { spisZn: spisZn, klient: klient, soud: soud });
             this.loadSpisyList();
+        } catch (e) { alert('Chyba: ' + e.message); }
+    },
+
+    async upravitSoudSpisu(id) {
+        try {
+            const d = await this.ssGet(`/spisy/${id}`);
+            const s = d.spis || {};
+            const soud = prompt('Soud (např. Okresní soud v Jihlavě):', s.soud || '');
+            if (soud === null) return;
+            const soudKod = prompt('Kód soudu pro InfoJednání (nepovinné — jen pokud ho znáte):', s.soudKod || '');
+            if (soudKod === null) return;
+            const adv = prompt('Odpovědný advokát:', s.odpovednyAdvokat || '');
+            if (adv === null) return;
+            await this.ssSend(`/spisy/${id}`, 'PATCH', { soud, soudKod, odpovednyAdvokat: adv });
+            this.openSpis ? this.openSpis(id) : this.loadSpisyList();
         } catch (e) { alert('Chyba: ' + e.message); }
     },
 
@@ -265,7 +296,7 @@ Object.assign(LexisLocalApp.prototype, {
                     <td style="padding:6px;color:${color[i.urgency]};">${escapeHtml(i.date || '—')}</td>
                     <td style="padding:6px;">${escapeHtml(String(i.amount || ''))} ${escapeHtml(unitLabelCs(i.unit, i.amount))}</td>
                     <td style="padding:6px;font-size:0.8rem;">${escapeHtml(i.caseNumber || '—')}</td>
-                    <td style="padding:6px;">${i.daysLeft === null ? '—' : i.daysLeft + ' dní'}</td>
+                    <td style="padding:6px;">${escapeHtml(daysLeftCs(i.daysLeft))}</td>
                     <td style="padding:6px;">${i.needsReview
                         ? `<button class="btn btn-primary" style="font-size:0.7rem;padding:3px 8px;" onclick="window.appInstance.confirmLhuta('${i.fileId}',${i.index})">Potvrdit</button>
                            <button class="btn btn-secondary" style="font-size:0.7rem;padding:3px 8px;" onclick="window.appInstance.dismissLhuta('${i.fileId}',${i.index})">Odložit</button>`

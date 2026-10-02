@@ -270,7 +270,9 @@ Object.assign(LexisLocalApp.prototype, {
                         </div>
                         <div class="parties-text" style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 12px;">
                             ${(groupPlaintiff === 'Nezjištěn' && groupDefendant === 'Nezjištěn')
-                                ? '<span style="opacity:.75;">Mimosoudní dokument — účastníci řízení nezjištěni</span>'
+                                ? (/^(Bez sp\. zn\.|Neznámá sp\. zn\.)/.test(caseNum)
+                                    ? '<span style="opacity:.75;">Mimosoudní dokument — účastníci řízení nezjištěni</span>'
+                                    : '<span style="opacity:.75;">Účastníci řízení zatím nezjištěni</span>')
                                 : `<strong>Žalobce:</strong> ${escapeHtml(groupPlaintiff)} | <strong>Žalovaný:</strong> ${escapeHtml(groupDefendant)}`}
                             ${verifiedAddr}
                         </div>

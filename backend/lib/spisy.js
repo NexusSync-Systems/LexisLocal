@@ -103,6 +103,9 @@ function createSpis(data) {
         protistrana: data.protistrana ? String(data.protistrana).trim() : '',
         agenda: data.agenda ? String(data.agenda).trim() : '',
         odpovednyAdvokat: data.odpovednyAdvokat ? String(data.odpovednyAdvokat).trim() : '',
+        // Soud (název) a volitelně kód soudu pro InfoJednání — bez nich nejde hlídat jednání.
+        soud: data.soud ? String(data.soud).trim() : '',
+        soudKod: data.soudKod ? String(data.soudKod).trim() : '',
         // ACL přístupu ke spisu (viz access.js). Vlastník = odpovědný advokát,
         // jinak implicitní 'local'. V solo režimu se přístup nevynucuje.
         access: {
@@ -123,7 +126,7 @@ function updateSpis(id, patch) {
     const spis = getSpis(id);
     if (!spis) return null;
     const clean = {};
-    ['nazev', 'klient', 'protistrana', 'agenda', 'odpovednyAdvokat', 'poznamka'].forEach(k => {
+    ['nazev', 'klient', 'protistrana', 'agenda', 'odpovednyAdvokat', 'poznamka', 'soud', 'soudKod'].forEach(k => {
         if (patch[k] !== undefined) clean[k] = String(patch[k]);
     });
     if (patch.spisZn !== undefined) clean.spisZn = _normCase(patch.spisZn);
@@ -301,6 +304,7 @@ function syncFromInbox() {
             klient: (first && first.plaintiff && first.plaintiff !== 'Nezjištěn') ? first.plaintiff : '',
             protistrana: (first && first.defendant && first.defendant !== 'Nezjištěn') ? first.defendant : '',
             klientIco: (first && first.ico) ? first.ico : '',
+            soud: (group.files.find(f => f.court) || {}).court || '',
             source: 'inbox-sync'
         });
         created++;

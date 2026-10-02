@@ -82,6 +82,8 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 7 -subj "/CN=$PUBLIC_IP" \
   -addext "subjectAltName=IP:$PUBLIC_IP,IP:127.0.0.1" \
   -keyout /opt/lexis-tls/key.pem -out /opt/lexis-tls/cert.pem 2>/dev/null
 FP=$(openssl x509 -in /opt/lexis-tls/cert.pem -noout -fingerprint -sha256 | cut -d= -f2)
+# Otisk VEŘEJNÉHO KLÍČE (SPKI) pro spárování LexisEditoru (js/core/lexis-server-pin.js)
+PIN="sha256/$(openssl x509 -in /opt/lexis-tls/cert.pem -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '=')"
 TOKEN=$(openssl rand -hex 32)
 
 cat > /opt/LexisLocal/.env <<ENV
@@ -125,6 +127,8 @@ Otisk certifikátu (SHA-256): $FP
 Model:    $CHAT_MODEL   ·   server se sám vypne: $(date -d "+$MAX_MINUTES min" -Is)
 Prohlížeč ukáže varování (self-signed certifikát) → Pokročilé → Pokračovat. Ověř, že otisk sedí.
 Token vlož v aplikaci do nastavení připojení (pole API token).
+LexisEditor: Nastavení → 🔐 Spárovat → vlož tento odkaz (obsahuje token — nesdílet):
+lexis://$PUBLIC_IP/?fp=$PIN&token=$TOKEN
 CONN
 upload
 

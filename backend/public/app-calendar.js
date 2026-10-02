@@ -150,18 +150,29 @@ Object.assign(LexisLocalApp.prototype, {
             let metaHtml = '';
             if (event.time || event.location) {
                 metaHtml = `<div style="font-size: 0.75rem; opacity: 0.8; display: flex; flex-direction: column; gap: 2px; margin-top: 4px;">`;
-                if (event.time) metaHtml += `<span>🕒 ${event.time}</span>`;
-                if (event.location) metaHtml += `<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${event.location}">📍 ${event.location}</span>`;
+                if (event.time) metaHtml += `<span>🕒 ${escapeHtml(event.time)}</span>`;
+                if (event.location) metaHtml += `<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(event.location)}">📍 ${escapeHtml(event.location)}</span>`;
                 metaHtml += `</div>`;
             }
+            // Hlídač jednání: kdy bylo naposledy ověřeno na InfoJednání / proč ne.
+            if (isHearing && (event.lastVerifiedAt || event.lastCheckError)) {
+                metaHtml += event.lastCheckError
+                    ? `<div style="font-size:0.72rem;color:#d97706;margin-top:3px;">⚠️ Neověřeno: ${escapeHtml(event.lastCheckError)}</div>`
+                    : `<div style="font-size:0.72rem;opacity:0.7;margin-top:3px;">✔ Ověřeno na InfoJednání ${escapeHtml(new Date(event.lastVerifiedAt).toLocaleString('cs-CZ'))}</div>`;
+            }
 
+            // ID jde do onclick → jen bezpečné znaky (escapeHtml nestačí: entity se v atributu dekódují).
+            const safeId = String(event.id || '').replace(/[^A-Za-z0-9_.:-]/g, '');
             let actionButtons = '';
             if (!isCompleted && !isCancelled) {
                 actionButtons = `<div style="display: flex; gap: 8px; margin-top: 8px;">`;
-                if (event.type === 'deadline') {
-                    actionButtons += `<button class="btn btn-secondary" onclick="window.appInstance.completeAlert('${event.id}')" style="padding: 4px 8px; font-size: 0.7rem; background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: #34d399;">Splnit ✓</button>`;
+                if (isHearing && event.needsReview) {
+                    actionButtons += `<button class="btn btn-primary" onclick="window.appInstance.confirmHearing('${safeId}')" style="padding: 4px 8px; font-size: 0.7rem;">Potvrdit jednání ✓</button>`;
                 }
-                actionButtons += `<button class="btn btn-secondary" onclick="window.appInstance.syncEventToSystemCalendar('${event.id}')" style="padding: 4px 8px; font-size: 0.7rem; background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.2); color: #60a5fa;">Zapsat do kalendáře 📅</button>`;
+                if (event.type === 'deadline') {
+                    actionButtons += `<button class="btn btn-secondary" onclick="window.appInstance.completeAlert('${safeId}')" style="padding: 4px 8px; font-size: 0.7rem; background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: #34d399;">Splnit ✓</button>`;
+                }
+                actionButtons += `<button class="btn btn-secondary" onclick="window.appInstance.syncEventToSystemCalendar('${safeId}')" style="padding: 4px 8px; font-size: 0.7rem; background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.2); color: #60a5fa;">Zapsat do kalendáře 📅</button>`;
                 actionButtons += `</div>`;
             }
 
@@ -170,8 +181,8 @@ Object.assign(LexisLocalApp.prototype, {
                     <div style="display: flex; align-items: flex-start; gap: 10px;">
                         <span style="font-size: 1.1rem; line-height: 1;">${icon}</span>
                         <div style="flex-grow: 1; min-width: 0;">
-                            <strong style="color: var(--text-primary); font-size: 0.85rem; display: block; text-decoration: ${isCompleted ? 'line-through' : 'none'}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" title="${event.title}">${event.title}</strong>
-                            <span style="font-size: 0.7rem; opacity: 0.6; display: block; margin-top: 2px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${typeLabel} — ${event.description}</span>
+                            <strong style="color: var(--text-primary); font-size: 0.85rem; display: block; text-decoration: ${isCompleted ? 'line-through' : 'none'}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" title="${escapeHtml(event.title)}">${escapeHtml(event.title)}</strong>
+                            <span style="font-size: 0.7rem; opacity: 0.6; display: block; margin-top: 2px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${typeLabel} — ${escapeHtml(event.description || '')}</span>
                             ${metaHtml}
                             ${actionButtons}
                         </div>
@@ -214,6 +225,15 @@ Object.assign(LexisLocalApp.prototype, {
         this.renderAgenda();
     },
 
+    async confirmHearing(id) {
+        try {
+            const res = await fetch(`${this.apiBase}/calendar/hearings/${encodeURIComponent(id)}/confirm`, { method: 'POST', headers: this.getHeaders() });
+            const data = await res.json();
+            if (!res.ok) { alert('❌ ' + (data.error || 'Potvrzení selhalo.')); return; }
+            if (typeof this.loadWorkflowTab === 'function') await this.loadWorkflowTab();
+        } catch (e) { alert('❌ Síťová chyba: ' + e.message); }
+    },
+
     async syncHearingsPortal() {
         try {
             console.log("⚖️ Synchronizuji jednání z portálu InfoJednání...");
@@ -223,7 +243,17 @@ Object.assign(LexisLocalApp.prototype, {
             });
             const data = await res.json();
             if (data.success) {
-                alert(`✓ Portálová synchronizace dokončena.\nZkontrolováno: ${data.checked} jednání\nNalezeno: ${data.updated} změn`);
+                const sp = data.spisy || {};
+                const hh = data.health || {};
+                let msg = `Zkontrolováno: ${data.checked} jednání, změn: ${data.updated}` +
+                    `\nProhledáno spisů: ${sp.checked || 0}, nových jednání k potvrzení: ${sp.found || 0}`;
+                if ((sp.unmonitorable || []).length) msg += `\nNelze hlídat (chybí soud / kód soudu): ${sp.unmonitorable.length} spisů`;
+                if (hh.status === 'down' || hh.status === 'degraded' || data.failed || sp.failed) {
+                    msg = `⚠️ InfoJednání se nepodařilo ověřit: ${hh.lastError || 'bez odpovědi'}\nTermíny ověřte ručně (datová schránka, web soudu).\n\n` + msg;
+                } else {
+                    msg = '✓ Kontrola jednání dokončena.\n' + msg;
+                }
+                alert(msg);
                 await this.loadWorkflowTab();
             } else {
                 alert("❌ Portálová synchronizace selhala: " + data.error);

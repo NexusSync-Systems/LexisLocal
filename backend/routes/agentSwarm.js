@@ -13,7 +13,7 @@ const router = express.Router();
 const { loadAgents, agentTemperature } = require('../lib/agents');
 const { searchSimilar, agentRagK } = require('../lib/rag');
 const { logEvent } = require('../lib/audit');
-const { anonymizeText } = require('../lib/anonymizer');
+const { anonymizeText, pseudonymizeText, restorePseudonyms } = require('../lib/anonymizer');
 const ollama = require('../lib/ai_provider'); // Ollama | OpenAI | Anthropic (stejné rozhraní)
 const { generateAgentFallback } = require('../lib/agent_fallback');
 const { resolveRagFilters, buildRagScope } = require('../lib/rag_request');
@@ -25,6 +25,14 @@ const spisy = require('../lib/spisy');
 router.post('/debate', async (req, res) => {
     const { prompt, agentId1, agentId2, context, model } = req.body;
     const startTime = Date.now();
+
+    // Chybějící vstup = 400 (dřív 404 „agent nenalezen“ i při chybějícím parametru).
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({ error: 'Zadání (prompt) je povinné.' });
+    }
+    if (!agentId1 || !agentId2) {
+        return res.status(400).json({ error: 'Chybí agentId1 a/nebo agentId2 (tvůrce a oponent debaty).' });
+    }
 
     const agents = loadAgents();
     const agent1 = agents[agentId1];
@@ -84,8 +92,15 @@ router.post('/debate', async (req, res) => {
             });
         }
 
+        // Kontext vratně pseudonymizovaný jako u /api/agent (dřív šel modelu syrový).
+        let pseudoMap = null, ctxForModel = context;
         if (context) {
-            messages1.push({ role: 'system', content: `Kontext dokumentu:\n${context}` });
+            if (process.env.AGENT_CONTEXT_REDACTION === 'irreversible') ctxForModel = anonymizeText(context);
+            else { const ps = pseudonymizeText(context); ctxForModel = ps.text; pseudoMap = ps.map; }
+        }
+        const restore = t => (pseudoMap ? restorePseudonyms(t, pseudoMap) : t);
+        if (context) {
+            messages1.push({ role: 'system', content: `Kontext dokumentu (osobní údaje jako symboly [OSOBA_1] apod. — ponech je přesně v tomto tvaru):\n${ctxForModel}` });
         }
 
         messages1.push({ role: 'user', content: prompt });
@@ -111,7 +126,7 @@ router.post('/debate', async (req, res) => {
         }
 
         if (context) {
-            messages2.push({ role: 'system', content: `Kontext dokumentu:\n${context}` });
+            messages2.push({ role: 'system', content: `Kontext dokumentu (osobní údaje jako symboly [OSOBA_1] apod. — ponech je přesně v tomto tvaru):\n${ctxForModel}` });
         }
 
         messages2.push({
@@ -127,7 +142,7 @@ router.post('/debate', async (req, res) => {
             options: { temperature: agentTemperature(agent2, 0.2), num_ctx: agentNumCtx() }
         });
 
-        const answer2 = response2.message.content;
+        const answer2 = restore(response2.message.content);
 
         logEvent('LexisEditor', 'Swarm Debata', `Duel: ${agent1.name} vs. ${agent2.name}`, {
             model: selectedModel,
@@ -143,8 +158,18 @@ router.post('/debate', async (req, res) => {
         res.json({
             success: true,
             model: selectedModel,
-            agent1: { id: agentId1, name: agent1.name, response: answer1 },
+            agent1: { id: agentId1, name: agent1.name, response: restore(answer1) },
             agent2: { id: agentId2, name: agent2.name, response: answer2 },
+            citationCheck: await (async () => {
+                // Kontrola citací i u debaty (dřív jen /api/agent a orchestrátor).
+                try {
+                    const { verifyCitationsWithSources } = require('../lib/citation_verifier');
+                    const { getKbLawIndex } = require('../lib/kb_law_index');
+                    const chunks = [prompt, context, ragContext].filter(Boolean).map(t => ({ text: String(t), fileName: 'podklady' }));
+                    const cc = await verifyCitationsWithSources(answer2, { contextChunks: chunks, kbIndex: getKbLawIndex() });
+                    return { total: cc.total, unverifiedCount: cc.unverifiedCount, citations: cc.citations, annotatedText: cc.annotatedText };
+                } catch (e) { return null; }
+            })(),
             oborDetected: oborDetection,
             timestamp: new Date().toISOString()
         });
@@ -153,7 +178,9 @@ router.post('/debate', async (req, res) => {
         console.warn(`⚠️ Selhalo spojení s Ollama ve Swarmu (${err.message}). Používám lokalizovaný robustní simulovaný oponentní výstup.`);
 
         const answer1 = generateAgentFallback(agentId1, prompt);
-        const answer2 = `[Oponentní posudek od agenta ${agent2.name} na návrh od ${agent1.name}]:\n\nAnalyzoval jsem předchozí vypracování. Návrh je strukturovaný správně, avšak doporučuji doplnit výslovnou doložku o volbě práva a smluvní pokutě ve výši 0.05 % denně za prodlení, aby byly zájmy našeho klienta chráněny neprůstřelně.\n\nZde je revidovaný odstavec:\n"V případě prodlení kupujícího s úhradou kupní ceny se sjednává smluvní pokuta ve výši 0.05 % z dlužné částky za každý den prodlení."`;
+        // Dřív tu byl NATVRDO napsaný „oponentní posudek“ (doložka o smluvní pokutě 0,05 %)
+        // vydávaný za výstup modelu — falešný právní obsah. Teď poctivý fallback.
+        const answer2 = generateAgentFallback(agentId2, prompt);
 
         logEvent('LexisEditor', 'Swarm Debata Fallback', `Duel Fallback: ${agent1.name} vs. ${agent2.name}`, {
             model: `${selectedModel} (Simulovaný Swarm)`,
@@ -171,6 +198,7 @@ router.post('/debate', async (req, res) => {
             model: `${selectedModel} (Simulovaný Swarm)`,
             agent1: { id: agentId1, name: agent1.name, response: answer1 },
             agent2: { id: agentId2, name: agent2.name, response: answer2 },
+            fallback: true,
             oborDetected: oborDetection,
             timestamp: new Date().toISOString()
         });
