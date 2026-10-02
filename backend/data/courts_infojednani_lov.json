@@ -1,0 +1,389 @@
+{
+ "_zdroj": "InfoJednání (MSp) — číselník /api/v1/organizace/lov a /organizace/podrizene/lov, staženo 30.–31. 5. 2026 (převzato z repa LexisEditor, all_courts.json). Po obnovení webu ověřit skriptem scripts/infojednani_probe.js.",
+ "soudy": [
+  {
+   "nazev": "Krajský soud Brno",
+   "kod": "KSJIMBM"
+  },
+  {
+   "nazev": "Krajský soud České Budějovice",
+   "kod": "KSJICCB"
+  },
+  {
+   "nazev": "Krajský soud Hradec Králové",
+   "kod": "KSVYCHK"
+  },
+  {
+   "nazev": "Krajský soud Ostrava",
+   "kod": "KSSEMOS"
+  },
+  {
+   "nazev": "Krajský soud Plzeň",
+   "kod": "KSZPCPM"
+  },
+  {
+   "nazev": "Krajský soud Praha",
+   "kod": "KSSTCAB"
+  },
+  {
+   "nazev": "Krajský soud Ústí nad Labem",
+   "kod": "KSSCEUL"
+  },
+  {
+   "nazev": "Městský soud Praha",
+   "kod": "MSPHAAB"
+  },
+  {
+   "nazev": "Vrchní soud Olomouc",
+   "kod": "VSSEMOL"
+  },
+  {
+   "nazev": "Vrchní soud Praha",
+   "kod": "VSPHAAB"
+  },
+  {
+   "nazev": "Městský soud Brno",
+   "kod": "OSJIMBM"
+  },
+  {
+   "nazev": "Obvodní soud Praha 1",
+   "kod": "OSPHA01"
+  },
+  {
+   "nazev": "Obvodní soud Praha 10",
+   "kod": "OSPHA10"
+  },
+  {
+   "nazev": "Obvodní soud Praha 2",
+   "kod": "OSPHA02"
+  },
+  {
+   "nazev": "Obvodní soud Praha 3",
+   "kod": "OSPHA03"
+  },
+  {
+   "nazev": "Obvodní soud Praha 4",
+   "kod": "OSPHA04"
+  },
+  {
+   "nazev": "Obvodní soud Praha 5",
+   "kod": "OSPHA05"
+  },
+  {
+   "nazev": "Obvodní soud Praha 6",
+   "kod": "OSPHA06"
+  },
+  {
+   "nazev": "Obvodní soud Praha 7",
+   "kod": "OSPHA07"
+  },
+  {
+   "nazev": "Obvodní soud Praha 8",
+   "kod": "OSPHA08"
+  },
+  {
+   "nazev": "Obvodní soud Praha 9",
+   "kod": "OSPHA09"
+  },
+  {
+   "nazev": "Okresní soud Benešov",
+   "kod": "OSSTCBN"
+  },
+  {
+   "nazev": "Okresní soud Beroun",
+   "kod": "OSSTCBE"
+  },
+  {
+   "nazev": "Okresní soud Blansko",
+   "kod": "OSJIMBK"
+  },
+  {
+   "nazev": "Okresní soud Brno-venkov",
+   "kod": "OSJIMBO"
+  },
+  {
+   "nazev": "Okresní soud Bruntál",
+   "kod": "OSSEMBR"
+  },
+  {
+   "nazev": "Okresní soud Břeclav",
+   "kod": "OSJIMBV"
+  },
+  {
+   "nazev": "Okresní soud Cheb",
+   "kod": "OSZPCCH"
+  },
+  {
+   "nazev": "Okresní soud Chomutov",
+   "kod": "OSSCECV"
+  },
+  {
+   "nazev": "Okresní soud Chrudim",
+   "kod": "OSVYCCR"
+  },
+  {
+   "nazev": "Okresní soud Česká Lípa",
+   "kod": "OSSCECL"
+  },
+  {
+   "nazev": "Okresní soud České Budějovice",
+   "kod": "OSJICCB"
+  },
+  {
+   "nazev": "Okresní soud Český Krumlov",
+   "kod": "OSJICCK"
+  },
+  {
+   "nazev": "Okresní soud Děčín",
+   "kod": "OSSCEDC"
+  },
+  {
+   "nazev": "Okresní soud Domažlice",
+   "kod": "OSZPCDO"
+  },
+  {
+   "nazev": "Okresní soud Frýdek-Místek",
+   "kod": "OSSEMFM"
+  },
+  {
+   "nazev": "Okresní soud Havlíčkův Brod",
+   "kod": "OSVYCHB"
+  },
+  {
+   "nazev": "Okresní soud Hodonín",
+   "kod": "OSJIMHO"
+  },
+  {
+   "nazev": "Okresní soud Hradec Králové",
+   "kod": "OSVYCHK"
+  },
+  {
+   "nazev": "Okresní soud Jablonec nad Nisou",
+   "kod": "OSSCEJN"
+  },
+  {
+   "nazev": "Okresní soud Jeseník",
+   "kod": "OSSEMJE"
+  },
+  {
+   "nazev": "Okresní soud Jičín",
+   "kod": "OSVYCJC"
+  },
+  {
+   "nazev": "Okresní soud Jihlava",
+   "kod": "OSJIMJI"
+  },
+  {
+   "nazev": "Okresní soud Jindřichův Hradec",
+   "kod": "OSJICJH"
+  },
+  {
+   "nazev": "Okresní soud Karlovy Vary",
+   "kod": "OSZPCKV"
+  },
+  {
+   "nazev": "Okresní soud Karviná",
+   "kod": "OSSEMKA"
+  },
+  {
+   "nazev": "Okresní soud Kladno",
+   "kod": "OSSTCKL"
+  },
+  {
+   "nazev": "Okresní soud Klatovy",
+   "kod": "OSZPCKT"
+  },
+  {
+   "nazev": "Okresní soud Kolín",
+   "kod": "OSSTCKO"
+  },
+  {
+   "nazev": "Okresní soud Kroměříž",
+   "kod": "OSJIMKM"
+  },
+  {
+   "nazev": "Okresní soud Kutná Hora",
+   "kod": "OSSTCKH"
+  },
+  {
+   "nazev": "Okresní soud Liberec",
+   "kod": "OSSCELB"
+  },
+  {
+   "nazev": "Okresní soud Litoměřice",
+   "kod": "OSSCELT"
+  },
+  {
+   "nazev": "Okresní soud Louny",
+   "kod": "OSSCELN"
+  },
+  {
+   "nazev": "Okresní soud Mělník",
+   "kod": "OSSTCME"
+  },
+  {
+   "nazev": "Okresní soud Mladá Boleslav",
+   "kod": "OSSTCMB"
+  },
+  {
+   "nazev": "Okresní soud Most",
+   "kod": "OSSCEMO"
+  },
+  {
+   "nazev": "Okresní soud Náchod",
+   "kod": "OSVYCNA"
+  },
+  {
+   "nazev": "Okresní soud Nový Jičín",
+   "kod": "OSSEMNJ"
+  },
+  {
+   "nazev": "Okresní soud Nymburk",
+   "kod": "OSSTCNB"
+  },
+  {
+   "nazev": "Okresní soud Olomouc",
+   "kod": "OSSEMOC"
+  },
+  {
+   "nazev": "Okresní soud Opava",
+   "kod": "OSSEMOP"
+  },
+  {
+   "nazev": "Okresní soud Ostrava",
+   "kod": "OSSEMOS"
+  },
+  {
+   "nazev": "Okresní soud Pardubice",
+   "kod": "OSVYCPA"
+  },
+  {
+   "nazev": "Okresní soud Pelhřimov",
+   "kod": "OSJICPE"
+  },
+  {
+   "nazev": "Okresní soud Písek",
+   "kod": "OSJICPI"
+  },
+  {
+   "nazev": "Okresní soud Plzeň-jih",
+   "kod": "OSZPCPJ"
+  },
+  {
+   "nazev": "Okresní soud Plzeň-Město",
+   "kod": "OSZPCPM"
+  },
+  {
+   "nazev": "Okresní soud Plzeň-sever",
+   "kod": "OSZPCPS"
+  },
+  {
+   "nazev": "Okresní soud Prachatice",
+   "kod": "OSJICPT"
+  },
+  {
+   "nazev": "Okresní soud Praha-Východ",
+   "kod": "OSSTCPY"
+  },
+  {
+   "nazev": "Okresní soud Praha-Západ",
+   "kod": "OSSTCPZ"
+  },
+  {
+   "nazev": "Okresní soud Prostějov",
+   "kod": "OSJIMPV"
+  },
+  {
+   "nazev": "Okresní soud Přerov",
+   "kod": "OSSEMPR"
+  },
+  {
+   "nazev": "Okresní soud Příbram",
+   "kod": "OSSTCPB"
+  },
+  {
+   "nazev": "Okresní soud Rakovník",
+   "kod": "OSSTCRA"
+  },
+  {
+   "nazev": "Okresní soud Rokycany",
+   "kod": "OSZPCRO"
+  },
+  {
+   "nazev": "Okresní soud Rychnov nad Kněžnou",
+   "kod": "OSVYCRK"
+  },
+  {
+   "nazev": "Okresní soud Semily",
+   "kod": "OSVYCSM"
+  },
+  {
+   "nazev": "Okresní soud Sokolov",
+   "kod": "OSZPCSO"
+  },
+  {
+   "nazev": "Okresní soud Strakonice",
+   "kod": "OSJICST"
+  },
+  {
+   "nazev": "Okresní soud Svitavy",
+   "kod": "OSVYCSY"
+  },
+  {
+   "nazev": "Okresní soud Šumperk",
+   "kod": "OSSEMSU"
+  },
+  {
+   "nazev": "Okresní soud Tábor",
+   "kod": "OSJICTA"
+  },
+  {
+   "nazev": "Okresní soud Tachov",
+   "kod": "OSZPCTC"
+  },
+  {
+   "nazev": "Okresní soud Teplice",
+   "kod": "OSSCETP"
+  },
+  {
+   "nazev": "Okresní soud Trutnov",
+   "kod": "OSVYCTU"
+  },
+  {
+   "nazev": "Okresní soud Třebíč",
+   "kod": "OSJIMTR"
+  },
+  {
+   "nazev": "Okresní soud Uherské Hradiště",
+   "kod": "OSJIMUH"
+  },
+  {
+   "nazev": "Okresní soud Ústí nad Labem",
+   "kod": "OSSCEUL"
+  },
+  {
+   "nazev": "Okresní soud Ústí nad Orlicí",
+   "kod": "OSVYCUO"
+  },
+  {
+   "nazev": "Okresní soud Vsetín",
+   "kod": "OSSEMVS"
+  },
+  {
+   "nazev": "Okresní soud Vyškov",
+   "kod": "OSJIMVY"
+  },
+  {
+   "nazev": "Okresní soud Zlín",
+   "kod": "OSJIMZL"
+  },
+  {
+   "nazev": "Okresní soud Znojmo",
+   "kod": "OSJIMZN"
+  },
+  {
+   "nazev": "Okresní soud Žďár nad Sázavou",
+   "kod": "OSJIMZR"
+  }
+ ]
+}
