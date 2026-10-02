@@ -3,11 +3,8 @@
  * Handles tabs navigation, status checking, Ollama model manager, RAG inbox, and Agent Chat.
  */
 
-document.addEventListener('DOMContentLoaded', () => {
-    const app = new LexisLocalApp();
-    app.init();
-    window.appInstance = app;
-});
+// Instance aplikace vzniká JEDNOU — viz konec souboru (dřív dva handlery → dvojí init,
+// zdvojené posluchače: upload/„Generovat demo“ se spouštěly dvakrát).
 
 
 // Chybějící / neplatný token: dřív aplikace bez tokenu tiše zobrazovala „undefined/0“
@@ -80,13 +77,16 @@ class LexisLocalApp {
         this.models = [];
         this.inbox = [];
         this.watcherActive = true;
-        this.apiToken = (typeof window !== 'undefined' && window.LEXIS_API_TOKEN) || localStorage.getItem('lexis_api_token') || '';
+        // Osobní token uživatele (llu_…) má přednost před hlavním tokenem, který server vkládá
+        // do stránky na loopbacku — jinak by každý u serveru vystupoval jako správce.
+        let _stored = ''; try { _stored = localStorage.getItem('lexis_api_token') || ''; } catch (e) { /* bez úložiště */ }
+        this.apiToken = (_stored.startsWith('llu_') ? _stored : '') || (typeof window !== 'undefined' && window.LEXIS_API_TOKEN) || _stored || '';
         
         // Calendar state
         this.calendarState = {
             currentYear: new Date().getFullYear(),
             currentMonth: new Date().getMonth(),
-            selectedDate: new Date().toISOString().split('T')[0],
+            selectedDate: (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; })(),
             events: []
         };
         this.expandedTimelines = new Set();
@@ -465,7 +465,7 @@ class LexisLocalApp {
                 sumEl.textContent = s.ready
                     ? `vše připraveno (${s.ok || 0}/${checks.length})`
                     : `${s.ok || 0}/${checks.length} v pořádku${s.warn ? `, ${s.warn} varování` : ''}${s.fail ? `, ${s.fail} kritických` : ''}`;
-                sumEl.style.color = s.fail ? 'var(--accent-red)' : (s.warn ? '#d9a441' : 'var(--accent-green, #10b981)');
+                sumEl.style.color = s.fail ? 'var(--accent-red)' : (s.warn ? '#b45309' : 'var(--accent-green, #10b981)');
             }
             listEl.innerHTML = checks.map(c => {
                 const fix = (c.status !== 'ok' && c.fix)
@@ -540,6 +540,10 @@ class LexisLocalApp {
                 title: "Hlídač rizik & Legislativa",
                 sub: "Detektor střetu zájmů klienta a kontrola souladu doložek s judikaturou Nejvyššího soudu."
             },
+            registries: {
+                title: "Lustrační centrum",
+                sub: "Prověření firem a podnikatelů podle IČO v ARES, insolvenčním rejstříku a dalších registrech."
+            },
             drafts: {
                 title: "Koncepty",
                 sub: "Sdílené koncepty dokumentů — úpravy v prohlížeči, verze, připomínky, schválení. Koncepty od AI čekají na kontrolu advokáta."
@@ -555,6 +559,10 @@ class LexisLocalApp {
             managerial: {
                 title: "Manažerská inteligence & Přehledy",
                 sub: "Ekonomické řízení ziskovosti spisů, rozpočty a přehled kapacitního vytížení týmu."
+            },
+            users: {
+                title: "Uživatelé kanceláře",
+                sub: "Vlastní účet pro každého kolegu — skutečná jména v historii konceptů, schválení a auditu. Zařízení lze rušit jednotlivě."
             },
             audit: {
                 title: "Auditní logy & Provoz",
@@ -593,6 +601,8 @@ class LexisLocalApp {
             this.loadSpisovaTab();
         } else if (tabName === 'aml') {
             this.loadAmlTab();
+        } else if (tabName === 'users') {
+            if (typeof this.loadUsersTab === 'function') this.loadUsersTab();
         }
 
         // Auto close mobile drawer on tab switch
@@ -757,6 +767,7 @@ class LexisLocalApp {
 
 // Bind to window for global inline onclick callbacks
 window.addEventListener('DOMContentLoaded', () => {
+    if (window.appInstance) return; // pojistka proti dvojí inicializaci
     window.appInstance = new LexisLocalApp();
     window.appInstance.init();
 });

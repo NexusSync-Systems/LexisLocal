@@ -73,7 +73,7 @@ Object.assign(LexisLocalApp.prototype, {
                 cell.classList.add('active');
             }
 
-            const todayStr = new Date().toISOString().split('T')[0];
+            const _n = new Date(); const todayStr = `${_n.getFullYear()}-${String(_n.getMonth() + 1).padStart(2, '0')}-${String(_n.getDate()).padStart(2, '0')}`;
             if (day.dateString === todayStr) {
                 cell.classList.add('today');
             }
@@ -87,7 +87,7 @@ Object.assign(LexisLocalApp.prototype, {
                 const renderLimit = 3;
                 dayEvents.slice(0, renderLimit).forEach(e => {
                     const dotClass = e.status === 'completed' ? 'completed' : e.type === 'hearing' ? 'hearing' : 'deadline';
-                    dotsHtml += `<span class="calendar-day-dot ${dotClass}" title="${e.title}"></span>`;
+                    dotsHtml += `<span class="calendar-day-dot ${dotClass}" title="${escapeHtml(e.title)}"></span>`;
                 });
                 if (dayEvents.length > renderLimit) {
                     dotsHtml += `<span style="font-size:0.6rem; line-height:1; opacity:0.6; margin-left:1px;">+</span>`;
@@ -144,6 +144,10 @@ Object.assign(LexisLocalApp.prototype, {
             } else if (isHearing) {
                 icon = '⚖️';
                 typeLabel = 'Soudní jednání';
+                itemClass = 'hearing';
+            } else if (event.type === 'meeting') {
+                icon = '🤝';
+                typeLabel = 'Schůzka';
                 itemClass = 'hearing';
             }
 
@@ -214,7 +218,7 @@ Object.assign(LexisLocalApp.prototype, {
         const today = new Date();
         this.calendarState.currentYear = today.getFullYear();
         this.calendarState.currentMonth = today.getMonth();
-        this.calendarState.selectedDate = today.toISOString().split('T')[0];
+        this.calendarState.selectedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         this.renderCalendar();
         this.renderAgenda();
     },

@@ -5,9 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LexisLocal Hub — Právní AI pod kontrolou</title>
     <!-- Premium Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Narrow:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Žádné externí fonty: CSP povoluje jen 'self' a kancelářská data nemají opouštět síť (ani DNS/preconnect na Google). Písmo padá na systémové. -->
     <link rel="stylesheet" href="styles.css">
     <script>/* motiv: světlý výchozí (Modernist), tmavý jen na přání — nastav co nejdřív, ať nebliká */(function(){try{if(localStorage.getItem('lexis-theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
     <style>body.lexis-dragging::after{content:'Pusťte soubory — nahrají se do doručené pošty';position:fixed;inset:12px;z-index:9998;display:flex;align-items:center;justify-content:center;border:3px dashed var(--accent-blue,#2563eb);border-radius:14px;background:rgba(37,99,235,.08);font-size:1.2rem;font-weight:600;color:var(--text-primary,#111);pointer-events:none;}</style>
@@ -71,6 +69,9 @@
                 <button class="nav-btn" data-tab="audit">
                     <span class="icon">📜</span> Auditní logy
                 </button>
+                <button class="nav-btn" data-tab="users" id="nav-users" style="display:none;">
+                    <span class="icon">👥</span> Uživatelé
+                </button>
                 <button class="nav-btn" data-tab="manual">
                     <span class="icon">📖</span> Návod & Nápověda
                 </button>
@@ -109,6 +110,7 @@
                     <button class="btn btn-secondary" id="btn-pair-phone" title="Zobrazí QR pro spárování telefonu/tabletu s mobilním editorem (/m)" onclick="window.open('/pair','lexislink','width=520,height=760')">
                         <span class="btn-ic"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></span>Spárovat telefon
                     </button>
+                    <span id="me-chip" class="me-chip" style="display:none;"></span>
                     <span id="ai-mode-badge" title="" style="display:none;"></span>
                     <button class="btn btn-secondary" id="btn-theme-toggle" title="Přepnout světlý / tmavý motiv" style="min-width:auto;">🌗</button>
                     <div class="system-time" id="system-time">09:00:00</div>
@@ -378,6 +380,35 @@
                 </section>
 
                 <!-- TAB: MANUAL -->
+                <!-- TAB: USERS (jen správce) -->
+                <section class="tab-pane" id="tab-users">
+                    <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:22px;align-items:start;" class="users-grid">
+                        <div class="glass" style="padding:22px;border-radius:16px;border:1px solid var(--border-glass);">
+                            <h3 style="margin:0 0 14px;">👥 Uživatelé kanceláře</h3>
+                            <div id="users-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+                        </div>
+                        <div class="glass" style="padding:22px;border-radius:16px;border:1px solid var(--border-glass);">
+                            <h3 style="margin:0 0 6px;">＋ Nový uživatel</h3>
+                            <p style="font-size:0.78rem;opacity:0.75;margin:0 0 14px;line-height:1.45;">Každý kolega má vlastní účet. Jeho úpravy konceptů, schválení a úkony v auditu se pak zobrazují pod jeho jménem. Každé zařízení (editor, telefon) má vlastní přístup, který jde zrušit zvlášť.</p>
+                            <form id="user-new-form" onsubmit="window.appInstance.createUser(event)" style="display:flex;flex-direction:column;gap:10px;">
+                                <label style="font-size:0.78rem;">Jméno a příjmení (s titulem)
+                                    <input id="user-new-name" required minlength="2" maxlength="80" placeholder="Např. Mgr. Jana Nováková" style="width:100%;padding:8px 10px;border-radius:8px;margin-top:4px;">
+                                </label>
+                                <label style="font-size:0.78rem;">Role
+                                    <select id="user-new-role" style="width:100%;padding:8px 10px;border-radius:8px;margin-top:4px;"></select>
+                                </label>
+                                <label style="font-size:0.78rem;">První zařízení
+                                    <input id="user-new-device" maxlength="60" value="LexisEditor" style="width:100%;padding:8px 10px;border-radius:8px;margin-top:4px;">
+                                </label>
+                                <button type="submit" class="btn btn-primary" style="justify-content:center;">Založit a spárovat</button>
+                            </form>
+                            <div style="font-size:0.74rem;opacity:0.7;margin-top:14px;line-height:1.5;">
+                                <b>Role:</b> Správce — vše vč. uživatelů a nastavení · Advokát — může schvalovat koncepty a výstupy AI · Koncipient, Asistent/ka — připravují, schvaluje advokát · Jen čtení — nahlížení.
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
                 <section class="tab-pane" id="tab-manual">
                     <div class="glass manual-card">
                         <h3>📖 Manuál na zprovoznění lokální AI (Ollama & apfel)</h3>
@@ -756,8 +787,25 @@
                                 <span>📅</span> Aktivní procesní lhůty a úkoly
                             </h3>
                             <div id="workflow-alerts-list" style="display: flex; flex-direction: column; gap: 15px;">
-                                <!-- Populate via JS -->
-                                <div style="text-align: center; padding: 40px; opacity: 0.6;">Načítám procesní úkoly...</div>
+                                <!-- Kalendář lhůt a jednání (app-calendar.js: renderCalendar / renderAgenda) -->
+                                <div class="calendar-wrapper">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                        <button class="btn btn-secondary" onclick="window.appInstance.prevMonth()" style="padding: 4px 10px;" aria-label="Předchozí měsíc">‹</button>
+                                        <strong id="calendar-month-year" style="font-family: 'Outfit', sans-serif;">Načítám…</strong>
+                                        <div style="display: flex; gap: 6px;">
+                                            <button class="btn btn-secondary" onclick="window.appInstance.jumpToToday()" style="padding: 4px 10px; font-size: 0.75rem;">Dnes</button>
+                                            <button class="btn btn-secondary" onclick="window.appInstance.nextMonth()" style="padding: 4px 10px;" aria-label="Další měsíc">›</button>
+                                        </div>
+                                    </div>
+                                    <div class="calendar-weekdays"><span>Po</span><span>Út</span><span>St</span><span>Čt</span><span>Pá</span><span>So</span><span>Ne</span></div>
+                                    <div class="calendar-days" id="calendar-days-grid"></div>
+                                </div>
+                                <div>
+                                    <h4 style="margin: 6px 0 10px; font-size: 0.85rem; opacity: 0.8;">Agenda dne <span id="calendar-selected-date-label"></span></h4>
+                                    <div id="calendar-day-agenda" style="display: flex; flex-direction: column; gap: 8px;">
+                                        <div style="text-align: center; padding: 20px; opacity: 0.6;">Načítám procesní úkoly...</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -1272,6 +1320,7 @@
     <script src="app-email.js"></script>
     <script src="app-spisova.js"></script>
     <script src="app-drafts.js"></script>
+    <script src="app-users.js"></script>
     <!-- Sjednocení emoji → Lucide-style čárové ikony (i pro dynamický obsah) -->
     <script src="app-icons.js"></script>
     <script>

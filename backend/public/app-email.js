@@ -204,8 +204,9 @@ Object.assign(LexisLocalApp.prototype, {
         } else {
             tasksHtml = this.emailTasks.map(task => {
                 const dateStr = new Date(task.createdAt).toLocaleString('cs-CZ');
-                const safeSubject = escapeHtml(task.subject).replace(/"/g, '&quot;');
-                const escapedResponse = escapeHtml(task.responseSent).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+                // Text/předmět jdou přes data-* (escapeHtml v JS řetězci v onclick nestačí: entity se v atributu dekódují).
+                const safeSubject = escapeHtml('Odpověd na email: ' + (task.subject || ''));
+                const escapedResponse = escapeHtml(task.responseSent);
                 
                 return `
                     <div class="glass email-task-card" style="border: 1px solid var(--border-glass); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; background: rgba(15, 23, 42, 0.35); transition: border-color 0.2s;">
@@ -231,10 +232,10 @@ Object.assign(LexisLocalApp.prototype, {
                         </div>
                         
                         <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border-glass); padding-top: 10px; margin-top: 5px;">
-                            <button class="btn btn-secondary" onclick="window.appInstance.sendTextToLexisEditor('${escapedResponse}', 'Odpověd na email: ${safeSubject}')" style="font-size: 0.75rem; padding: 6px 12px; border: 1px solid var(--border-glass); background: var(--sf-02); color: var(--text-primary);">
+                            <button class="btn btn-secondary" data-text="${escapedResponse}" data-title="${safeSubject}" onclick="window.appInstance.sendTextToLexisEditor(this.dataset.text, this.dataset.title)" style="font-size: 0.75rem; padding: 6px 12px; border: 1px solid var(--border-glass); background: var(--sf-02); color: var(--text-primary);">
                                 ✍️ Odeslat do Editoru
                             </button>
-                            <button class="btn btn-secondary" onclick="window.appInstance.deleteEmailTask('${task.id}')" style="font-size: 0.75rem; padding: 6px 12px; border: 1px solid rgba(239,68,68,0.2); background: rgba(239,68,68,0.02); color: #f87171;">
+                            <button class="btn btn-secondary" onclick="window.appInstance.deleteEmailTask('${safeId(task.id)}')" style="font-size: 0.75rem; padding: 6px 12px; border: 1px solid rgba(239,68,68,0.2); background: rgba(239,68,68,0.02); color: #f87171;">
                                 🗑️ Smazat
                             </button>
                         </div>
@@ -254,8 +255,8 @@ Object.assign(LexisLocalApp.prototype, {
                         <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); border-radius: 8px; padding: 10px 12px;">
                             <strong style="color: var(--accent-blue); display: block; margin-bottom: 6px; font-size: 0.8rem;">⚡ Rychlé nastavení</strong>
                             <div style="opacity:0.75; font-size:0.72rem; margin-bottom:8px;">Zadejte svůj e-mail a heslo — servery se doplní automaticky.</div>
-                            <input type="email" id="em-quick-email" placeholder="vas@email.cz" style="width: 100%; padding: 8px; margin-bottom: 6px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
-                            <input type="password" id="em-quick-pass" placeholder="Heslo k e-mailu (u Gmailu/Outlooku heslo aplikace)" autocomplete="new-password" style="width: 100%; padding: 8px; margin-bottom: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                            <input type="email" id="em-quick-email" placeholder="vas@email.cz" style="width: 100%; padding: 8px; margin-bottom: 6px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
+                            <input type="password" id="em-quick-pass" placeholder="Heslo k e-mailu (u Gmailu/Outlooku heslo aplikace)" autocomplete="new-password" style="width: 100%; padding: 8px; margin-bottom: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                             <button type="button" class="btn btn-secondary" onclick="window.appInstance.quickSetupEmail()" style="width:100%; justify-content:center; padding:8px; font-size:0.8rem; border:1px solid rgba(59,130,246,0.4); background:rgba(59,130,246,0.15); color:white;">Vyplnit podle e-mailu ✨</button>
                             <div id="em-quick-note" style="font-size:0.72rem; margin-top:6px; opacity:0.85;"></div>
                         </div>
@@ -263,41 +264,41 @@ Object.assign(LexisLocalApp.prototype, {
                             <summary style="cursor:pointer; opacity:0.8; padding:4px 0;">Ruční nastavení (pokročilé)</summary>
                         <div style="margin-top:8px;">
                             <label style="opacity: 0.8; display: block; margin-bottom: 4px; font-weight: 500;">Váš autorizovaný e-mail (Advokát)</label>
-                            <input type="email" id="em-auth-sender" required style="width: 100%; padding: 8px 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; outline: none;" />
+                            <input type="email" id="em-auth-sender" required style="width: 100%; padding: 8px 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); outline: none;" />
                         </div>
                         <div>
                             <label style="opacity: 0.8; display: block; margin-bottom: 4px; font-weight: 500;">Cílová adresa asistentů (filtr)</label>
-                            <input type="text" id="em-recip-filter" required style="width: 100%; padding: 8px 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; outline: none;" />
+                            <input type="text" id="em-recip-filter" required style="width: 100%; padding: 8px 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); outline: none;" />
                         </div>
                         
                         <div style="border-top: 1px solid var(--border-glass); padding-top: 10px; margin-top: 5px;">
                             <strong style="color: var(--accent-blue); display: block; margin-bottom: 8px; font-size: 0.8rem;">Příchozí pošta (IMAP)</strong>
                             <div style="display: grid; grid-template-columns: 1.5fr 0.8fr; gap: 10px; margin-bottom: 8px;">
-                                <input type="text" id="em-imap-host" placeholder="imap.domain.cz" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
-                                <input type="text" id="em-imap-port" placeholder="993" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                                <input type="text" id="em-imap-host" placeholder="imap.domain.cz" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
+                                <input type="text" id="em-imap-port" placeholder="993" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                             </div>
                             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-                                <input type="text" id="em-imap-user" placeholder="Uživatel / Login" required style="flex: 1; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                                <input type="text" id="em-imap-user" placeholder="Uživatel / Login" required style="flex: 1; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                                 <div style="display: flex; align-items: center; gap: 5px; font-size: 0.72rem; white-space: nowrap; color: var(--text-secondary);">
                                     <input type="checkbox" id="em-imap-ssl" /> SSL/TLS
                                 </div>
                             </div>
-                            <input type="password" id="em-imap-pass" placeholder="Heslo k IMAP (pro příjem pošty)" autocomplete="new-password" style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                            <input type="password" id="em-imap-pass" placeholder="Heslo k IMAP (pro příjem pošty)" autocomplete="new-password" style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                         </div>
 
                         <div style="border-top: 1px solid var(--border-glass); padding-top: 10px;">
                             <strong style="color: var(--accent-yellow); display: block; margin-bottom: 8px; font-size: 0.8rem;">Odesílání odpovědí (SMTP)</strong>
                             <div style="display: grid; grid-template-columns: 1.5fr 0.8fr; gap: 10px; margin-bottom: 8px;">
-                                <input type="text" id="em-smtp-host" placeholder="smtp.domain.cz" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
-                                <input type="text" id="em-smtp-port" placeholder="465" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                                <input type="text" id="em-smtp-host" placeholder="smtp.domain.cz" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
+                                <input type="text" id="em-smtp-port" placeholder="465" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                             </div>
                             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-                                <input type="text" id="em-smtp-user" placeholder="Uživatel / Login" required style="flex: 1; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                                <input type="text" id="em-smtp-user" placeholder="Uživatel / Login" required style="flex: 1; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                                 <div style="display: flex; align-items: center; gap: 5px; font-size: 0.72rem; white-space: nowrap; color: var(--text-secondary);">
                                     <input type="checkbox" id="em-smtp-ssl" /> SSL/TLS
                                 </div>
                             </div>
-                            <input type="password" id="em-smtp-pass" placeholder="Heslo k SMTP (pro odesílání)" autocomplete="new-password" style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                            <input type="password" id="em-smtp-pass" placeholder="Heslo k SMTP (pro odesílání)" autocomplete="new-password" style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                         </div>
                         </details>
                         
@@ -472,16 +473,16 @@ Object.assign(LexisLocalApp.prototype, {
                 const isApproved = entry.humanApproved === true;
                 const approveBtn = isApproved 
                     ? `<span style="color: var(--accent-green); font-weight: bold; font-size: 0.75rem;">✓ Schváleno</span>`
-                    : `<button class="btn btn-secondary" onclick="window.appInstance.approveTransparencyEntry('${entry.id}')" style="font-size: 0.7rem; padding: 3px 8px; border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.05);">Schválit</button>`;
+                    : `<button class="btn btn-secondary" onclick="window.appInstance.approveTransparencyEntry('${safeId(entry.id)}')" style="font-size: 0.7rem; padding: 3px 8px; border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.05);">Schválit</button>`;
 
                 html += `
                     <div style="padding: 8px; border-bottom: 1px solid var(--border-glass); display: flex; justify-content: space-between; align-items: center; gap: 10px;">
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-weight: bold; display: flex; align-items: center; gap: 4px;">
-                                🤖 ${entry.agentName || 'AI'} <span style="font-weight: normal; color: var(--text-muted); font-size: 0.7rem;">(${entry.model})</span>
+                                🤖 ${escapeHtml(entry.agentName || 'AI')} <span style="font-weight: normal; color: var(--text-muted); font-size: 0.7rem;">(${escapeHtml(entry.model)})</span>
                             </div>
                             <div style="font-size: 0.7rem; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; margin-top: 2px;">
-                                Hash: ${entry.hash ? entry.hash.substring(0, 12) : 'N/A'}... | Prompt: "${entry.prompt}"
+                                Hash: ${entry.hash ? escapeHtml(entry.hash.substring(0, 12)) : 'N/A'}... | Prompt: "${escapeHtml(entry.prompt)}"
                             </div>
                         </div>
                         <div style="flex: 0 0 auto; text-align: right;">

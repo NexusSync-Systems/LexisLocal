@@ -2391,7 +2391,8 @@ var qrcode = function() {
 </script>
 <script>
 (function(){
-  var token = window.LEXIS_API_TOKEN || (function(){ try { return localStorage.getItem('lexis_api_token') || ''; } catch(e){ return ''; } })();
+  var _st = (function(){ try { return localStorage.getItem('lexis_api_token') || ''; } catch(e){ return ''; } })();
+  var token = (_st.indexOf('llu_') === 0 ? _st : '') || window.LEXIS_API_TOKEN || _st;
   var qrbox=document.getElementById('qrbox'), codeEl=document.getElementById('code'),
       codeWrap=document.getElementById('codewrap'), urlsEl=document.getElementById('urls'),
       countEl=document.getElementById('count'), refreshBtn=document.getElementById('refresh'),

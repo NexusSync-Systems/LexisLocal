@@ -56,13 +56,13 @@ Object.assign(LexisLocalApp.prototype, {
             html += `
                 <div class="agent-card glass">
                     <div class="agent-card-header">
-                        <div class="agent-avatar">${ICONS[id] || def.emoji}</div>
+                        <div class="agent-avatar">${ICONS[id] || escapeHtml(def.emoji)}</div>
                         <div class="agent-info">
-                            <h4>${def.name}</h4>
-                            <span>${def.role}</span>
+                            <h4>${escapeHtml(def.name)}</h4>
+                            <span>${escapeHtml(def.role)}</span>
                         </div>
                     </div>
-                    <p>${def.desc}</p>
+                    <p>${escapeHtml(def.desc)}</p>
                 </div>
             `;
         });
@@ -207,7 +207,7 @@ Object.assign(LexisLocalApp.prototype, {
                 const warningEmoji = isCritical ? '🚨' : '📅';
                 deadlineHtml = `
                     <div class="deadline-countdown ${criticalClass}">
-                        <span>${warningEmoji} Lhůta: ${closestFile.deadlineDays} dnů</span>
+                        <span>${warningEmoji} Lhůta: ${escapeHtml(String(closestFile.deadlineDays))} dnů</span>
                     </div>
                     <span class="subtext">Termín: ${new Date(closestFile.deadlineDate).toLocaleDateString('cs-CZ')}</span>
                     <button class="btn btn-secondary" onclick="window.appInstance.downloadIcsFile('${_lexEscJsAttr(caseNum)}', '${_lexEscJsAttr(groupPlaintiff)}', '${_lexEscJsAttr(groupDefendant)}', '${_lexEscJsAttr(closestFile.deadlineDate)}')" style="margin-top: 10px; width: 100%; font-size: 0.72rem; padding: 5px 8px; display: flex; align-items: center; justify-content: center; gap: 4px;">
@@ -477,7 +477,7 @@ Object.assign(LexisLocalApp.prototype, {
             console.log("🔌 Odesílám text do LexisEditoru na portu 3300...");
             
             // Format HTML content to be loaded in the Quill Editor elegantly
-            const formattedHtml = `<h3>📝 ${title}</h3>
+            const formattedHtml = `<h3>📝 ${escapeHtml(title)}</h3>
 <p><i>Importováno z Vaší sémantické paměti LexisLocal dne ${new Date().toLocaleString('cs-CZ')}:</i></p>
 <hr>
 <pre>${text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>`;

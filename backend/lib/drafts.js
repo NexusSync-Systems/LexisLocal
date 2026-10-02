@@ -381,7 +381,7 @@ function _markHumanApproved(d) {
     if (!ids.length) return;
     try {
         const db = require('./database');
-        ids.forEach(tid => { try { db.update('transparency_logs', tid, { humanApproved: true, approvedAt: _now() }); } catch (e) { /* záznam nemusí existovat */ } });
+        ids.forEach(tid => { try { db.update('transparency_logs', tid, { humanApproved: true, approvedAt: _now(), approvedBy: d.approvedBy ? { id: d.approvedBy.id || d.approvedBy.userId || null, name: d.approvedBy.name || null } : null }); } catch (e) { /* záznam nemusí existovat */ } });
     } catch (e) { /* ledger je doplněk */ }
 }
 

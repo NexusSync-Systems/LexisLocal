@@ -27,6 +27,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Object.ass
  * /api/spisy, /api/lhutnik, /api/skartace, /api/fakturace, /api/aml.
  * Veškerá data z API se escapují (escapeHtml) — XSS obrana.
  */
+const AML_FACTOR_LABEL = {
+    ico_neplatne: 'Neplatné IČO', insolvence: 'Insolvence (ISIR)', registry_nedostupne: 'Registry nedostupné',
+    ico_chybi: 'Chybí IČO', identifikace_neuplna: 'Neúplná identifikace', nazev_nesouhlasi: 'Název neodpovídá IČO',
+    pep_shoda: 'Shoda s PEP seznamem', sankcni_shoda: 'Shoda se sankčním seznamem kanceláře', sankcni_shoda_oficialni: 'Shoda s oficiálním sankčním seznamem'
+};
+const SPIS_STAV_LABEL = { aktivni: 'aktivní', archiv: 'archiv', skartace: 'ke skartaci' };
+
 Object.assign(LexisLocalApp.prototype, {
 
     // --- Fetch helpery ------------------------------------------------------
@@ -68,12 +75,12 @@ Object.assign(LexisLocalApp.prototype, {
             const stavBadge = { aktivni: '#22c55e', archiv: '#eab308', skartace: '#ef4444' };
             el.innerHTML = spisy.map(s => `
                 <div class="glass" style="padding:14px;border-radius:12px;border:1px solid var(--border-glass);display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer;"
-                     onclick="window.appInstance.openSpis('${s.id}')">
+                     onclick="window.appInstance.openSpis('${safeId(s.id)}')">
                     <div>
                         <div style="font-weight:600;">${escapeHtml(s.spisZn || s.nazev || 'Bez značky')}</div>
                         <div style="font-size:0.8rem;opacity:0.7;">${escapeHtml(s.klient || 'Klient nezadán')}${s.protistrana ? ' × ' + escapeHtml(s.protistrana) : ''}</div>
                     </div>
-                    <span style="font-size:0.7rem;padding:3px 8px;border-radius:20px;background:${stavBadge[s.stav] || '#64748b'}22;color:${stavBadge[s.stav] || '#94a3b8'};">${escapeHtml(s.stav)}</span>
+                    <span style="font-size:0.7rem;padding:3px 8px;border-radius:20px;background:${stavBadge[s.stav] || '#64748b'}22;color:${stavBadge[s.stav] || '#94a3b8'};">${escapeHtml(SPIS_STAV_LABEL[s.stav] || s.stav)}</span>
                 </div>`).join('');
         } catch (e) {
             el.innerHTML = `<div style="color:#f87171;padding:12px;">Chyba: ${escapeHtml(e.message)}</div>`;
@@ -94,7 +101,7 @@ Object.assign(LexisLocalApp.prototype, {
             el.innerHTML = `
                 <h3 style="margin-top:0;">${escapeHtml(s.spisZn || s.nazev)}</h3>
                 <div style="font-size:0.85rem;opacity:0.8;margin-bottom:12px;">
-                    Klient: ${escapeHtml(s.klient || '—')} · Protistrana: ${escapeHtml(s.protistrana || '—')} · Stav: <b>${escapeHtml(s.stav)}</b>
+                    Klient: ${escapeHtml(s.klient || '—')} · Protistrana: ${escapeHtml(s.protistrana || '—')} · Stav: <b>${escapeHtml(SPIS_STAV_LABEL[s.stav] || s.stav)}</b>
                     ${s.retentionUntil ? ' · Retence do: ' + escapeHtml(s.retentionUntil) : ''}
                 </div>
                 <div style="font-size:0.82rem;margin:-6px 0 12px;">
@@ -105,19 +112,19 @@ Object.assign(LexisLocalApp.prototype, {
                     <button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px;margin-left:6px;" onclick="window.appInstance.upravitSoudSpisu('${String(s.id).replace(/[^A-Za-z0-9_.:-]/g, '')}')">Upravit soud / advokáta</button>
                 </div>
                 <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-size:0.85rem;">
-                    <span>📄 Dokumentů: <b>${m.documentsCount}</b></span>
-                    <span>⏳ Lhůt: <b>${m.deadlinesCount}</b> (${m.deadlinesNeedsReview} k ověření)</span>
-                    <span>⚖️ Jednání: <b>${m.hearingsCount}</b></span>
-                    <span>🕒 Čas: <b>${m.timeHours} hod</b></span>
+                    <span>📄 Dokumentů: <b>${escapeHtml(String(m.documentsCount))}</b></span>
+                    <span>⏳ Lhůt: <b>${escapeHtml(String(m.deadlinesCount))}</b> (${escapeHtml(String(m.deadlinesNeedsReview))} k ověření)</span>
+                    <span>⚖️ Jednání: <b>${escapeHtml(String(m.hearingsCount))}</b></span>
+                    <span>🕒 Čas: <b>${escapeHtml(String(m.timeHours))} hod</b></span>
                     <span>📅 Nejbližší lhůta: <b>${escapeHtml(m.nextDeadline || '—')}</b></span>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
-                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.setSpisStav('${s.id}','aktivni')">Aktivní</button>
-                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.setSpisStav('${s.id}','archiv')">Archivovat</button>
-                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.setSpisStav('${s.id}','skartace')">Ke skartaci</button>
-                    <button class="btn btn-primary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.fakturaZeSpisu('${s.id}')">💶 Vystavit fakturu</button>
-                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.openSpisTimeline('${s.id}')">🕒 Časová osa</button>
-                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.openSpisDrafts('${s.id}')">📄 Koncepty</button>
+                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.setSpisStav('${safeId(s.id)}','aktivni')">Aktivní</button>
+                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.setSpisStav('${safeId(s.id)}','archiv')">Archivovat</button>
+                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.setSpisStav('${safeId(s.id)}','skartace')">Ke skartaci</button>
+                    <button class="btn btn-primary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.fakturaZeSpisu('${safeId(s.id)}')">💶 Vystavit fakturu</button>
+                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.openSpisTimeline('${safeId(s.id)}')">🕒 Časová osa</button>
+                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.openSpisDrafts('${safeId(s.id)}')">📄 Koncepty</button>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                     <div><h4 style="margin:0 0 6px;">Dokumenty</h4><ul style="margin:0;padding-left:18px;font-size:0.85rem;">${docs}</ul></div>
@@ -139,9 +146,9 @@ Object.assign(LexisLocalApp.prototype, {
             const icon = { denik: '📝', audit: '🔒', dokument: '📄', lhuta: '⏳', jednani: '⚖️' };
             const rows = (tl.timeline || []).map(i => `<li style="font-size:0.82rem;margin-bottom:4px;">${icon[i.kind] || '•'} <span style="opacity:0.55;">${escapeHtml((i.time || '').replace('T', ' ').slice(0, 16))}</span> — ${escapeHtml(i.label || '')} <span style="opacity:0.4;">[${escapeHtml(i.kind)}]</span></li>`).join('') || '<li style="opacity:0.6;">Zatím žádné události.</li>';
             el.innerHTML = `
-                <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;margin-bottom:12px;" onclick="window.appInstance.openSpis('${id}')">← Zpět na spis</button>
+                <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;margin-bottom:12px;" onclick="window.appInstance.openSpis('${safeId(id)}')">← Zpět na spis</button>
                 <h3 style="margin:0 0 8px;">🕒 Časová osa spisu</h3>
-                <div style="font-size:0.8rem;opacity:0.7;margin-bottom:10px;">Sloučeno: deník, audit, dokumenty, lhůty, jednání (${tl.count} událostí).</div>
+                <div style="font-size:0.8rem;opacity:0.7;margin-bottom:10px;">Sloučeno: deník, audit, dokumenty, lhůty, jednání (${escapeHtml(String(tl.count))} událostí).</div>
                 <ul style="margin:0;padding-left:18px;list-style:none;">${rows}</ul>`;
         } catch (e) {
             el.innerHTML = `<div style="color:#f87171;padding:12px;">Chyba: ${escapeHtml(e.message)}</div>`;
@@ -156,7 +163,7 @@ Object.assign(LexisLocalApp.prototype, {
             const { drafts } = await this.ssGet(`/spisy/${id}/drafts`);
             const rows = (drafts || []).map(d => `<li style="font-size:0.85rem;margin-bottom:4px;">📄 ${escapeHtml(d.fileName)} <span style="opacity:0.5;">${d.mtime ? escapeHtml(d.mtime.replace('T', ' ').slice(0, 16)) : ''}${d.size != null ? ' · ' + Math.round(d.size / 1024) + ' kB' : ''}</span></li>`).join('') || '<li style="opacity:0.6;">Ve složce spisu (03_Koncepty) zatím nejsou žádné koncepty.</li>';
             el.innerHTML = `
-                <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;margin-bottom:12px;" onclick="window.appInstance.openSpis('${id}')">← Zpět na spis</button>
+                <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;margin-bottom:12px;" onclick="window.appInstance.openSpis('${safeId(id)}')">← Zpět na spis</button>
                 <h3 style="margin:0 0 8px;">📄 Koncepty ve spisu</h3>
                 <div style="font-size:0.8rem;opacity:0.7;margin-bottom:10px;">Soubory uložené ve složce <b>03_Koncepty</b> tohoto spisu.</div>
                 <ul style="margin:0;padding-left:18px;list-style:none;">${rows}</ul>`;
@@ -225,7 +232,7 @@ Object.assign(LexisLocalApp.prototype, {
             });
             const d = await res.json();
             if (res.status === 201 && d.success) {
-                el.innerHTML = `<span style="color:#34d399;">✅ Rezervováno: ${escapeHtml(d.meeting.date)} ${escapeHtml(d.meeting.time)} (${d.meeting.durationMin} min).</span>`;
+                el.innerHTML = `<span style="color:#34d399;">✅ Rezervováno: ${escapeHtml(d.meeting.date)} ${escapeHtml(d.meeting.time)} (${escapeHtml(String(d.meeting.durationMin))} min).</span>`;
             } else if (res.status === 409) {
                 const alts = (d.suggestions || []).map(s => escapeHtml(s.start)).slice(0, 8).join(', ');
                 el.innerHTML = `<span style="color:#f87171;">❌ ${escapeHtml(d.error || 'Kolize.')}</span>` + (alts ? `<div style="margin-top:4px;opacity:0.85;">Volné alternativy: ${alts}</div>` : '');
@@ -286,10 +293,10 @@ Object.assign(LexisLocalApp.prototype, {
             const { items, summary } = await this.ssGet('/lhutnik');
             const color = { overdue: '#ef4444', urgent: '#f97316', soon: '#eab308', ok: '#22c55e', unknown: '#64748b' };
             const head = `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:0.8rem;margin-bottom:10px;">
-                <span style="color:#ef4444;">Po termínu: ${summary.overdue}</span>
-                <span style="color:#f97316;">Urgentní: ${summary.urgent}</span>
-                <span style="color:#eab308;">Brzy: ${summary.soon}</span>
-                <span style="color:#94a3b8;">K ověření: ${summary.needsReview}</span></div>`;
+                <span style="color:#ef4444;">Po termínu: ${escapeHtml(String(summary.overdue))}</span>
+                <span style="color:#f97316;">Urgentní: ${escapeHtml(String(summary.urgent))}</span>
+                <span style="color:#eab308;">Brzy: ${escapeHtml(String(summary.soon))}</span>
+                <span style="color:#94a3b8;">K ověření: ${escapeHtml(String(summary.needsReview))}</span></div>`;
             if (!items.length) { el.innerHTML = head + '<div style="opacity:0.6;">Žádné lhůty.</div>'; return; }
             const rows = items.map(i => `
                 <tr>
@@ -298,8 +305,8 @@ Object.assign(LexisLocalApp.prototype, {
                     <td style="padding:6px;font-size:0.8rem;">${escapeHtml(i.caseNumber || '—')}</td>
                     <td style="padding:6px;">${escapeHtml(daysLeftCs(i.daysLeft))}</td>
                     <td style="padding:6px;">${i.needsReview
-                        ? `<button class="btn btn-primary" style="font-size:0.7rem;padding:3px 8px;" onclick="window.appInstance.confirmLhuta('${i.fileId}',${i.index})">Potvrdit</button>
-                           <button class="btn btn-secondary" style="font-size:0.7rem;padding:3px 8px;" onclick="window.appInstance.dismissLhuta('${i.fileId}',${i.index})">Odložit</button>`
+                        ? `<button class="btn btn-primary" style="font-size:0.7rem;padding:3px 8px;" onclick="window.appInstance.confirmLhuta('${safeId(i.fileId)}',${Number(i.index)})">Potvrdit</button>
+                           <button class="btn btn-secondary" style="font-size:0.7rem;padding:3px 8px;" onclick="window.appInstance.dismissLhuta('${safeId(i.fileId)}',${Number(i.index)})">Odložit</button>`
                         : '<span style="opacity:0.5;font-size:0.75rem;">✓</span>'}</td>
                 </tr>`).join('');
             el.innerHTML = head + `<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
@@ -332,7 +339,7 @@ Object.assign(LexisLocalApp.prototype, {
                 line(n.inSkartace, '🗑️ Ve stavu skartace', '#f97316') +
                 line(n.retained, '📦 V archivu (retence běží)', '#eab308') +
                 (n.summary.expired + n.summary.inSkartace + n.summary.retained === 0 ? '<div style="opacity:0.6;">Žádné archivované spisy.</div>' : '') +
-                (n.expired.length ? `<button class="btn btn-primary" style="font-size:0.8rem;padding:6px 12px;margin-top:6px;" onclick="window.appInstance.vytvorProtokol(${JSON.stringify(n.expired.map(s => s.id)).replace(/"/g, '&quot;')})">Vytvořit skartační protokol</button>` : '');
+                (n.expired.length ? `<button class="btn btn-primary" style="font-size:0.8rem;padding:6px 12px;margin-top:6px;" onclick="window.appInstance.vytvorProtokol(${escapeHtml(JSON.stringify(n.expired.map(s => s.id)))})">Vytvořit skartační protokol</button>` : '');
         } catch (e) {
             el.innerHTML = `<div style="color:#f87171;">Chyba: ${escapeHtml(e.message)}</div>`;
         }
@@ -352,9 +359,9 @@ Object.assign(LexisLocalApp.prototype, {
         if (!el) return;
         try {
             const o = await this.ssGet('/fakturace/outstanding');
-            const rows = o.invoices.map(i => `<li>${escapeHtml(i.variabilniSymbol)} — ${escapeHtml(i.klient || i.spisZn || '')} — <b>${i.toPay} Kč</b>
-                <button class="btn btn-secondary" style="font-size:0.7rem;padding:2px 8px;" onclick="window.appInstance.oznacUhrazeno('${i.id}')">Uhrazeno</button></li>`).join('');
-            el.innerHTML = `<div style="margin-bottom:8px;">Neuhrazeno: <b style="color:#f97316;">${o.totalDue} Kč</b> (${o.count} faktur)</div>
+            const rows = o.invoices.map(i => `<li>${escapeHtml(i.variabilniSymbol)} — ${escapeHtml(i.klient || i.spisZn || '')} — <b>${escapeHtml(String(i.toPay))} Kč</b>
+                <button class="btn btn-secondary" style="font-size:0.7rem;padding:2px 8px;" onclick="window.appInstance.oznacUhrazeno('${safeId(i.id)}')">Uhrazeno</button></li>`).join('');
+            el.innerHTML = `<div style="margin-bottom:8px;">Neuhrazeno: <b style="color:#f97316;">${escapeHtml(String(o.totalDue))} Kč</b> (${escapeHtml(String(o.count))} faktur)</div>
                 <ul style="margin:0;padding-left:18px;font-size:0.85rem;">${rows || '<li style="opacity:0.6;">Žádné neuhrazené.</li>'}</ul>`;
         } catch (e) {
             el.innerHTML = `<div style="color:#f87171;">Chyba: ${escapeHtml(e.message)}</div>`;
@@ -387,8 +394,8 @@ Object.assign(LexisLocalApp.prototype, {
             el.innerHTML = files.map(f => `
                 <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:0.85rem;">
                     <span style="flex:1;">${escapeHtml(f.fileName || f.id)}</span>
-                    <select id="assign-${escapeHtml(f.id)}" style="background:#0f172a;color:white;border:1px solid var(--border-glass);border-radius:6px;padding:4px;">${opts}</select>
-                    <button class="btn btn-secondary" style="font-size:0.7rem;padding:3px 8px;" onclick="window.appInstance.zaradit('${f.id}')">Zařadit</button>
+                    <select id="assign-${escapeHtml(f.id)}" style="background:var(--sunken-1);color:var(--text-primary);border:1px solid var(--border-glass);border-radius:6px;padding:4px;">${opts}</select>
+                    <button class="btn btn-secondary" style="font-size:0.7rem;padding:3px 8px;" onclick="window.appInstance.zaradit('${safeId(f.id)}')">Zařadit</button>
                 </div>`).join('');
         } catch (e) {
             el.innerHTML = `<div style="color:#f87171;">Chyba: ${escapeHtml(e.message)}</div>`;
@@ -423,7 +430,7 @@ Object.assign(LexisLocalApp.prototype, {
                         <span style="color:${color[c.risk]};font-weight:600;">${escapeHtml(c.risk.toUpperCase())}</span>
                     </div>
                     <div style="font-size:0.8rem;opacity:0.8;">${escapeHtml(c.typ)}${c.ico ? ' · IČO ' + escapeHtml(c.ico) : ''}${c.registry && c.registry.inInsolvency ? ' · ⚠️ INSOLVENCE' : ''}</div>
-                    ${c.factors.length ? `<div style="font-size:0.78rem;opacity:0.7;margin-top:4px;">${c.factors.map(f => escapeHtml(f.code)).join(', ')}</div>` : ''}
+                    ${c.factors.length ? `<div style="font-size:0.78rem;opacity:0.7;margin-top:4px;">${c.factors.map(f => `<div>• ${escapeHtml(AML_FACTOR_LABEL[f.code] || f.code)}${f.detail ? ` — <span style="opacity:0.85;">${escapeHtml(f.detail)}</span>` : ''}</div>`).join('')}</div>` : ''}
                     <div style="font-size:0.72rem;color:#eab308;margin-top:4px;">⚠️ Ověřte i vůči oficiálním PEP/sankčním seznamům.</div>
                 </div>`).join('');
         } catch (e) {

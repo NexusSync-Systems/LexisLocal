@@ -29,7 +29,7 @@ const principalLib = require('../lib/principal');
 
 function principalOf(req) {
     return req.principal || principalLib.resolvePrincipal(req, { apiToken: process.env.API_TOKEN, enforceToken: process.env.LEXIS_ENFORCE_TOKEN !== '0' })
-        || { userId: 'local', name: 'Místní uživatel', scopes: ['read', 'write', 'admin'], kind: 'implicit' };
+        || { userId: 'local', name: 'Místní uživatel', scopes: principalLib.FULL_SCOPES.slice(), kind: 'implicit' };
 }
 
 function _spis(spisId) {
@@ -134,7 +134,11 @@ router.post('/:id/status', (req, res) => {
     const d = load(req, res, 'write'); if (!d) return;
     try {
         const st = req.body && req.body.status;
-        const r = D.setStatus(d.id, st, principalOf(req));
+        const p = principalOf(req);
+        if (st === 'schvaleno' && !principalLib.hasScope(p, 'approve')) {
+            return res.status(403).json({ error: 'Koncept smí schválit jen advokát nebo správce. Pošlete ho ke kontrole.', code: 'forbidden_role' });
+        }
+        const r = D.setStatus(d.id, st, p);
         audit(st === 'schvaleno' ? 'Schválení konceptu' : 'Změna stavu konceptu', r, req, { status: st });
         res.json(D.view(r));
     } catch (e) { fail(res, e); }

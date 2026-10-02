@@ -1956,10 +1956,10 @@ body {
 }
 
 .agent-form .form-control {
-    background: rgba(0, 0, 0, 0.25) !important;
+    background: var(--sunken-1, rgba(0, 0, 0, 0.25)) !important;
     border: 1px solid var(--border-glass) !important;
     border-radius: 8px !important;
-    color: white !important;
+    color: var(--text-primary) !important;
     padding: 10px 14px !important;
     transition: var(--transition-smooth);
     outline: none;
@@ -1968,7 +1968,6 @@ body {
 .agent-form .form-control:focus {
     border-color: var(--accent-blue) !important;
     box-shadow: 0 0 8px rgba(138, 83, 32, 0.2) !important;
-    background: rgba(0, 0, 0, 0.4) !important;
 }
 
 /* monospaced prompt editor style */
@@ -2255,7 +2254,7 @@ td { border-bottom: 1px solid var(--m-hair); }
 
 /* ── INPUTY / FORMULÁŘE ── */
 input:not([type=checkbox]):not([type=radio]):not([type=color]), textarea, select, .glass-select {
-  border: 2px solid var(--m-ink) !important; background: var(--m-surface-2) !important; color: var(--m-ink);
+  border: 2px solid var(--m-ink) !important; background: var(--m-surface-2) !important; color: var(--m-ink) !important;
 }
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--m-accent); outline-offset: 0; border-color: var(--m-accent) !important; }
 ::selection { background: color-mix(in srgb, var(--m-accent) 30%, transparent); }
@@ -2335,3 +2334,21 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
     .drafts-layout { grid-template-columns: 1fr; }
     .draft-page { padding: 18px 16px; font-size: 11pt; }
 }
+
+/* ── SVĚTLÝ MOTIV: čitelnost barev převzatých z tmavého motivu ──
+   Řada šablon v JS má inline neonové barvy (#22c55e, #fbbf24, #fb7185…), které mají
+   na světlém pozadí kontrast ~1,5:1. Ve světlém motivu je ztmavíme na čitelné odstíny. */
+html:not([data-theme="dark"]) :is([style*="color:#22c55e"],[style*="color: #22c55e"],[style*="color:#4ade80"],[style*="color: #4ade80"],[style*="color:#34d399"],[style*="color: #34d399"],[style*="color:#10b981"],[style*="color: #10b981"],[style*="color:#a7f3d0"],[style*="color: #a7f3d0"]):not([style*="background:#22c55e;"]):not([style*="background: #22c55e;"]) { color: #15803d !important; }
+html:not([data-theme="dark"]) :is([style*="color:#fbbf24"],[style*="color: #fbbf24"],[style*="color:#eab308"],[style*="color: #eab308"]) { color: #a16207 !important; }
+html:not([data-theme="dark"]) :is([style*="color:#fb7185"],[style*="color: #fb7185"],[style*="color:#fca5a5"],[style*="color: #fca5a5"],[style*="color:#ff6b6b"],[style*="color: #ff6b6b"],[style*="color:#f87171"],[style*="color: #f87171"]) { color: #be123c !important; }
+html:not([data-theme="dark"]) :is([style*="color:#60a5fa"],[style*="color: #60a5fa"]) { color: #1d4ed8 !important; }
+html:not([data-theme="dark"]) :is([style*="color:#a78bfa"],[style*="color: #a78bfa"],[style*="color:#a855f7"],[style*="color: #a855f7"]) { color: #6d28d9 !important; }
+html:not([data-theme="dark"]) .recommendation-badge { color: #047857 !important; }
+/* plná tlačítka si ponechají bílý text i s inline barvou */
+html:not([data-theme="dark"]) :is(.btn-primary, .btn-danger) { color: #fff !important; }
+html:not([data-theme="dark"]) .badge-ai { color: #7e22ce; }
+
+/* Přihlášený uživatel v hlavičce */
+.me-chip { display:inline-flex; align-items:center; gap:2px; padding:6px 10px; border:2px solid var(--m-ink, var(--border-glass)); border-radius:8px; font-size:0.8rem; white-space:nowrap; max-width:260px; overflow:hidden; text-overflow:ellipsis; }
+.me-chip.me-chip-shared { border-style:dashed; opacity:0.8; }
+@media (max-width: 900px) { .users-grid { grid-template-columns: 1fr !important; } .me-chip { max-width:140px; } }

@@ -6,14 +6,17 @@ const crypto = require('crypto');
 // v database.js). Dodatečná změna/smazání záznamu poruší řetěz a jde poznat.
 const AUDIT_GENESIS = 'genesis_lexis_audit_ledger';
 function _hashEntry(e, prevHash) {
-    const canonical = JSON.stringify({
+    const c = {
         timestamp: e.timestamp,
         user: e.user,
         operation: e.operation,
         target: e.target,
         spisId: e.spisId || null,
         details: e.details || {}
-    });
+    };
+    // actor (kdo úkon provedl) je v řetězci jen u záznamů, které ho mají → staré záznamy dál sedí.
+    if (e.actor) c.actor = e.actor;
+    const canonical = JSON.stringify(c);
     return crypto.createHash('sha256').update(String(prevHash) + canonical).digest('hex');
 }
 
@@ -86,6 +89,11 @@ function logEvent(user, operation, target, details = {}) {
             spisId: (details && details.spisId) || null,
             details: details
         };
+        // Skutečný člověk/zařízení za úkonem (z kontextu HTTP požadavku); mimo požadavek nic.
+        try {
+            const actor = require('./request_context').currentActor();
+            if (actor) newEvent.actor = actor;
+        } catch (e) { /* kontext nedostupný */ }
         newEvent.prevHash = prevHash;
         newEvent.hash = _hashEntry(newEvent, prevHash);
         logs.push(newEvent);

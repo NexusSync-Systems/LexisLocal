@@ -92,7 +92,7 @@ Object.assign(LexisLocalApp.prototype, {
                 <div class="model-card glass">
                     <div class="model-avatar">🧠</div>
                     <div class="model-details">
-                        <h4>${m.name}</h4>
+                        <h4>${escapeHtml(m.name)}</h4>
                         <span>Velikost: ${sizeGb} GB</span>
                     </div>
                 </div>
@@ -113,7 +113,7 @@ Object.assign(LexisLocalApp.prototype, {
             // Embedding modely (bge-m3 apod.) neumí chat — do výběru nepatří.
             const isEmbed = n => /(^|[\/:\-_])(bge|nomic|mxbai|minilm|e5|gte)([\-:._]|$)|embed/i.test(n || '');
             this.models.filter(m => !isEmbed(m.name)).forEach(m => {
-                html += `<option value="${m.name}">${m.name}</option>`;
+                html += `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)}</option>`;
             });
         }
         select.innerHTML = html;
@@ -254,7 +254,7 @@ Object.assign(LexisLocalApp.prototype, {
                         <div style="border-left: 2px solid var(--accent-blue); padding-left: 15px; margin-bottom: 20px; position: relative;">
                             <div style="position: absolute; left: -9px; top: 0; background: var(--bg-card); border: 2px solid var(--accent-blue); border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 0.5rem;"></div>
                             <div style="font-size: 0.8rem; font-weight: bold; color: var(--text-primary); display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
-                                <span>${agentEmoji}</span> Krok ${escapeHtml(step.step)}: ${escapeHtml(step.agentName)} <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-left: 5px;">${carbon}</span>
+                                <span>${escapeHtml(agentEmoji)}</span> Krok ${escapeHtml(step.step)}: ${escapeHtml(step.agentName)} <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-left: 5px;">${carbon}</span>
                             </div>
                             <div style="font-size: 0.75rem; font-style: italic; color: var(--text-muted); margin-bottom: 5px;">Instrukce: "${escapeHtml(step.instruction)}"</div>
                             <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; background: var(--sf-01); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-glass);">${formattedOutput}</div>
@@ -507,13 +507,13 @@ Object.assign(LexisLocalApp.prototype, {
                 html += `
                     <div class="search-result-card glass" style="border-left-color: ${isHigh ? '#60a5fa' : '#34d399'};">
                         <div class="search-result-meta">
-                            <div class="search-result-file" onclick="window.appInstance.viewSpisContent('${match.fileName.replace(/'/g, "\\'")}')">
-                                📁 <span>${match.fileName}</span>
+                            <div class="search-result-file" data-file="${escapeHtml(match.fileName)}" onclick="window.appInstance.viewSpisContent(this.dataset.file)">
+                                📁 <span>${escapeHtml(match.fileName)}</span>
                             </div>
                             <span class="match-badge ${confidenceClass}">${percent}% shoda</span>
                         </div>
                         <div class="search-result-text">
-                            "${match.text}"
+                            "${escapeHtml(match.text)}"
                         </div>
                     </div>
                 `;
@@ -782,8 +782,8 @@ Generováno systémem LexisLocal. 100% soukromé a šifrované.`;
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 15px; border-bottom: 1px solid var(--border-glass); padding-bottom: 15px;">
                         <div>
                             <span style="font-size: 0.75rem; color: var(--accent-blue); font-weight: 700; text-transform: uppercase;">Výpis z registrů (ARES + ISIR reálné${ceeUnavail || katUnavail ? '; CEE/Katastr bez přístupu' : ''})</span>
-                            <h2 style="margin: 5px 0 0 0; font-size: 1.5rem; color: var(--text-primary);">${data.name}</h2>
-                            <p style="margin: 5px 0 0 0; font-size: 0.85rem; color: var(--text-muted);">IČO: ${data.ico} | Sídlo: ${data.seat}</p>
+                            <h2 style="margin: 5px 0 0 0; font-size: 1.5rem; color: var(--text-primary);">${escapeHtml(data.name)}</h2>
+                            <p style="margin: 5px 0 0 0; font-size: 0.85rem; color: var(--text-muted);">IČO: ${escapeHtml(data.ico)} | Sídlo: ${escapeHtml(data.seat)}</p>
                         </div>
                         <div style="display: flex; gap: 10px;">
                             <button class="btn btn-primary" id="btn-save-registry-report">
@@ -809,31 +809,31 @@ Generováno systémem LexisLocal. 100% soukromé a šifrované.`;
                         <div style="background: ${data.inInsolvency ? 'rgba(239,68,68,0.08)' : 'var(--sf-02)'}; border: 1px solid ${data.inInsolvency ? 'rgba(239,68,68,0.2)' : 'var(--border-glass)'}; border-radius: 12px; padding: 15px;">
                             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                                 <span style="font-size: 1.2rem;">❌</span>
-                                <h4 style="margin: 0; color: ${data.inInsolvency ? '#f87171' : 'white'};">Insolvence (ISIR)</h4>
+                                <h4 style="margin: 0; color: ${data.inInsolvency ? '#f87171' : 'var(--text-primary)'};">Insolvence (ISIR)</h4>
                             </div>
                             <p style="font-size: 0.85rem; margin: 0; color: ${data.inInsolvency ? '#fca5a5' : 'var(--text-muted)'};">
-                                ${data.inInsolvency ? `<b>NALEZEN ZÁZNAM!</b><br>Sp. zn.: ${data.insolvencyCase}<br>Stav: ${data.insolvencyStatus}` : 'Subjekt momentálně není v úpadku ani v insolvenčním řízení.'}
+                                ${data.inInsolvency ? `<b>NALEZEN ZÁZNAM!</b><br>Sp. zn.: ${escapeHtml(data.insolvencyCase)}<br>Stav: ${escapeHtml(data.insolvencyStatus)}` : 'Subjekt momentálně není v úpadku ani v insolvenčním řízení.'}
                             </p>
                         </div>
 
                         <div style="background: ${(!ceeUnavail && data.cee.activeExecutions > 0) ? 'rgba(245,158,11,0.08)' : 'var(--sf-02)'}; border: 1px solid ${(!ceeUnavail && data.cee.activeExecutions > 0) ? 'rgba(245,158,11,0.2)' : 'var(--border-glass)'}; border-radius: 12px; padding: 15px;">
                             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
                                 <span style="font-size: 1.2rem;">⚠️</span>
-                                <h4 style="margin: 0; color: ${(!ceeUnavail && data.cee.activeExecutions > 0) ? '#fbbf24' : 'white'};">Exekuce (CEE)</h4>
+                                <h4 style="margin: 0; color: ${(!ceeUnavail && data.cee.activeExecutions > 0) ? '#fbbf24' : 'var(--text-primary)'};">Exekuce (CEE)</h4>
                                 ${ceeUnavail ? '<span style="font-size: 0.62rem; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; color: #fca5a5; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.35); border-radius: 999px; padding: 2px 8px;">Bez přístupu</span>' : ''}
                             </div>
                             <p style="font-size: 0.85rem; margin: 0; color: ${(!ceeUnavail && data.cee.activeExecutions > 0) ? '#fde047' : 'var(--text-muted)'};">
                                 ${ceeUnavail
                                     ? 'Vyžaduje placený přístup do CEE (Exekutorská komora) — není k dispozici. Žádná data se negenerují.'
-                                    : (data.cee.activeExecutions > 0 ? `<b>POZOR: ${data.cee.activeExecutions} EXEKUCE!</b>${data.cee.totalAmount != null ? `<br>Celková vymáhaná jistina: ${data.cee.totalAmount.toLocaleString('cs-CZ')} Kč.` : ''}` : 'Subjekt nemá evidovány žádné aktivní exekuce.')}
+                                    : (data.cee.activeExecutions > 0 ? `<b>POZOR: ${escapeHtml(String(data.cee.activeExecutions))} EXEKUCE!</b>${data.cee.totalAmount != null ? `<br>Celková vymáhaná jistina: ${escapeHtml(data.cee.totalAmount.toLocaleString('cs-CZ'))} Kč.` : ''}` : 'Subjekt nemá evidovány žádné aktivní exekuce.')}
                             </p>
-                            ${data.cee.disclaimer ? `<p style="font-size: 0.72rem; margin: 8px 0 0; color: var(--text-muted); font-style: italic;">${data.cee.disclaimer}</p>` : ''}
+                            ${data.cee.disclaimer ? `<p style="font-size: 0.72rem; margin: 8px 0 0; color: var(--text-muted); font-style: italic;">${escapeHtml(data.cee.disclaimer)}</p>` : ''}
                         </div>
 
                         <div style="background: ${(!katUnavail && data.katastr.hasPlomba) ? 'rgba(239,68,68,0.08)' : 'var(--sf-02)'}; border: 1px solid ${(!katUnavail && data.katastr.hasPlomba) ? 'rgba(239,68,68,0.2)' : 'var(--border-glass)'}; border-radius: 12px; padding: 15px;">
                             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
                                 <span style="font-size: 1.2rem;">🏡</span>
-                                <h4 style="margin: 0; color: ${(!katUnavail && data.katastr.hasPlomba) ? '#f87171' : 'white'};">Katastr nemovitostí</h4>
+                                <h4 style="margin: 0; color: ${(!katUnavail && data.katastr.hasPlomba) ? '#f87171' : 'var(--text-primary)'};">Katastr nemovitostí</h4>
                                 ${katUnavail ? '<span style="font-size: 0.62rem; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; color: #fca5a5; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.35); border-radius: 999px; padding: 2px 8px;">Bez přístupu</span>' : ''}
                             </div>
                             <p style="font-size: 0.85rem; margin: 0; color: var(--text-muted);">
@@ -841,7 +841,7 @@ Generováno systémem LexisLocal. 100% soukromé a šifrované.`;
                                     ? 'Vyžaduje registrovaný/placený přístup do Katastru (ČÚZK) — není k dispozici. Žádná data se negenerují.'
                                     : `${data.katastr.propertiesCount > 0 ? `Vlastnictví nemovitostí: <b>ANO</b><br>` : 'Nemovitosti: Bez přímého zápisu<br>'}${data.katastr.hasPlomba ? '⚠️ <span style="color: #f87171; font-weight: bold;">DETEKOVÁNA PLOMBA (probíhá změna práv!)</span>' : 'Plomby / Zástavní práva: Bez omezení'}`}
                             </p>
-                            ${data.katastr.disclaimer ? `<p style="font-size: 0.72rem; margin: 8px 0 0; color: var(--text-muted); font-style: italic;">${data.katastr.disclaimer}</p>` : ''}
+                            ${data.katastr.disclaimer ? `<p style="font-size: 0.72rem; margin: 8px 0 0; color: var(--text-muted); font-style: italic;">${escapeHtml(data.katastr.disclaimer)}</p>` : ''}
                         </div>
                     </div>
                 </div>

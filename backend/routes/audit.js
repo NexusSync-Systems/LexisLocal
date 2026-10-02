@@ -33,10 +33,16 @@ router.get('/transparency', (req, res) => {
 // POST /api/audit/transparency/:id/approve - Human-in-the-loop review approval
 router.post('/transparency/:id/approve', (req, res) => {
     const { id } = req.params;
+    const p = req.principal;
+    // Lidský dohled = konkrétní člověk s oprávněním schvalovat (advokát/správce), nikdy agent.
+    if (p && (p.kind === 'agent' || !require('../lib/principal').hasScope(p, 'approve'))) {
+        return res.status(403).json({ error: 'Výstup AI smí schválit jen advokát nebo správce.', code: 'forbidden_role' });
+    }
     try {
         const updated = db.update('transparency_logs', id, {
             humanApproved: true,
-            approvedAt: new Date().toISOString()
+            approvedAt: new Date().toISOString(),
+            approvedBy: p ? { id: p.userId, name: p.name } : null
         });
 
         if (updated) {

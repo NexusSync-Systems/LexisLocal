@@ -19,6 +19,7 @@ require('./lib/node_check').warnIfUnsupported();
 const app = express();
 app.disable('x-powered-by'); // neprozrazovat technologii serveru
 const PORT = process.env.PORT || 4000;
+app.locals.port = PORT;
 // Vazba na rozhraní: VÝCHOZÍ loopback (127.0.0.1) — bezpečné pro solo režim,
 // nedostupné z LAN. Firemní/vícouživatelský režim vědomě nastaví BIND_HOST=0.0.0.0
 // (nebo konkrétní IP) a MUSÍ zapnout vynucení tokenu + TLS.
@@ -155,12 +156,22 @@ const { safePathInWatchDir, sanitizeFileName } = require('./lib/pathsafe');
 // bezstavová, pokrytá testy). Vynucení je opt-in (ENFORCE_TOKEN, viz výše).
 const { checkAuth } = require('./lib/auth');
 const { resolvePrincipal } = require('./lib/principal');
+const requestContext = require('./lib/request_context');
+const authz = require('./lib/authz');
 const authenticate = (req, res, next) => {
-    // Aditivně: určíme „kdo volá" (identita + scopy) pro budoucí per-user logiku.
-    // Nemění rozhodnutí allow/deny níže — solo = implicitní uživatel s plnými právy.
+    // Kdo volá: uživatel kanceláře (vlastní token na zařízení), hlavní token správce,
+    // agent, nebo implicitní uživatel v solo režimu (bez vynucení tokenu).
     req.principal = resolvePrincipal(req, { apiToken: API_TOKEN, enforceToken: ENFORCE_TOKEN });
-    if (!ENFORCE_TOKEN) return next();
-    if (checkAuth(API_TOKEN, req).allowed) return next();
+    // Role uživatele (čtení / zápis / správa) — jen pro principaly druhu 'user'.
+    const az = authz.authorize(req.principal, req.method, req.path);
+    if (!az.allowed) {
+        return res.status(403).json({ error: authz.SCOPE_MSG[az.scope] || 'Přístup odepřen.', code: 'forbidden_role', requiredScope: az.scope });
+    }
+    const go = () => requestContext.run({ principal: req.principal }, next);
+    if (!ENFORCE_TOKEN) return go();
+    if (checkAuth(API_TOKEN, req).allowed) return go();
+    // Uživatelé kanceláře mají vlastní tokeny (agentí tokeny bránou NEPROJDOU — mají jen své cesty).
+    if (req.principal && req.principal.kind === 'user') return go();
     console.warn(`🔒 Nepovolený přístup k API: ${req.method} ${req.path}`);
     return res.status(401).json({ error: "Přístup odepřen: Neplatný nebo chybějící API token." });
 };
@@ -171,7 +182,19 @@ app.use(authenticate);
 // klient s tokenem (v praxi dashboard/pair na loopbacku). Vrací kód + hotové
 // URL do QR (http://<LAN-IP>:PORT/m?pair=<kód>). Token v odpovědi NENÍ.
 app.post('/api/pair/new', (req, res) => {
-    const { code, ttl } = pairing.createCode(API_TOKEN);
+    // Párovací kód nese token TOHO, kdo páruje: uživatel kanceláře dostane nové zařízení
+    // na svůj účet (nikdy hlavní token správce → žádné povýšení práv přes párování).
+    let pairToken = API_TOKEN;
+    const p = req.principal;
+    if (p && p.kind === 'user') {
+        try {
+            const label = String((req.body && req.body.deviceLabel) || 'Spárované zařízení').slice(0, 60);
+            pairToken = require('./lib/users').addDevice(p.userId, label).token;
+        } catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+    } else if (p && p.kind === 'agent') {
+        return res.status(403).json({ error: 'Agent nemůže párovat zařízení.' });
+    }
+    const { code, ttl } = pairing.createCode(pairToken);
     const isHttps = req.secure || process.env.USE_HTTPS === 'true';
     // Pro LexisEditor: odkaz s otiskem klíče serveru (párování bez slepé důvěry v certifikát).
     const tlsPin = isHttps ? (app.locals.tlsPin || null) : null;
@@ -205,7 +228,9 @@ app.use('/api/case', require('./routes/case'));
 app.use('/api/campaigns', require('./routes/campaigns'));
 app.use('/api/inbox', require('./routes/inbox'));
 app.use('/api/spisy', require('./routes/spisy'));
-app.use('/api/drafts', require('./routes/drafts')); // sdílené koncepty (webový LexisEditor Lite)
+app.use('/api/drafts', require('./routes/drafts'));
+app.use('/api/users', require('./routes/users').admin);   // správa uživatelů (jen správce, viz lib/authz.js)
+app.use('/api/me', require('./routes/users').me);         // kdo jsem + moje zařízení // sdílené koncepty (webový LexisEditor Lite)
 app.use('/api/citations', require('./routes/citations'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/lhutnik', require('./routes/lhutnik'));

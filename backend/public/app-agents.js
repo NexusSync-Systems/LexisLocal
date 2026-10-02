@@ -15,8 +15,8 @@ Object.assign(LexisLocalApp.prototype, {
             const data = await res.json();
             const obory = data.obory || [];
             if (sumEl) {
-                sumEl.innerHTML = `Naplněno <strong>${data.filled || 0}/${data.total || obory.length}</strong> oborů`
-                    + (data.empty ? ` · ${data.empty} prázdných` : '');
+                sumEl.innerHTML = `Naplněno <strong>${esc(data.filled || 0)}/${esc(data.total || obory.length)}</strong> oborů`
+                    + (data.empty ? ` · ${esc(data.empty)} prázdných` : '');
             }
             const filled = obory.filter(o => o.hasData).sort((a, b) => b.chunks - a.chunks);
             const empty = obory.filter(o => !o.hasData).sort((a, b) => String(a.label).localeCompare(String(b.label), 'cs'));
@@ -24,7 +24,7 @@ Object.assign(LexisLocalApp.prototype, {
             const row = (o) => {
                 const dot = o.hasData ? '🟢' : '⚪';
                 const meta = o.hasData
-                    ? `<span style="font-size:0.72rem; color:var(--text-secondary);">${o.documents} dok · ${o.chunks} chunků${o.embedded < o.chunks ? ` · ${o.chunks - o.embedded} bez vektoru` : ''}</span>`
+                    ? `<span style="font-size:0.72rem; color:var(--text-secondary);">${esc(o.documents)} dok · ${esc(o.chunks)} chunků${o.embedded < o.chunks ? ` · ${o.chunks - o.embedded} bez vektoru` : ''}</span>`
                     : `<span style="font-size:0.72rem; color:var(--text-muted);">prázdné</span>`;
                 const custom = o.custom ? ` <span title="ruční obor mimo taxonomii" style="opacity:.6;">•</span>` : '';
                 return `<div style="display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:8px; background:var(--sunken-1); border:1px solid var(--border-glass); ${o.hasData ? '' : 'opacity:.7;'}">
@@ -72,13 +72,13 @@ Object.assign(LexisLocalApp.prototype, {
 
         container.innerHTML = agents.map(agent => {
             const isSystemBadge = agent.isSystem ? '<span class="system-badge">Systém</span>' : '';
-            const modelBadge = agent.preferredModel ? `<span class="recommendation-badge" style="margin-top: 4px;">Doporučeno: ${agent.preferredModel}</span>` : '';
+            const modelBadge = agent.preferredModel ? `<span class="recommendation-badge" style="margin-top: 4px;">Doporučeno: ${escapeHtml(agent.preferredModel)}</span>` : '';
             return `
-                <div class="agents-list-item" data-id="${agent.id}">
-                    <div class="agent-item-avatar">${agent.emoji}</div>
+                <div class="agents-list-item" data-id="${escapeHtml(agent.id)}">
+                    <div class="agent-item-avatar">${escapeHtml(agent.emoji)}</div>
                     <div class="agent-item-meta" style="flex-grow: 1;">
-                        <span class="agent-item-name">${agent.name}</span>
-                        <span class="agent-item-role">${agent.role}</span>
+                        <span class="agent-item-name">${escapeHtml(agent.name)}</span>
+                        <span class="agent-item-role">${escapeHtml(agent.role)}</span>
                         ${modelBadge}
                     </div>
                     ${isSystemBadge}
@@ -382,6 +382,8 @@ Object.assign(LexisLocalApp.prototype, {
             }
         } catch (err) {
             console.error("❌ Nelze načíst workflow data:", err);
+            const agendaEl = document.getElementById('calendar-day-agenda');
+            if (agendaEl) agendaEl.innerHTML = `<div style="text-align: center; padding: 20px; color: #d97706;">⚠️ Lhůty se nepodařilo načíst: ${escapeHtml(err.message)}</div>`;
         }
     },
 
@@ -397,16 +399,16 @@ Object.assign(LexisLocalApp.prototype, {
         listEl.innerHTML = rules.map(rule => `
             <div class="glass" style="padding: 10px 12px; border-radius: 8px; background: var(--sf-02); border: 1px solid var(--border-glass); display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; margin-bottom: 6px;">
                 <div style="flex-grow: 1; min-width: 0; padding-right: 8px;">
-                    <strong style="color: var(--text-primary); display: block; margin-bottom: 2px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${rule.name}</strong>
+                    <strong style="color: var(--text-primary); display: block; margin-bottom: 2px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${escapeHtml(rule.name)}</strong>
                     <span style="opacity: 0.6; font-size: 0.7rem; display: block; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
-                        Trigger: <code>${rule.triggerType === 'document_saved' ? 'Uložení' : 'ISDS'}</code> | Kdy: <code>${rule.conditionValue}</code>
+                        Trigger: <code>${rule.triggerType === 'document_saved' ? 'Uložení' : 'ISDS'}</code> | Kdy: <code>${escapeHtml(rule.conditionValue)}</code>
                     </span>
-                    <span style="display: block; font-size: 0.7rem; color: var(--accent-gold); margin-top: 2px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">➡️ ${rule.actionTitle}</span>
+                    <span style="display: block; font-size: 0.7rem; color: var(--accent-gold); margin-top: 2px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">➡️ ${escapeHtml(rule.actionTitle)}</span>
                 </div>
                 <div>
                     ${rule.isSystem ? 
                         `<span style="font-size: 0.65rem; color: var(--accent-blue); padding: 1px 4px; background: rgba(59,130,246,0.1); border-radius: 4px; border: 1px solid rgba(59,130,246,0.2);">Systém</span>` :
-                        `<button class="btn btn-secondary" onclick="window.appInstance.deleteWorkflowRule('${rule.id}')" style="padding: 2px 6px; font-size: 0.65rem; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); color: #f87171;">Smazat</button>`
+                        `<button class="btn btn-secondary" onclick="window.appInstance.deleteWorkflowRule('${String(rule.id || '').replace(/[^A-Za-z0-9_.:-]/g, '')}')" style="padding: 2px 6px; font-size: 0.65rem; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); color: #f87171;">Smazat</button>`
                     }
                 </div>
             </div>

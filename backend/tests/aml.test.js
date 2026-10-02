@@ -39,6 +39,19 @@ describe('identify — PO s ověřením v registrech', () => {
         expect(rec.needsManualScreening).toBe(true);
         expect(rec.factors.some(f => f.code === 'insolvence')).toBe(true);
         expect(spisy.getEvents(spis.id).some(e => e.type === 'aml')).toBe(true);
+        expect(rec.factors.some(f => f.code === 'nazev_nesouhlasi')).toBe(false);
+    });
+
+    test('název neodpovídá subjektu s daným IČO → faktor nazev_nesouhlasi', async () => {
+        const rec = await aml.identify({ typ: 'PO', jmeno: 'ACME Testovací a.s.', ico: '12345678', provedl: 'Advokát' });
+        const f = rec.factors.find(x => x.code === 'nazev_nesouhlasi');
+        expect(f).toBeTruthy();
+        expect(f.detail).toContain('Úpadce');
+    });
+
+    test('jiný zápis právní formy / diakritiky není nesoulad', async () => {
+        const rec = await aml.identify({ typ: 'PO', jmeno: 'UPADCE, spol. s r. o.', ico: '12345678' });
+        expect(rec.factors.some(x => x.code === 'nazev_nesouhlasi')).toBe(false);
     });
 });
 

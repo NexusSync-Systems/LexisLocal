@@ -130,6 +130,13 @@ const DRAFT_STATUS = { koncept: 'Koncept', ke_kontrole: 'Ke kontrole', schvaleno
 
 Object.assign(LexisLocalApp.prototype, {
 
+    // Schvalovat smí role s oprávněním „approve“ (advokát, správce). Bez /api/me (starší server) = povoleno.
+    _canApprove() {
+        const sc = this.me && this.me.scopes;
+        return !Array.isArray(sc) || sc.includes('approve') || sc.includes('admin');
+    },
+
+
     async dGet(path) {
         const res = await fetch(`${this.apiBase}${path}`, { headers: this.getHeaders() });
         const data = await res.json().catch(() => ({}));
@@ -225,7 +232,8 @@ Object.assign(LexisLocalApp.prototype, {
                     ${editing ? btn('💾 Uložit', 'saveDraftEdit()', { primary: true }) + btn('✖ Zrušit', 'stopDraftEdit(false)') :
                         (approved ? '' : btn('✏️ Upravit', 'startDraftEdit()', { primary: true })) +
                         (d.status === 'koncept' ? btn('📤 Ke kontrole', "setDraftStatus('ke_kontrole')") : '') +
-                        (d.status === 'ke_kontrole' ? btn('✅ Schválit', "setDraftStatus('schvaleno')", { title: 'Schvaluje advokát — schválený koncept je jen pro čtení' }) : '') +
+                        (d.status === 'ke_kontrole' && this._canApprove() ? btn('✅ Schválit', "setDraftStatus('schvaleno')", { title: 'Schvaluje advokát — schválený koncept je jen pro čtení' }) : '') +
+                        (d.status === 'ke_kontrole' && !this._canApprove() ? '<span style="font-size:0.75rem;opacity:0.7;align-self:center;">Čeká na schválení advokátem</span>' : '') +
                         (d.status !== 'koncept' ? btn('↩️ Do konceptu', "setDraftStatus('koncept')") : '') +
                         (!approved ? btn('🤖 Zapracovat připomínky', 'aiReviseDraft()', { title: 'Spisovatel přepracuje koncept podle otevřených připomínek (vznikne nová verze ke kontrole)' }) : '') +
                         btn('⬇️ .docx', 'exportDraftDocx()', { title: 'Word s vnořenými daty — LexisEditor ho otevře bez ztráty struktury' }) +

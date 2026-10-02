@@ -59,6 +59,20 @@ function _assessRisk(factors) {
  * Provede identifikaci a kontrolu klienta a uloží auditovatelný AML záznam.
  * @param input { typ:'FO'|'PO', jmeno, ico, rc, adresa, spisId, provedl, poznamka }
  */
+
+// Shoda zadaného názvu s názvem z ARES: alespoň jedno významné slovo (bez právní formy) společné.
+const _AML_FORMS = new Set(['sro', 'spol', 'as', 'ks', 'vos', 'zs', 'se', 'ops', 'zu', 'druzstvo']);
+function _nameTokens(s) {
+    return _deaccent(String(s || '')).toLowerCase()
+        .replace(/s\.\s*r\.\s*o\.?/g, ' sro ').replace(/a\.\s*s\.?/g, ' as ')
+        .split(/[^a-z0-9]+/).filter(t => t.length >= 2 && !_AML_FORMS.has(t));
+}
+function _namesCompatible(a, b) {
+    const A = _nameTokens(a), B = new Set(_nameTokens(b));
+    if (!A.length || !B.size) return true; // nelze posoudit → nehlásit falešně
+    return A.some(t => B.has(t));
+}
+
 async function identify(input) {
     input = input || {};
     const typ = input.typ === 'PO' ? 'PO' : (input.typ === 'FO' ? 'FO' : (input.ico ? 'PO' : 'FO'));
@@ -78,6 +92,10 @@ async function identify(input) {
                 registryData = null;
             } else if (registryData && registryData.inInsolvency) {
                 factors.push({ code: 'insolvence', severity: 'high', detail: registryData.insolvencyCase || 'aktivní insolvence' });
+            }
+            // Zadaný název musí odpovídat subjektu s daným IČO (překlep v IČO / záměna subjektu).
+            if (registryData && registryData.aresOk !== false && registryData.name && !_namesCompatible(jmeno, registryData.name)) {
+                factors.push({ code: 'nazev_nesouhlasi', severity: 'medium', detail: `IČO ${ico} patří v ARES subjektu „${registryData.name}“, zadáno „${jmeno}“.` });
             }
         } catch (e) {
             factors.push({ code: 'registry_nedostupne', severity: 'medium', detail: e.message });

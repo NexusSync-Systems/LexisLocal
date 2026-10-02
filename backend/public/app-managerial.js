@@ -46,12 +46,12 @@ Object.assign(LexisLocalApp.prototype, {
         listEl.innerHTML = aggregated.map(item => `
             <div class="glass" style="padding: 10px 15px; border-radius: 8px; background: var(--sf-02); border: 1px solid var(--border-glass); font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <strong style="color: var(--text-primary); display: block; margin-bottom: 2px;">${item.documentName}</strong>
-                    <span style="opacity: 0.7; font-size: 0.75rem;">Primární úkon: <code>${item.primaryAction}</code></span>
+                    <strong style="color: var(--text-primary); display: block; margin-bottom: 2px;">${escapeHtml(item.documentName)}</strong>
+                    <span style="opacity: 0.7; font-size: 0.75rem;">Primární úkon: <code>${escapeHtml(item.primaryAction)}</code></span>
                 </div>
                 <div style="text-align: right;">
                     <strong style="color: var(--accent-gold); font-size: 0.9rem; display: block;">${item.totalHours.toFixed(2)} hod</strong>
-                    <span style="opacity: 0.7; font-size: 0.7rem;">(Změn: ${item.saves})</span>
+                    <span style="opacity: 0.7; font-size: 0.7rem;">(Změn: ${escapeHtml(String(item.saves))})</span>
                 </div>
             </div>
         `).join('');
@@ -73,17 +73,17 @@ Object.assign(LexisLocalApp.prototype, {
             <div class="glass" style="padding: 18px; border-radius: 12px; background: var(--sf-01); border: 1px solid var(--border-glass);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <div>
-                        <strong style="color: var(--text-primary); font-size: 1rem; font-family: 'Outfit', sans-serif;">📋 Výkaz práce ze dne ${ts.date}</strong>
+                        <strong style="color: var(--text-primary); font-size: 1rem; font-family: 'Outfit', sans-serif;">📋 Výkaz práce ze dne ${escapeHtml(ts.date)}</strong>
                         <span style="opacity: 0.6; font-size: 0.75rem; display: block;">Sestaveno: ${new Date(ts.createdAt).toLocaleString('cs-CZ')}</span>
                     </div>
                     <div style="display: flex; gap: 10px; align-items: center;">
                         <span style="color: var(--accent-gold); font-weight: bold; font-size: 0.95rem;">${ts.totalHours.toFixed(1)} hod celkem</span>
-                        <button class="btn btn-secondary" onclick="window.appInstance.copyTimesheetToClipboard('${ts.id}')" style="padding: 4px 8px; font-size: 0.75rem; background: var(--sf-05); border: 1px solid var(--border-glass);">
+                        <button class="btn btn-secondary" onclick="window.appInstance.copyTimesheetToClipboard('${safeId(ts.id)}')" style="padding: 4px 8px; font-size: 0.75rem; background: var(--sf-05); border: 1px solid var(--border-glass);">
                             Kopírovat 📋
                         </button>
                     </div>
                 </div>
-                <div class="glass" style="padding: 12px 15px; border-radius: 8px; font-family: 'Outfit', sans-serif; font-size: 0.85rem; background: var(--sunken-1); border: 1px solid var(--sf-02); white-space: pre-wrap; color: var(--text-secondary); max-height: 200px; overflow-y: auto;" id="ts-text-${ts.id}">${ts.synthesizedOutput}</div>
+                <div class="glass" style="padding: 12px 15px; border-radius: 8px; font-family: 'Outfit', sans-serif; font-size: 0.85rem; background: var(--sunken-1); border: 1px solid var(--sf-02); white-space: pre-wrap; color: var(--text-secondary); max-height: 200px; overflow-y: auto;" id="ts-text-${escapeHtml(ts.id)}">${escapeHtml(ts.synthesizedOutput)}</div>
             </div>
         `).join('');
     },
@@ -112,6 +112,14 @@ Object.assign(LexisLocalApp.prototype, {
         } catch (err) {
             alert("❌ Síťové selhání při generování výkazu: " + err.message);
         }
+    },
+
+    // Verdikt prověrky střetu zájmů. „unknown“ (prověření selhalo) NESMÍ vypadat jako bezpečné.
+    conflictVerdict(level) {
+        if (level === 'high') return { text: 'VYSOKÉ RIZIKO', color: '#dc2626' };
+        if (level === 'medium') return { text: 'Střední riziko', color: '#b45309' };
+        if (level === 'none') return { text: 'Bez shody ✓', color: '#15803d' };
+        return { text: 'NEOVĚŘENO — prověřte ručně', color: '#b45309' };
     },
 
     async loadRisksTab() {
@@ -144,9 +152,9 @@ Object.assign(LexisLocalApp.prototype, {
 
         listEl.innerHTML = sorted.map(run => {
             const isHigh = run.riskLevel === 'high';
-            const isMedium = run.riskLevel === 'medium';
-            const badgeColor = isHigh ? '#f87171' : isMedium ? '#fbbf24' : '#4ade80';
-            const badgeText = isHigh ? 'VYSOKÉ RIZIKO' : isMedium ? 'Střední riziko' : 'Bezpečné ✓';
+            const v = this.conflictVerdict(run.riskLevel);
+            const badgeColor = v.color;
+            const badgeText = v.text;
 
             return `
                 <div class="glass" style="padding: 15px; border-radius: 10px; background: var(--sf-01); border: 1px solid var(--border-glass); font-size: 0.85rem;">
@@ -160,16 +168,19 @@ Object.assign(LexisLocalApp.prototype, {
                         </span>
                     </div>
                     <div style="margin-bottom: 8px;">
-                        <span style="opacity: 0.8;">Klient: <strong>${run.clientName}</strong> | Protistrana: <strong>${run.counterpartyName}</strong></span>
+                        <span style="opacity: 0.8;">Klient: <strong>${escapeHtml(run.clientName)}</strong> | Protistrana: <strong>${escapeHtml(run.counterpartyName)}</strong></span>
                     </div>
-                    <p style="margin: 0; font-size: 0.8rem; opacity: 0.9; color: ${isHigh ? '#f87171' : 'white'};">${run.description}</p>
+                    <p style="margin: 0; font-size: 0.8rem; opacity: 0.9; color: ${isHigh ? '#f87171' : 'var(--text-primary)'};">${escapeHtml(run.description)}</p>
                     ${run.conflictsFound && run.conflictsFound.length > 0 ? `
                         <div style="margin-top: 10px; padding: 10px; background: var(--sunken-1); border-radius: 6px; border: 1px solid var(--sf-03);">
                             <span style="font-size: 0.75rem; font-weight: bold; color: var(--accent-gold); display: block; margin-bottom: 5px;">Detaily nalezeného konfliktu:</span>
-                            ${run.conflictsFound.map(c => `
+                            ${run.conflictsFound.map(c => c.spisId ? `
                                 <div style="font-size: 0.75rem; margin-bottom: 4px; opacity: 0.9;">
-                                    • Shoda v souboru: <code>${c.fileName}</code> (sémantická váha: ${(c.score * 100).toFixed(0)}%)
-                                    <span style="display: block; opacity: 0.6; font-style: italic; margin-left: 10px;">"${c.textSnippet}"</span>
+                                    • Ve spisu: <a href="#" onclick="window.appInstance.switchTab('spisova'); window.appInstance.openSpis('${safeId(c.spisId)}'); return false;"><code>${escapeHtml(c.label)}</code></a> — „${escapeHtml(c.value)}“ veden(a) jako <strong>${c.role === 'klient' ? 'klient' : 'protistrana'}</strong>${c.stav ? ` (${escapeHtml(c.stav)})` : ''}
+                                </div>` : `
+                                <div style="font-size: 0.75rem; margin-bottom: 4px; opacity: 0.9;">
+                                    • Shoda v souboru: <code>${escapeHtml(c.fileName)}</code> (sémantická váha: ${(Number(c.score) * 100).toFixed(0)}%)
+                                    <span style="display: block; opacity: 0.6; font-style: italic; margin-left: 10px;">"${escapeHtml(c.textSnippet)}"</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -204,12 +215,11 @@ Object.assign(LexisLocalApp.prototype, {
                 panel.style.display = 'block';
                 desc.textContent = report.description;
 
-                const isHigh = report.riskLevel === 'high';
-                const isMedium = report.riskLevel === 'medium';
-                badge.textContent = isHigh ? 'VYSOKÉ RIZIKO' : isMedium ? 'Střední riziko' : 'Bezpečné ✓';
-                badge.style.background = isHigh ? 'rgba(239,68,68,0.2)' : isMedium ? 'rgba(251,191,36,0.2)' : 'rgba(52,211,153,0.2)';
-                badge.style.color = isHigh ? '#f87171' : isMedium ? '#fbbf24' : '#34d399';
-                badge.style.border = `1px solid ${isHigh ? '#f87171' : isMedium ? '#fbbf24' : '#34d399'}30`;
+                const v = this.conflictVerdict(report.riskLevel);
+                badge.textContent = v.text;
+                badge.style.background = v.color + '22';
+                badge.style.color = v.color;
+                badge.style.border = `1px solid ${v.color}55`;
 
                 await this.loadRisksTab();
             } else {
@@ -253,12 +263,12 @@ Object.assign(LexisLocalApp.prototype, {
                 } else {
                     container.innerHTML = data.alerts.map(alert => `
                         <div class="glass" style="padding: 12px; border-radius: 8px; background: rgba(239,68,68,0.02); border: 1px solid rgba(239,68,68,0.2); margin-top: 10px;">
-                            <div style="font-weight: bold; color: #f87171; margin-bottom: 5px;">⚠️ Nesoulad s ${alert.benchmarkTitle}</div>
-                            <div style="font-size: 0.8rem; margin-bottom: 8px; opacity: 0.9;">Téma: <strong>${alert.topic}</strong></div>
-                            <div style="font-size: 0.8rem; margin-bottom: 8px; opacity: 0.8; font-style: italic;">"${alert.description}"</div>
+                            <div style="font-weight: bold; color: #f87171; margin-bottom: 5px;">⚠️ Nesoulad s ${escapeHtml(alert.benchmarkTitle)}</div>
+                            <div style="font-size: 0.8rem; margin-bottom: 8px; opacity: 0.9;">Téma: <strong>${escapeHtml(alert.topic)}</strong></div>
+                            <div style="font-size: 0.8rem; margin-bottom: 8px; opacity: 0.8; font-style: italic;">"${escapeHtml(alert.description)}"</div>
                             <div style="font-size: 0.8rem; padding: 8px; background: rgba(52,211,153,0.05); border: 1px solid rgba(52,211,153,0.2); border-radius: 6px; color: #a7f3d0;">
                                 <strong style="display: block; margin-bottom: 3px; color: #34d399;">Doporučené znění opravy:</strong>
-                                ${alert.suggestedRemedy}
+                                ${escapeHtml(alert.suggestedRemedy)}
                             </div>
                         </div>
                     `).join('');
@@ -330,12 +340,12 @@ Object.assign(LexisLocalApp.prototype, {
                 <div class="glass" style="padding: 15px; border-radius: 12px; background: var(--sf-01); border: 1px solid var(--border-glass);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <div>
-                            <strong style="color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif;">📄 ${item.documentName}</strong>
-                            <span style="opacity: 0.6; font-size: 0.75rem; display: block;">Typ: <code>${item.budgetType}</code> | Sazba: ${item.hourlyRate} Kč/hod</span>
+                            <strong style="color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif;">📄 ${escapeHtml(item.documentName)}</strong>
+                            <span style="opacity: 0.6; font-size: 0.75rem; display: block;">Typ: <code>${escapeHtml(item.budgetType)}</code> | Sazba: ${escapeHtml(String(item.hourlyRate))} Kč/hod</span>
                         </div>
                         <div style="text-align: right;">
-                            <span style="font-weight: bold; color: ${statusColor}; font-size: 0.95rem;">${item.actualHours.toFixed(1)} / ${item.limitHours} hod</span>
-                            <span style="opacity: 0.6; font-size: 0.75rem; display: block;">(Čerpáno: ${item.spentPercentage}%)</span>
+                            <span style="font-weight: bold; color: ${statusColor}; font-size: 0.95rem;">${item.actualHours.toFixed(1)} / ${escapeHtml(String(item.limitHours))} hod</span>
+                            <span style="opacity: 0.6; font-size: 0.75rem; display: block;">(Čerpáno: ${escapeHtml(String(item.spentPercentage))}%)</span>
                         </div>
                     </div>
                     
@@ -346,7 +356,7 @@ Object.assign(LexisLocalApp.prototype, {
 
                     <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
                         <span style="opacity: 0.7;">Odhadované náklady na práci:</span>
-                        <strong style="color: var(--text-primary);">${item.estimatedCost.toLocaleString('cs-CZ')} Kč</strong>
+                        <strong style="color: var(--text-primary);">${escapeHtml(item.estimatedCost.toLocaleString('cs-CZ'))} Kč</strong>
                     </div>
                 </div>
             `;
@@ -366,8 +376,8 @@ Object.assign(LexisLocalApp.prototype, {
             return `
                 <div class="glass" style="padding: 15px; border-radius: 12px; background: var(--sf-01); border: 1px solid var(--border-glass); display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <strong style="color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif; display: block; margin-bottom: 2px;">${member.name}</strong>
-                        <span style="opacity: 0.7; font-size: 0.75rem;">Role: ${member.role} | Aktivní úkolová zátěž: <strong>${member.load.toFixed(1)}</strong></span>
+                        <strong style="color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif; display: block; margin-bottom: 2px;">${escapeHtml(member.name)}</strong>
+                        <span style="opacity: 0.7; font-size: 0.75rem;">Role: ${escapeHtml(member.role)} | Aktivní úkolová zátěž: <strong>${member.load.toFixed(1)}</strong></span>
                     </div>
                     <div>
                         <span style="font-size: 0.75rem; padding: 4px 10px; border-radius: 20px; font-weight: bold; background: ${statusColor}20; color: ${statusColor}; border: 1px solid ${statusColor}30;">
@@ -453,16 +463,16 @@ Object.assign(LexisLocalApp.prototype, {
             return `
                 <div class="glass" style="padding: 12px 15px; border-radius: 8px; background: var(--sf-01); border: 1px solid var(--border-glass); display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
                     <div>
-                        <strong style="color: var(--text-primary); display: block; margin-bottom: 2px;">${fee.name}</strong>
+                        <strong style="color: var(--text-primary); display: block; margin-bottom: 2px;">${escapeHtml(fee.name)}</strong>
                         <span style="font-size: 0.72rem; padding: 1px 6px; border-radius: 4px; font-weight: bold; background: ${typeBadgeColor}15; color: ${typeBadgeColor}; border: 1px solid ${typeBadgeColor}25;">
                             ${isHourly ? 'Hodinová' : 'Paušální'}
                         </span>
                     </div>
                     <div style="display: flex; gap: 12px; align-items: center;">
-                        <strong style="color: var(--accent-gold); font-size: 0.95rem;">${fee.amount.toLocaleString('cs-CZ')} ${typeLabel}</strong>
+                        <strong style="color: var(--accent-gold); font-size: 0.95rem;">${escapeHtml(fee.amount.toLocaleString('cs-CZ'))} ${typeLabel}</strong>
                         <div style="display: flex; gap: 6px;">
-                            <button class="btn btn-secondary btn-sm" onclick="window.appInstance.editFeeItem('${fee.id}', '${fee.name.replace(/'/g, "\\'")}', '${fee.type}', ${fee.amount})" style="padding: 3px 6px; font-size: 0.75rem;">✏️</button>
-                            <button class="btn btn-secondary btn-sm" onclick="window.appInstance.deleteFeeItem('${fee.id}')" style="padding: 3px 6px; font-size: 0.75rem; background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.2); color: #f87171;">🗑️</button>
+                            <button class="btn btn-secondary btn-sm" data-id="${escapeHtml(fee.id)}" data-name="${escapeHtml(fee.name)}" data-type="${escapeHtml(fee.type)}" data-amount="${escapeHtml(String(fee.amount))}" onclick="window.appInstance.editFeeItem(this.dataset.id, this.dataset.name, this.dataset.type, this.dataset.amount)" style="padding: 3px 6px; font-size: 0.75rem;">✏️</button>
+                            <button class="btn btn-secondary btn-sm" onclick="window.appInstance.deleteFeeItem('${safeId(fee.id)}')" style="padding: 3px 6px; font-size: 0.75rem; background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.2); color: #f87171;">🗑️</button>
                         </div>
                     </div>
                 </div>
@@ -617,13 +627,13 @@ Object.assign(LexisLocalApp.prototype, {
                     const dateStr = new Date(item.timestamp).toLocaleString('cs-CZ');
                     return `
                         <div class="timeline-item" style="margin-bottom: 12px;">
-                            <div class="timeline-icon">${item.icon || '⚫'}</div>
+                            <div class="timeline-icon">${escapeHtml(item.icon || '⚫')}</div>
                             <div class="timeline-content">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                    <strong style="color: var(--text-primary); font-size: 0.82rem;">${item.title}</strong>
+                                    <strong style="color: var(--text-primary); font-size: 0.82rem;">${escapeHtml(item.title)}</strong>
                                     <span style="font-size: 0.68rem; opacity: 0.6;">${dateStr}</span>
                                 </div>
-                                <span style="font-size: 0.76rem; opacity: 0.85; color: var(--text-secondary); display: block; line-height: 1.4;">${item.description}</span>
+                                <span style="font-size: 0.76rem; opacity: 0.85; color: var(--text-secondary); display: block; line-height: 1.4;">${escapeHtml(item.description)}</span>
                             </div>
                         </div>
                     `;
@@ -665,13 +675,13 @@ Object.assign(LexisLocalApp.prototype, {
                             const dateStr = new Date(item.timestamp).toLocaleString('cs-CZ');
                             return `
                                 <div class="timeline-item">
-                                    <div class="timeline-icon">${item.icon || '⚫'}</div>
+                                    <div class="timeline-icon">${escapeHtml(item.icon || '⚫')}</div>
                                     <div class="timeline-content">
                                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                            <strong style="color: var(--text-primary); font-size: 0.85rem;">${item.title}</strong>
+                                            <strong style="color: var(--text-primary); font-size: 0.85rem;">${escapeHtml(item.title)}</strong>
                                             <span style="font-size: 0.7rem; opacity: 0.6;">${dateStr}</span>
                                         </div>
-                                        <span style="font-size: 0.78rem; opacity: 0.85; color: var(--text-secondary); display: block; line-height: 1.4;">${item.description}</span>
+                                        <span style="font-size: 0.78rem; opacity: 0.85; color: var(--text-secondary); display: block; line-height: 1.4;">${escapeHtml(item.description)}</span>
                                     </div>
                                 </div>
                             `;
