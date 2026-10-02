@@ -419,7 +419,8 @@ function deleteDraft(id, principal) {
 function editorSpec(d) {
     const cur = d.versions[d.versions.length - 1];
     const spec = JSON.parse(JSON.stringify(cur.spec));
-    spec.title = d.title;
+    // Název NEdáváme do spec.title — LexisEditor ho vykreslí jako tučný řádek navíc a po
+    // uložení zpět by se titulek v textu zdvojil (test 2. 10. 2026). Název nese pole `title`.
     if (d.preserved && d.preserved.letterheadHtml) spec.letterheadHtml = d.preserved.letterheadHtml;
     if (d.aiGenerated) spec.aiDisclosure = { generatedBy: 'LexisLocal AI', humanApproved: d.status === 'schvaleno' };
     return spec;

@@ -198,6 +198,7 @@ async function checkSubject(ico) {
     
     return {
         ico: cleanIco,
+        aresOk: !!ares, // false = jméno/sídlo níže je jen zástupný text, NE údaj z registru
         name: ares ? ares.name : "ARES nedostupný / Selhal dotaz",
         seat: ares ? ares.seat : "Adresa nezjištěna",
         inInsolvency: isir.inInsolvency,
@@ -478,4 +479,25 @@ function setRegistryConfig(input) {
     return getRegistryConfig();
 }
 
-module.exports = { checkSubject, checkCee, checkKatastr, findDataBox, isIsdsConfigured, checkAresStatutory, checkVatReliability, getRegistryConfig, setRegistryConfig };
+/**
+ * Doplní ověřené IČO/sídlo k té straně, které subjekt z registru skutečně odpovídá.
+ * Dřív se jméno z ARES zapsalo vždy do „žalovaného“ — i když IČO patřilo žalobci,
+ * a při výpadku ARES dokonce text „ARES nedostupný / Selhal dotaz“ (test 2. 10. 2026).
+ * Vrací { plaintiff, defendant } (beze změny, když shoda není jistá nebo ARES selhal).
+ */
+function enrichPartiesWithRegistry(metadata, reg) {
+    const out = { plaintiff: metadata.plaintiff, defendant: metadata.defendant };
+    if (!reg || reg.error || reg.aresOk === false || !reg.name) return out;
+    const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[,.]/g, ' ').replace(/\b(s\s?r\s?o|a\s?s|spol|k\s?s|v\s?o\s?s|z\s?s)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    const name = norm(reg.name);
+    if (!name) return out;
+    const suffix = ` (IČO: ${reg.ico}, sídlo: ${reg.seat})`;
+    for (const side of ['plaintiff', 'defendant']) {
+        const v = out[side];
+        if (v && norm(v).includes(name) && !String(v).includes(reg.ico)) { out[side] = `${v}${suffix}`; return out; }
+    }
+    return out;
+}
+
+module.exports = { enrichPartiesWithRegistry, checkSubject, checkCee, checkKatastr, findDataBox, isIsdsConfigured, checkAresStatutory, checkVatReliability, getRegistryConfig, setRegistryConfig };

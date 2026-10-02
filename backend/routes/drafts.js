@@ -152,7 +152,7 @@ router.post('/:id/comments/:cid/resolve', (req, res) => {
 
 router.get('/:id/editor-spec', (req, res) => {
     const d = load(req, res, 'read'); if (!d) return;
-    res.json({ id: d.id, version: d.version, status: d.status, lexisSpec: D.editorSpec(d) });
+    res.json({ id: d.id, title: d.title, version: d.version, status: d.status, lexisSpec: D.editorSpec(d) });
 });
 
 function _fileName(d) {

@@ -17,6 +17,11 @@
  *   K  koncepty + podpisy — sdílené koncepty (verze, souběh, zámek, schválení, export .docx
  *                         se spec), Spisovatel uloží koncept / reviduje podle připomínek,
  *                         ověření podpisu PDF (platný / změněný), escapování výstupu AI v chatu
+ *   R  vzdálené připojení — TLS a otisk klíče (= co ověřuje LexisEditor při párování), párovací
+ *                         odkaz, odezva přes síť, souběh dvou klientů nad konceptem, simulace
+ *                         uložení z editoru (editor-spec → PUT), velký upload
+ *   U  scénář používání   — spis → doručený rozsudek (lhůta) → Spisovatel napíše odvolání do
+ *                         Konceptů → připomínka → revize AI → schválení → uložení do spisu
  *   H  LLM-judge        — volitelné hodnocení odpovědí z E silnějším modelem
  *                         (JUDGE_API_KEY + JUDGE_MODEL v prostředí, Anthropic API)
  *
@@ -532,6 +537,146 @@ async function phaseK() {
         { severity: 'high', detail: String(js.status) });
 }
 
+// ─── R: vzdálené připojení ──────────────────────────────────────────────────
+function peerCert() {
+    return new Promise((resolve) => {
+        const u = new URL(O.base);
+        if (u.protocol !== 'https:') return resolve(null);
+        const tls = require('tls');
+        const sock = tls.connect({ host: u.hostname, port: u.port || 443, servername: /^[\d.]+$/.test(u.hostname) ? undefined : u.hostname, rejectUnauthorized: false }, () => {
+            const c = sock.getPeerCertificate(true); const proto = sock.getProtocol(); sock.end();
+            resolve(c && c.raw ? { raw: c.raw, proto, validTo: c.valid_to, subject: c.subject } : null);
+        });
+        sock.on('error', () => resolve(null));
+        sock.setTimeout(15000, () => { sock.destroy(); resolve(null); });
+    });
+}
+function spkiPinOf(raw) {
+    const crypto = require('crypto');
+    const der = new crypto.X509Certificate(raw).publicKey.export({ type: 'spki', format: 'der' });
+    return 'sha256/' + crypto.createHash('sha256').update(der).digest('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+async function phaseR() {
+    console.log('\nR — vzdálené připojení');
+    const pc = await peerCert();
+    if (O.base.startsWith('https:')) {
+        record('R', 'R1', 'TLS spojení (TLS 1.2+)', !!pc && /TLSv1\.[23]/.test(pc.proto || ''), { severity: 'high', detail: pc ? `${pc.proto}, platí do ${pc.validTo}` : 'bez certifikátu' });
+        const pair = await post('/api/pair/new', {});
+        const ed = pair.json && pair.json.editor;
+        const pin = pc ? spkiPinOf(pc.raw) : null;
+        record('R', 'R2', 'Otisk klíče z párování = skutečný certifikát (LexisEditor se spáruje)', !!ed && !!pin && ed.pin === pin,
+            { severity: 'high', detail: `server ${ed && ed.pinShort} · spojení ${pin && pin.slice(7, 23)}`, expected: 'shodný SPKI otisk', actual: `${ed && ed.pin} vs ${pin}` });
+        const url = ed && ed.connectUrl || '';
+        const host = new URL(O.base).host;
+        record('R', 'R3', 'Párovací odkaz pro editor: lexis://, správný host, bez tokenu', url.startsWith('lexis://' + host) && /fp=/.test(url) && !(O.token && url.includes(O.token)),
+            { severity: 'medium', detail: url.replace(/code=[^&]+/, 'code=…') });
+        const qr = pair.json && pair.json.urls ? JSON.stringify(pair.json.urls) : '';
+        record('R', 'R4', 'Párovací URL pro telefon přes HTTPS a bez tokenu', /https:\/\//.test(qr) && !(O.token && qr.includes(O.token)), { severity: 'medium', detail: short(qr, 120) });
+    }
+    const lat = [];
+    for (let i = 0; i < 20; i++) lat.push((await get('/api/status')).ms);
+    lat.sort((a, b) => a - b);
+    const p50 = lat[10], p95 = lat[18];
+    record('R', 'R5', 'Odezva přes síť /api/status (p95 < 1,5 s)', p95 < 1500, { severity: 'medium', detail: `p50 ${p50} ms, p95 ${p95} ms`, ms: p50 });
+    const page = await get('/', { token: '' });
+    const assets = ['/app.js', '/app-drafts.js', '/styles.css', '/app-chat.js'];
+    const bad = [];
+    for (const a of assets) { const r = await get(a, { token: '' }); if (!ok2(r.status)) bad.push(`${a} ${r.status}`); }
+    const loop = /^(127\.|localhost|\[::1\])/.test(new URL(O.base).hostname); // na loopbacku se token do HTML vkládá záměrně
+    record('R', 'R6', 'Dashboard a skripty se načtou vzdáleně (bez tokenu v HTML)', ok2(page.status) && !bad.length && (loop || !(O.token && page.text.includes(O.token))),
+        { severity: 'high', detail: bad.join(', ') || `${page.ms} ms` });
+
+    // Dva klienti nad stejným konceptem (prohlížeč advokáta + LexisEditor koncipienta)
+    const c = await post('/api/drafts', { title: 'E2E-souběh-' + Date.now().toString(36), text: 'Text pro souběžnou úpravu dvou klientů.' });
+    const id = c.json && c.json.id;
+    if (id) {
+        created.drafts.push(id);
+        const body = (t) => ({ spec: { blocks: [{ type: 'paragraph', text: t }] }, baseVersion: 1 });
+        const [a, b] = await Promise.all([request('PUT', '/api/drafts/' + id, { body: body('Úprava klienta A') }), request('PUT', '/api/drafts/' + id, { body: body('Úprava klienta B') })]);
+        const sts = [a.status, b.status].sort();
+        record('R', 'R7', 'Souběžné uložení dvou klientů: jeden uspěje, druhý 409 (nic se neztratí potichu)', sts[0] === 200 && sts[1] === 409, { severity: 'high', detail: sts.join('/') });
+        // Simulace LexisEditoru: načíst editor-spec, upravit, uložit zpět s baseVersion
+        const es = await get(`/api/drafts/${id}/editor-spec`);
+        const spec = es.json && es.json.lexisSpec;
+        let ok = false, det = String(es.status);
+        if (spec) {
+            spec.blocks.push({ type: 'heading', level: 2, text: 'Doplněno v editoru' }, { type: 'table', cells: [['Položka', 'Částka'], ['Jistina', '25 000 Kč']] });
+            spec.letterheadHtml = { headerHtml: '<img src=x onerror=alert(1)>' };
+            const sv = await request('PUT', '/api/drafts/' + id, { body: { spec, baseVersion: es.json.version, note: 'Úprava v LexisEditoru (E2E)' } });
+            const back = await get(`/api/drafts/${id}/editor-spec`);
+            const bs = back.json && back.json.lexisSpec;
+            ok = ok2(sv.status) && bs && bs.blocks.some(b => b.type === 'table') && !JSON.stringify(bs).includes('onerror');
+            det = `${sv.status} v${sv.json && sv.json.version}`;
+        }
+        record('R', 'R8', 'Uložení z LexisEditoru (editor-spec → PUT): tabulka zůstane, HTML hlavička od klienta se nepřevezme', ok, { severity: 'high', detail: det });
+    }
+    // Velký dokument přes síť (≈ 3 MB textu)
+    const big = Buffer.from(('Velký syntetický dokument E2E. '.repeat(30) + '\n').repeat(3000)).toString('base64');
+    const t0 = Date.now();
+    const up = await post('/api/inbox/upload', { fileName: 'E2E-velky-dokument.txt', base64: big });
+    record('R', 'R9', 'Upload velkého dokumentu (~3 MB) přes síť', ok2(up.status), { severity: 'medium', detail: `${up.status} za ${Date.now() - t0} ms`, ms: Date.now() - t0 });
+    await post('/api/inbox/delete', { fileName: 'E2E-velky-dokument.txt' });
+}
+
+// ─── U: scénář používání (advokát od doručení po hotový koncept ve spisu) ─────
+async function phaseU() {
+    console.log('\nU — scénář používání');
+    const tag = 'E2E-scenar-' + Date.now().toString(36);
+    const sp = await post('/api/spisy', { nazev: `${tag} odvolání 12 C 45/2026`, klient: 'E2E Klient', spisZn: '12 C 45/2026' });
+    const spisId = sp.json && (sp.json.id || (sp.json.spis && sp.json.spis.id));
+    if (spisId) created.spisy.push(spisId);
+    record('U', 'U1', 'Založení spisu', !!spisId, { severity: 'high', detail: `${sp.status}` });
+    if (!spisId) return;
+    const fx = path.join(FIXTURES, 'rozsudek_OS_Jihlava_12C45-2026.pdf');
+    let rozsudek = '';
+    if (fs.existsSync(fx)) {
+        const fn = `${tag}-rozsudek.pdf`;
+        const up = await post('/api/inbox/upload', { fileName: fn, base64: fs.readFileSync(fx).toString('base64') });
+        const all = await get('/api/inbox/all');
+        const list = all.json && (all.json.inbox || all.json.files || all.json);
+        const docs = Array.isArray(list) ? list : Object.values(list || {});
+        const d = docs.find(x => x.fileName === fn);
+        record('U', 'U2', 'Doručený rozsudek: sp. zn. a konec lhůty k odvolání', ok2(up.status) && d && /12\s?C\s?45\/2026/.test(d.caseNumber || '') && d.deadlineDate === '2026-09-30',
+            { severity: 'critical', detail: d ? `${d.caseNumber} · lhůta ${d.deadlineDate}` : up.status });
+        const c = await get('/api/inbox/content?fileName=' + encodeURIComponent(fn));
+        rozsudek = String((c.json && c.json.content) || '').slice(0, 6000);
+        await post('/api/inbox/delete', { fileName: fn });
+    }
+    const t0 = Date.now();
+    const ag = await post('/api/agent/spisovatel', {
+        prompt: 'Na základě rozsudku sepiš návrh odvolání za žalovaného (stručně, struktura podání: soud, účastníci, napadený rozsudek, odvolací důvody, návrh).',
+        context: rozsudek, saveDraft: true, spisId, draftTitle: `${tag} — odvolání`, model: O.model || undefined
+    });
+    const dr = ag.json && ag.json.draft;
+    record('U', 'U3', 'Spisovatel napíše odvolání rovnou do Konceptů spisu (ke kontrole)', ok2(ag.status) && dr && dr.id && dr.status === 'ke_kontrole',
+        { severity: 'high', detail: `${ag.status} · ${Math.round((Date.now() - t0) / 1000)} s · ${short(JSON.stringify(dr), 120)}`, ms: Date.now() - t0 });
+    if (!dr || !dr.id) return;
+    created.drafts.push(dr.id);
+    const tx = await get(`/api/drafts/${dr.id}/text`);
+    const text = (tx.json && tx.json.text) || '';
+    record('U', 'U4', 'Koncept odkazuje na napadený rozsudek (12 C 45/2026)', /12\s?C\s?45\/2026/.test(text), { severity: 'medium', detail: short(text, 160) });
+    record('U', 'U5', 'Koncept bez vymyšlených symbolů a stop pseudonymizace', !/\[(OSOBA|ADRESA|RČ)_\d+\]/.test(text), { severity: 'high', detail: (text.match(/\[[A-ZÁ-Ž_]+_\d+\]/g) || []).join(', ') || 'OK' });
+    const list = await get('/api/drafts?spisId=' + encodeURIComponent(spisId));
+    record('U', 'U6', 'Koncept je vidět u spisu', (list.json && list.json.drafts || []).some(d => d.id === dr.id), { severity: 'medium' });
+    await post(`/api/drafts/${dr.id}/comments`, { text: 'Doplň odvolací důvod nesprávného právního posouzení (§ 205 odst. 2 písm. g) o. s. ř.).' });
+    const t1 = Date.now();
+    const rev = await post('/api/agent/spisovatel', { prompt: 'Zapracuj připomínku advokáta.', draftId: dr.id, model: O.model || undefined });
+    const after = await get(`/api/drafts/${dr.id}/text`);
+    record('U', 'U7', 'Revize podle připomínky (nová verze, zmínka § 205)', ok2(rev.status) && rev.json && rev.json.draft && rev.json.draft.version === 2 && /205/.test((after.json && after.json.text) || ''),
+        { severity: 'medium', detail: `${rev.status} v${rev.json && rev.json.draft && rev.json.draft.version} · ${Math.round((Date.now() - t1) / 1000)} s`, ms: Date.now() - t1 });
+    const notFiled = await post(`/api/drafts/${dr.id}/file`, {});
+    const appr = await post(`/api/drafts/${dr.id}/status`, { status: 'schvaleno' });
+    const filed = await post(`/api/drafts/${dr.id}/file`, {});
+    const sd = await get(`/api/spisy/${encodeURIComponent(spisId)}/drafts`);
+    const inSpis = JSON.stringify(sd.json || {}).includes('.docx');
+    record('U', 'U8', 'Do spisu jen po schválení; schválený koncept uložen jako .docx do 03_Koncepty', notFiled.status === 409 && appr.json && appr.json.status === 'schvaleno' && filed.status === 201 && filed.json && filed.json.filed && inSpis,
+        { severity: 'high', detail: `${notFiled.status}/${appr.status}/${filed.status} filed=${filed.json && filed.json.filed}` });
+    const tl = await get('/api/audit/transparency');
+    const tlist = (tl.json && (tl.json.logs || tl.json.records || tl.json)) || [];
+    const approvedAny = Array.isArray(tlist) && tlist.some(x => x && x.humanApproved === true);
+    record('U', 'U9', 'Schválení je zapsané v záznamu o použití AI (humanApproved)', approvedAny, { severity: 'low', detail: Array.isArray(tlist) ? `${tlist.length} záznamů` : short(tl.text, 80) });
+}
+
 // ─── H: LLM-judge (volitelně) ────────────────────────────────────────────────
 async function phaseH() {
     console.log('\nH — LLM-judge');
@@ -631,7 +776,9 @@ function writeReport(meta) {
         if (phaseOn('D')) await phaseD();
         if (phaseOn('E')) await phaseE();
         if (phaseOn('F')) await phaseF();
+        if (phaseOn('R')) await phaseR();
         if (phaseOn('K')) await phaseK();
+        if (phaseOn('U')) await phaseU();
         if (phaseOn('G')) meta.load = await phaseG();
         if (phaseOn('H')) meta.judge = await phaseH();
     } catch (e) {

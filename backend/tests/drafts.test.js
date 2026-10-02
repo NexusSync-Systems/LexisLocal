@@ -110,7 +110,7 @@ describe('API /api/drafts', () => {
         const zip = await JSZip.loadAsync(r.body);
         const xml = await zip.file('customXml/item1.xml').async('string');
         const spec = require('../lib/lexis-spec').parseLexisSpecXml(xml);
-        expect(spec.title).toBe('Výzva k plnění');
+        expect(spec.title).toBeUndefined(); // název nepatří do textu dokumentu (zdvojení v editoru)
         expect(spec.blocks[1].text).toMatch(/15 dnů/);
         const docXml = await zip.file('word/document.xml').async('string');
         expect(docXml).toMatch(/15 dnů/);
