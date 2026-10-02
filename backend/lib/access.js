@@ -15,6 +15,8 @@
 'use strict';
 
 const principalLib = require('./principal');
+const _nm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+function _sameName(a, b) { return !!_nm(a) && _nm(a) === _nm(b); }
 
 // --- Firemní vs. solo režim -------------------------------------------------
 // Výchozí = solo (neomezuje). Zapnout přes env LEXIS_FIRM_MODE=1 nebo setFirmMode().
@@ -48,6 +50,8 @@ function canAccess(spis, principal, level) {
     const acl = normalizeAccess(spis);
     const uid = principal.userId;
     if (uid === acl.owner) return true;
+    // Starší spisy mají vlastníka jako jméno advokáta (text) — uživatel se stejným jménem je vlastník.
+    if (principal.kind === 'user' && principal.name && _sameName(principal.name, acl.owner)) return true;
     if (level === 'read') return acl.readers.indexOf(uid) !== -1 || acl.writers.indexOf(uid) !== -1;
     if (level === 'write') return acl.writers.indexOf(uid) !== -1;
     return false;                                  // 'admin' i cokoli jiného: fail-closed

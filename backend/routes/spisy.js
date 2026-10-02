@@ -27,7 +27,13 @@ const { logEvent } = require('../lib/audit');
 // GET /api/spisy — seznam všech spisů
 router.get('/', (req, res) => {
     try {
-        res.json({ spisy: spisy.listSpisy() });
+        let list = spisy.listSpisy();
+        // Firemní režim: seznam jen spisů, ke kterým má volající přístup (fail-closed).
+        if (access.isFirmMode()) {
+            const p = req.principal || principalLib.resolvePrincipal(req, { apiToken: process.env.API_TOKEN, enforceToken: true });
+            list = list.filter(s => access.canAccess(s, p, 'read'));
+        }
+        res.json({ spisy: list });
     } catch (err) {
         res.status(500).json({ error: `Chyba při načtení spisů: ${err.message}` });
     }
@@ -36,7 +42,15 @@ router.get('/', (req, res) => {
 // POST /api/spisy — založení nového spisu
 router.post('/', (req, res) => {
     try {
-        const spis = spisy.createSpis(req.body || {});
+        const data = Object.assign({}, req.body || {});
+        // Vlastník = uživatel kanceláře: odpovědný advokát, pokud je to jméno účtu, jinak ten, kdo spis zakládá.
+        const p = req.principal;
+        if (!data.owner && p && p.kind === 'user') {
+            const byName = data.odpovednyAdvokat ? require('../lib/users').findByName(data.odpovednyAdvokat) : null;
+            data.owner = byName ? byName.id : p.userId;
+        }
+        delete data.access; // ACL se nedá podstrčit při založení
+        const spis = spisy.createSpis(data);
         logEvent('Spisová služba', 'Založení spisu', spis.spisZn || spis.nazev, { id: spis.id });
         res.status(201).json({ spis });
     } catch (err) {

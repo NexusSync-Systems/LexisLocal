@@ -47,7 +47,9 @@ function authorize(principal, method, pathname) {
     const scope = requiredScope(method, pathname);
     if (!scope) return { allowed: true, scope: null };
     if (!principal || principal.kind !== 'user') return { allowed: true, scope }; // jen uživatelé se omezují zde
-    if (_matches('/api/me', String(pathname || '').toLowerCase())) return { allowed: true, scope };
+    const lp = String(pathname || '').toLowerCase().replace(/\/+$/, '');
+    // Vlastní identita a párování VLASTNÍHO zařízení smí každý přihlášený (i „jen čtení“).
+    if (_matches('/api/me', lp) || lp === '/api/pair/new') return { allowed: true, scope };
     return { allowed: principalLib.hasScope(principal, scope), scope };
 }
 

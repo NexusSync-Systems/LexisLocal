@@ -109,7 +109,8 @@ function createSpis(data) {
         // ACL přístupu ke spisu (viz access.js). Vlastník = odpovědný advokát,
         // jinak implicitní 'local'. V solo režimu se přístup nevynucuje.
         access: {
-            owner: (data.odpovednyAdvokat ? String(data.odpovednyAdvokat).trim() : '') || (data.owner ? String(data.owner) : 'local'),
+            // Explicitní owner (ID uživatele kanceláře, dosazuje routa podle přihlášeného) má přednost.
+            owner: (data.owner ? String(data.owner) : '') || (data.odpovednyAdvokat ? String(data.odpovednyAdvokat).trim() : '') || 'local',
             readers: [],
             writers: []
         },

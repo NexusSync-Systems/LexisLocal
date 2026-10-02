@@ -199,6 +199,10 @@ router.post('/:agentId', async (req, res) => {
         // get_document, check_registry) v mezích svých oprávnění. Za AGENT_TOOLS=1; jinak
         // beze změny. RAG kontext je už předvyplněný výše — tooly slouží ke zpřesnění.
         let response, toolsUsed = [];
+        // Jeden opakovaný pokus při přechodné chybě spojení s Ollamou (souběh, reset).
+        const llm = require('../lib/ollama_retry').retryingProvider(ollama, {
+            onRetry: (e) => console.warn(`🔁 Ollama: přechodná chyba (${e.message}) — opakuji dotaz agenta ${agent.name}.`)
+        });
         if (agentTools.enabled() && agentTools.toolsForAgent(agent).length > 0) {
             const ctx = {
                 ragFilters: resolvedFilters, // search_rag respektuje scope/přístup agenta
@@ -212,13 +216,13 @@ router.post('/:agentId', async (req, res) => {
                 }
             };
             const loop = await agentTools.runToolLoop({
-                provider: ollama, model: selectedModel, messages, options: chatOptions, agent, ctx
+                provider: llm, model: selectedModel, messages, options: chatOptions, agent, ctx
             });
             toolsUsed = loop.toolCalls.map(c => c.name);
             if (toolsUsed.length) console.log(`🔧 Agent [${agent.name}] použil nástroje: ${toolsUsed.join(', ')} (${loop.iters} it.)`);
             response = { message: { content: loop.content } };
         } else {
-            response = await ollama.chat({ model: selectedModel, messages: messages, options: chatOptions });
+            response = await llm.chat({ model: selectedModel, messages: messages, options: chatOptions });
         }
 
         if (pseudoMap && response && response.message) {

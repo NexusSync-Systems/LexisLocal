@@ -94,6 +94,12 @@ function view(u) {
 function scopesOf(u) { return ((ROLES[u && u.role] || {}).scopes || []).slice(); }
 
 function listUsers() { return loadRaw().map(view); }
+/** Aktivní uživatel podle jména (bez ohledu na diakritiku/velikost) nebo null. */
+function findByName(name) {
+    const n = _norm(name);
+    if (!n) return null;
+    return view(loadRaw().find(u => !u.disabled && _norm(u.name) === n)) || null;
+}
 function getUser(id) { return view(loadRaw().find(u => u.id === id)); }
 
 function _newToken() { return TOKEN_PREFIX + crypto.randomBytes(32).toString('hex'); }
@@ -196,6 +202,6 @@ function verifyToken(token) {
 
 module.exports = {
     ROLES, TOKEN_PREFIX, UserError,
-    listUsers, getUser, createUser, updateUser, addDevice, revokeDevice, verifyToken, scopesOf, view,
+    listUsers, getUser, findByName, createUser, updateUser, addDevice, revokeDevice, verifyToken, scopesOf, view,
     _resetCache
 };
