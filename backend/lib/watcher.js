@@ -266,6 +266,12 @@ async function processDocument(filePath) {
         }
     } catch (e) { console.warn('⚠️ Rozpoznání jednání selhalo (nekritické):', e.message); }
 
+    // 2.9 Step: Elektronické podpisy v PDF (rozhodnutí soudu, podání, smlouvy) — jen ověření.
+    let signatures = null;
+    try { signatures = require('./signature_check').checkPdfFile(filePath); }
+    catch (e) { signatures = null; }
+    const signatureNote = signatures ? require('./signature_check').summaryNote(signatures) : '';
+
     // 3. Save to inbox
     const inbox = await loadInbox();
     const relativePath = path.relative(_watchedDir, filePath);
@@ -288,12 +294,13 @@ async function processDocument(filePath) {
         detectedDeadlines: unitDeadlines,
         summary: (metadata.deliveryConflict
             ? `⚠️ ROZPOR V DATU DORUČENÍ (${(metadata.deliveryDates || []).join(' × ')}) — lhůta počítána od nejdřívějšího, OVĚŘIT. `
-            : '') + (metadata.summary || "Nově stažený dokument připravený ke zpracování."),
+            : '') + signatureNote + (metadata.summary || "Nově stažený dokument připravený ke zpracování."),
         ico: metadata.ico || null,
         inInsolvency: registryData ? registryData.inInsolvency : false,
         insolvencyCase: registryData ? registryData.insolvencyCase : null,
         verifiedSeat: registryData ? registryData.seat : null,
         wasOcr: wasOcr,
+        signatures: signatures,
         hasLexisSpec: !!lexisSpec,
         lexisSpec: lexisSpec || null,
         processedAt: new Date().toISOString()

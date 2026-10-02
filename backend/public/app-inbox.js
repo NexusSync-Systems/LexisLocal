@@ -233,6 +233,7 @@ Object.assign(LexisLocalApp.prototype, {
                             <span style="font-weight: 500; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(doc.fileName)}</span>
                             ${isUnread ? '<span style="width: 6px; height: 6px; background-color: var(--accent-red); border-radius: 50%; display: inline-block; flex-shrink: 0;"></span>' : ''}
                             ${doc.wasOcr ? '<span style="font-size: 0.65rem; background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.25); border-radius: 4px; padding: 1px 5px; flex-shrink: 0;">OCR</span>' : ''}
+                            ${_lexSignatureBadge(doc.signatures)}
                         </div>
                         <div style="display: flex; gap: 6px;">
                             <button class="btn btn-secondary" onclick="window.appInstance.viewSpisContent('${_lexEscJsAttr(doc.fileName)}')" style="padding: 4px 8px; font-size: 0.7rem;">
@@ -580,3 +581,22 @@ Object.assign(LexisLocalApp.prototype, {
     }
 
 });
+
+
+// Štítek elektronického podpisu u dokumentu v doručené poště (data z PDF → escapovat).
+function _lexSignatureBadge(sig) {
+    if (!sig || !sig.signed) return '';
+    const esc = (typeof escapeHtml === 'function') ? escapeHtml : (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const lines = (sig.signatures || []).map((s) => {
+        const t = s.timestamp ? (s.timestamp.valid ? ', s časovým razítkem' : ', NEPLATNÉ razítko') : ', bez razítka';
+        return (s.valid ? '✓ ' : '✗ NEPLATNÝ: ') + (s.signer || 'neznámý podepisující') + ' — ' + (s.level || '') + t;
+    });
+    lines.push('Důvěryhodnost vydavatele (EU Trusted List) ověřte v Acrobat Readeru.');
+    const bad = !!sig.anyInvalid;
+    const style = bad
+        ? 'background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3);'
+        : 'background: rgba(34,197,94,0.12); color: #4ade80; border: 1px solid rgba(34,197,94,0.25);';
+    return '<span class="sig-badge" title="' + esc(lines.join('\n')) + '" style="font-size: 0.65rem; ' + style + ' border-radius: 4px; padding: 1px 5px; flex-shrink: 0;">' +
+        (bad ? '⚠️ podpis neplatný' : '🔏 podepsáno') + '</span>';
+}
+if (typeof module !== 'undefined' && module.exports) { module.exports._lexSignatureBadge = _lexSignatureBadge; }
