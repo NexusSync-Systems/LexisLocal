@@ -18,7 +18,7 @@ const { detectObor } = require('../lib/obor_detect');
 
 // GET /api/rag/search - Sémantické vyhledávání v podkladech
 router.get('/search', async (req, res) => {
-    const { query, limit, caseNumber, fileNames } = req.query;
+    const { query, limit, caseNumber, fileNames, scope } = req.query;
     if (!query) {
         return res.status(400).json({ error: "Vyhledávací dotaz je povinný." });
     }
@@ -35,6 +35,14 @@ router.get('/search', async (req, res) => {
 
         if (fileNames || caseNumber) {
             resolvedFilters = await resolveRagFilters(filterPayload);
+        }
+        // ?scope=kb → hledá ve znalostní bázi (zákony agentů), ?scope=all → spisy + báze.
+        // Dřív šlo z dashboardu prohledat jen klientské spisy (test 2. 10. 2026, C22).
+        if (scope === 'kb' || scope === 'all') {
+            const { listKbScopes } = require('../lib/rag');
+            const kbScopes = listKbScopes().filter(sc => String(sc).indexOf('_kb_obor_') !== 0);
+            resolvedFilters = Object.assign({}, resolvedFilters || {}, { scopes: kbScopes });
+            if (scope === 'kb') resolvedFilters.clientAccess = false;
         }
 
         // Lexikální fallback zapnut: dashboard vyhledávání funguje i bez modelu

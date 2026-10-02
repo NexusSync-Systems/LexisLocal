@@ -110,14 +110,27 @@
             const status = document.getElementById('agent-kb-upload-status');
             const setStatus = (msg, color) => { if (status) { status.textContent = msg || ''; status.style.color = color || ''; } };
             if (!agentId) { alert('Nejdřív zvolte asistenta.'); if (input) input.value = ''; return; }
-            const file = input && input.files && input.files[0];
-            if (!file) return;
+            const files = Array.from((input && input.files) || []);
+            if (!files.length) return;
+            // Více souborů: postupně, se souhrnem (dřív šel nahrát jen jeden).
+            if (files.length > 1) {
+                let okN = 0; const errs = [];
+                for (let i = 0; i < files.length; i++) {
+                    setStatus(`Zpracovávám ${i + 1}/${files.length}: „${files[i].name}"…`, '');
+                    const r = await this.uploadAgentKnowledgeFile({ files: [files[i]], value: '', _batch: true });
+                    if (r && r.ok) okN++; else errs.push(`${files[i].name}: ${(r && r.error) || 'chyba'}`);
+                }
+                setStatus(`Hotovo: ${okN}/${files.length} přidáno.` + (errs.length ? ' ❌ ' + errs.join('; ') : ''), errs.length ? '#f87171' : '#4ade80');
+                input.value = '';
+                return;
+            }
+            const file = files[0];
             const MAX = 25 * 1024 * 1024;
             if (file.size > MAX) {
                 setStatus(`Soubor je příliš velký (${(file.size / 1048576).toFixed(1)} MB, max 25 MB).`, '#f87171');
-                input.value = ''; return;
+                input.value = ''; return { ok: false, error: 'příliš velký (max 25 MB)' };
             }
-            setStatus(`Zpracovávám „${file.name}"… (u skenů může OCR chvíli trvat)`, '');
+            if (!input._batch) setStatus(`Zpracovávám „${file.name}"… (u skenů může OCR chvíli trvat)`, '');
             try {
                 const base64 = await new Promise((resolve, reject) => {
                     const r = new FileReader();
@@ -132,15 +145,18 @@
                 });
                 const data = await res.json();
                 if (data.success) {
-                    setStatus(`✅ „${data.fileName}" přidán (${data.chars} znaků, ${data.indexed} částí${data.ocr ? ', přes OCR' : ''}).`, '#4ade80');
+                    if (!input._batch) setStatus(`✅ „${data.fileName}" přidán (${data.chars} znaků, ${data.indexed} částí${data.ocr ? ', přes OCR' : ''}).`, '#4ade80');
                     await this.loadAgentKnowledge(agentId);
+                    return { ok: true };
                 } else {
-                    setStatus('❌ ' + (data.error || 'Nahrání selhalo.'), '#f87171');
+                    if (!input._batch) setStatus('❌ ' + (data.error || 'Nahrání selhalo.'), '#f87171');
+                    return { ok: false, error: data.error || 'nahrání selhalo' };
                 }
             } catch (err) {
-                setStatus('❌ Chyba: ' + err.message, '#f87171');
+                if (!input._batch) setStatus('❌ Chyba: ' + err.message, '#f87171');
+                return { ok: false, error: err.message };
             } finally {
-                if (input) input.value = '';
+                if (input && !input._batch) input.value = '';
             }
         },
 

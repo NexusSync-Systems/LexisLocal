@@ -269,7 +269,9 @@ Object.assign(LexisLocalApp.prototype, {
                             ${insolWarning}
                         </div>
                         <div class="parties-text" style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 12px;">
-                            <strong>Žalobce:</strong> ${escapeHtml(groupPlaintiff)} | <strong>Žalovaný:</strong> ${escapeHtml(groupDefendant)}
+                            ${(groupPlaintiff === 'Nezjištěn' && groupDefendant === 'Nezjištěn')
+                                ? '<span style="opacity:.75;">Mimosoudní dokument — účastníci řízení nezjištěni</span>'
+                                : `<strong>Žalobce:</strong> ${escapeHtml(groupPlaintiff)} | <strong>Žalovaný:</strong> ${escapeHtml(groupDefendant)}`}
                             ${verifiedAddr}
                         </div>
                         

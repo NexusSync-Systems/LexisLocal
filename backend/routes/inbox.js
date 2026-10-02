@@ -263,17 +263,10 @@ router.get('/content', async (req, res) => {
             return res.status(404).json({ error: "Fyzický soubor na disku neexistuje." });
         }
 
-        const ext = path.extname(filePath).toLowerCase();
-        let content = "";
-
-        if (ext === '.pdf') {
-            const pdf = require('pdf-parse');
-            const dataBuffer = await fs.promises.readFile(filePath);
-            const parsedPdf = await pdf(dataBuffer);
-            content = parsedPdf.text;
-        } else {
-            content = await fs.promises.readFile(filePath, 'utf-8');
-        }
+        // Přečtený text (PDF, DOCX, OCR skenu) — ne surový soubor. Dřív se DOCX/PNG
+        // četly jako UTF-8 a vracely binární data (test 2. 10. 2026).
+        const { getOrExtract } = require('../lib/text_cache');
+        const content = await getOrExtract(filePath);
 
         res.json({
             fileName: fileName,

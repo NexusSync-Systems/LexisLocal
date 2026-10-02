@@ -101,7 +101,7 @@
       "prompt": "Do kdy musíme podat odpor proti platebnímu rozkazu? Uveď přesné datum.",
       "must": [
         "19\\.\\s?10\\.\\s?2026",
-        "rozpor|nesoulad|r[uů]zn[aáé]|dv[eě] data|odli[šs]n"
+        "rozpor|nesoulad|r[uů]zn[aáé]|dv[eě] data|odli[šs]n|nejd[řr][íi]v|d[řr][íi]v[eě]j[šs]"
       ],
       "mustNot": [
         "17\\.\\s?10\\.\\s?2026"

@@ -9,6 +9,57 @@ document.addEventListener('DOMContentLoaded', () => {
     window.appInstance = app;
 });
 
+
+// Chybějící / neplatný token: dřív aplikace bez tokenu tiše zobrazovala „undefined/0“
+// a prázdné seznamy (test 2. 10. 2026) a pole pro token bylo schované v nápovědě.
+// Jakákoli odpověď 401 z /api/ teď ukáže lištu s polem pro token.
+(function installAuthBanner() {
+    if (typeof window === 'undefined' || !window.fetch || window.__lexisAuthBanner) return;
+    window.__lexisAuthBanner = true;
+    const origFetch = window.fetch.bind(window);
+    function showBanner(hadToken) {
+        if (document.getElementById('lexis-auth-banner')) return;
+        const bar = document.createElement('div');
+        bar.id = 'lexis-auth-banner';
+        bar.setAttribute('role', 'alert');
+        bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;padding:10px 16px;background:#7f1d1d;color:#fff;font-size:0.9rem;box-shadow:0 2px 8px rgba(0,0,0,.3);';
+        const msg = document.createElement('span');
+        msg.textContent = hadToken
+            ? '🔑 Uložený přístupový token server odmítl. Zadejte platný token:'
+            : '🔑 Server vyžaduje přístupový token (najdete ho v _connect.txt nebo u správce). Zadejte ho:';
+        const inp = document.createElement('input');
+        inp.type = 'password'; inp.id = 'lexis-auth-banner-input'; inp.autocomplete = 'off';
+        inp.placeholder = 'přístupový token';
+        inp.style.cssText = 'padding:6px 10px;border-radius:6px;border:none;min-width:220px;color:#111;';
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.textContent = 'Uložit a načíst znovu';
+        btn.style.cssText = 'padding:6px 12px;border-radius:6px;border:none;background:#fff;color:#7f1d1d;font-weight:600;cursor:pointer;';
+        const save = () => {
+            const t = inp.value.trim();
+            if (!t) return;
+            try { localStorage.setItem('lexis_api_token', t); } catch (e) { /* bez úložiště */ }
+            location.reload();
+        };
+        btn.addEventListener('click', save);
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+        bar.append(msg, inp, btn);
+        (document.body || document.documentElement).appendChild(bar);
+    }
+    window.fetch = function (input, init) {
+        return origFetch(input, init).then(res => {
+            try {
+                const url = typeof input === 'string' ? input : (input && input.url) || '';
+                if (res.status === 401 && url.indexOf('/api/') !== -1) {
+                    let had = false; try { had = !!localStorage.getItem('lexis_api_token'); } catch (e) {}
+                    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => showBanner(had));
+                    else showBanner(had);
+                }
+            } catch (e) { /* lišta nesmí rozbít požadavek */ }
+            return res;
+        });
+    };
+})();
+
 // escapeHtml je vytažen do app-helpers.js (načítá se před app.js) — jeden zdroj pravdy.
 
 class LexisLocalApp {
@@ -99,10 +150,24 @@ class LexisLocalApp {
         if (uploadBtn && fileUploader) {
             uploadBtn.addEventListener('click', () => fileUploader.click());
             fileUploader.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    this.handleFileSelected(file);
-                }
+                const files = Array.from(e.target.files || []);
+                if (files.length) this.handleFilesSelected(files);
+            });
+        }
+        // Přetažení souborů kamkoli do okna → nahrání do doručené pošty
+        // (kromě zóny znalostní báze asistenta, ta má vlastní drop).
+        if (!window.__lexisDropInstalled) {
+            window.__lexisDropInstalled = true;
+            const hasFiles = ev => ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes('Files');
+            document.addEventListener('dragover', ev => { if (hasFiles(ev)) { ev.preventDefault(); document.body.classList.add('lexis-dragging'); } });
+            document.addEventListener('dragleave', ev => { if (!ev.relatedTarget) document.body.classList.remove('lexis-dragging'); });
+            document.addEventListener('drop', ev => {
+                document.body.classList.remove('lexis-dragging');
+                if (!hasFiles(ev)) return;
+                ev.preventDefault();
+                if (ev.target && ev.target.closest && ev.target.closest('#agent-kb-drop')) return;
+                const files = Array.from(ev.dataTransfer.files || []);
+                if (files.length) this.handleFilesSelected(files);
             });
         }
 
@@ -379,13 +444,18 @@ class LexisLocalApp {
         const ICON = { ok: '🟢', warn: '🟡', fail: '🔴' };
         try {
             const res = await fetch(`${this.apiBase}/readiness`, { headers: this.getHeaders() });
+            if (res.status === 401) {
+                if (sumEl) { sumEl.textContent = 'chybí přístupový token'; sumEl.style.color = 'var(--accent-red)'; }
+                listEl.innerHTML = '<div style="font-size:0.85rem;">🔑 Bez platného přístupového tokenu nelze stav serveru zjistit — zadejte ho v liště nahoře.</div>';
+                return;
+            }
             const data = await res.json();
             const checks = data.checks || [];
             const s = data.summary || {};
             if (sumEl) {
                 sumEl.textContent = s.ready
-                    ? `vše připraveno (${s.ok}/${checks.length})`
-                    : `${s.ok}/${checks.length} v pořádku${s.warn ? `, ${s.warn} varování` : ''}${s.fail ? `, ${s.fail} kritických` : ''}`;
+                    ? `vše připraveno (${s.ok || 0}/${checks.length})`
+                    : `${s.ok || 0}/${checks.length} v pořádku${s.warn ? `, ${s.warn} varování` : ''}${s.fail ? `, ${s.fail} kritických` : ''}`;
                 sumEl.style.color = s.fail ? 'var(--accent-red)' : (s.warn ? '#d9a441' : 'var(--accent-green, #10b981)');
             }
             listEl.innerHTML = checks.map(c => {

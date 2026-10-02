@@ -7,7 +7,7 @@
 const { agentNumCtx } = require('./agent_options');
 const { loadAgents, agentTemperature } = require('./agents');
 const { CHAT_MODEL, RAG_MIN_SCORE } = require('./model_config');
-const { anonymizeText } = require('./anonymizer'); // GDPR: kontext se anonymizuje před modelem
+const { anonymizeText, pseudonymizeText, restorePseudonyms } = require('./anonymizer'); // GDPR: kontext se anonymizuje před modelem
 const { searchSimilar } = require('./rag');
 // B1: per-agent scope i v ChiefOrchestrator cestě — bez toho agenti v orchestrátoru
 // NEčerpají z vlastní znalostní báze (_kb_<id>) ani z judikatury (na rozdíl od
@@ -53,9 +53,17 @@ class ChiefOrchestrator {
         console.log(`🧩 Chief Orchestrator: Dekompozice dokončena. Vygenerováno ${steps.length} kroků.`);
         
         let accumulatedContext = "";
+        let pseudoMap = null;
         if (context) {
             // GDPR: syrový kontext z editoru se před vstupem do modelu anonymizuje.
-            accumulatedContext += `Výchozí kontext dokumentu z editoru:\n${anonymizeText(context)}\n\n`;
+            // Vratně (symboly [OSOBA_1]…), finální výstup se doplní — viz routes/agent.js.
+            if (process.env.AGENT_CONTEXT_REDACTION === 'irreversible') {
+                accumulatedContext += `Výchozí kontext dokumentu z editoru:\n${anonymizeText(context)}\n\n`;
+            } else {
+                const ps = pseudonymizeText(context);
+                pseudoMap = ps.map;
+                accumulatedContext += `Výchozí kontext dokumentu z editoru (osobní údaje jako symboly [OSOBA_1] apod. — v textu je ponech přesně v tomto tvaru):\n${ps.text}\n\n`;
+            }
         }
 
         // --- KROK 2: Sekvenční spuštění (Delegation & Sandbox) ---
@@ -311,6 +319,8 @@ class ChiefOrchestrator {
             finalResponse = `Omlouvám se, nepodařilo se provést finální syntézu. Zde jsou alespoň dílčí nasbírané výstupy:\n\n${accumulatedContext}`;
         }
 
+        if (pseudoMap && typeof finalResponse === 'string') finalResponse = restorePseudonyms(finalResponse, pseudoMap);
+
         const durationMs = Date.now() - startTime;
         console.log(`🏁 Chief Orchestrator: Kompletní orchestrace úspěšně dokončena za ${durationMs}ms.`);
 
@@ -319,7 +329,11 @@ class ChiefOrchestrator {
         let citationCheck = null;
         try {
             const { verifyCitationsWithSources } = require('./citation_verifier');
-            citationCheck = await verifyCitationsWithSources(finalResponse, {});
+            const { getKbLawIndex } = require('./kb_law_index');
+            citationCheck = await verifyCitationsWithSources(finalResponse, {
+                contextChunks: [prompt, context].filter(Boolean).map(t => ({ text: String(t), fileName: 'zadání' })),
+                kbIndex: getKbLawIndex()
+            });
         } catch (e) { citationCheck = null; }
 
         return {

@@ -48,6 +48,32 @@ const RE_ZAKON = /zákon(?:a|em|u|ě)?\s+č\.?\s*(\d{1,4})\/(\d{4})\s*Sb\./gi;
 // Paragraf: "§ 2048", "§2048", "§ 2048 odst. 2 písm. a)", i rozsah "§ 2079 a násl."
 const RE_PARAGRAF = /§\s?(\d+[a-z]?)(\s*odst\.\s*\d+)?(\s*písm\.\s*[a-z]\))?/gi;
 
+// Zkratky / názvy předpisů za paragrafem: „§ 57 OSŘ“, „§ 2048 obč. zák.“,
+// „§ 57 občanského soudního řádu“. Bez nich verifier nevěděl, ke kterému zákonu § patří.
+const LAW_ALIASES = [
+    ['99/1963', /^(?:OSŘ|o\.\s?s\.\s?ř\.|občansk\S*\s+soudn\S*\s+řád\S*)/i],
+    ['89/2012', /^(?:NOZ|OZ|obč\.\s?zák\.|občansk\S*\s+zákoník\S*)/i],
+    ['90/2012', /^(?:ZOK|zákon\S*\s+o\s+obchodních\s+korporacích)/i],
+    ['262/2006', /^(?:ZP|zák\.\s?práce|zákoník\S*\s+práce)/i],
+    ['40/2009', /^(?:TZ|tr\.\s?zák\.|trestní\S*\s+zákoník\S*)/i],
+    ['141/1961', /^(?:TŘ|tr\.\s?ř\.|trestní\S*\s+řád\S*)/i],
+    ['150/2002', /^(?:s\.\s?ř\.\s?s\.|SŘS|soudní\S*\s+řád\S*\s+správní\S*)/i],
+    ['500/2004', /^(?:SŘ|spr\.\s?ř\.|správní\S*\s+řád\S*)/i],
+    ['182/2006', /^(?:IZ|InsZ|insolvenční\S*\s+zákon\S*)/i],
+    ['120/2001', /^(?:EŘ|ex\.\s?ř\.|exekuční\S*\s+řád\S*)/i],
+    ['292/2013', /^(?:ZŘS|z\.\s?ř\.\s?s\.|zákon\S*\s+o\s+zvláštních\s+řízeních\s+soudních)/i]
+];
+function _lawFromAlias(after) {
+    // „§ 57 odst. 2 OSŘ“, „§ 57 OSŘ“ — přeskočí odstavec/písmeno a čárku
+    const rest = String(after || '').replace(/^\s*(?:odst\.\s*\d+\s*)?(?:písm\.\s*[a-z]\)\s*)?,?\s*/, '');
+    for (const [law, re] of LAW_ALIASES) if (re.test(rest)) return law;
+    return null;
+}
+
+// Článek předpisu: „čl. 46c zákona …“, „článku 36 Listiny“, „čl. 6 GDPR“.
+// Bez navázaného předpisu („čl. 5 smlouvy“) to není právní citace → nebereme.
+const RE_CLANEK = /(?<![A-Za-zÁ-žá-ž])čl(?:\.|ánek|ánku|ánkem)\s*([IVXLC]+|\d+[a-z]?)(?![A-Za-z0-9])((?:\s*odst\.\s*\d+)?(?:\s*písm\.\s*[a-z]\))?)(?=[^.;\n]{0,40}?(?:zákon|Listin|Ústav|Úmluv|směrnic|nařízen|GDPR|Sb\.|Smlouvy\s+o\s+fungování))/gi;
+
 // Spisová značka soudu (heuristika pokrývající běžné české formáty):
 //   "26 Cdo 1230/2021", "II. ÚS 2168/07", "8 Afs 21/2009", "Pl. ÚS 19/08"
 // Volitelný úvodní senát: arabské číslo (obecné soudy) NEBO římská číslice (ÚS).
@@ -83,6 +109,16 @@ function extractCitations(text) {
         });
     }
 
+    RE_CLANEK.lastIndex = 0;
+    while ((m = RE_CLANEK.exec(src)) !== null) {
+        found.push({
+            raw: normalizeWhitespace(m[0]),
+            type: 'clanek',
+            index: m.index,
+            article: m[1]
+        });
+    }
+
     RE_SPISOVA_ZNACKA.lastIndex = 0;
     while ((m = RE_SPISOVA_ZNACKA.exec(src)) !== null) {
         found.push({
@@ -102,12 +138,15 @@ function extractCitations(text) {
         // i "podle zákona č. Y Sb. ... v § X" (zákon PŘED). Dřív se bral jen nejbližší
         // PŘEDCHÁZEJÍCÍ zákon, což u více zákonů v pořadí "§ X zákona Y" přiřadilo
         // paragraf ke špatnému (dřívějšímu) zákonu → chybné ověření.
+        const alias = _lawFromAlias(src.slice(c.index + c.raw.length, c.index + c.raw.length + 60));
+        if (alias) { c.law = alias; continue; }
         let nearest = null, best = Infinity;
         for (const law of laws) {
             const dist = Math.abs(law.index - c.index);
             if (dist < best) { best = dist; nearest = law; }
         }
-        c.law = nearest ? nearest.law : null;
+        // Vzdálený zákon (jiný odstavec) k paragrafu nepatří.
+        c.law = (nearest && best <= 300) ? nearest.law : null;
     }
 
     return found.sort((a, b) => a.index - b.index);
@@ -184,6 +223,15 @@ function verifyOne(citation, contextNorm, referenceIndex) {
         return { status: 'unsupported_by_context', reason: 'paragraf není v podkladech a nelze ho ověřit v referenci' };
     }
 
+    // 4) Článek předpisu — ověřitelný jen doslovným výskytem v podkladech.
+    if (citation.type === 'clanek') {
+        const art = String(citation.article || '').toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const artInCtx = art && new RegExp('čl(?:\\.|ánek|ánku|ánkem)?\\s*' + art + '(?![a-z0-9])', 'i').test(contextNorm);
+        return (inContext || artInCtx)
+            ? { status: 'verified', reason: 'článek je doslovně v podkladech' }
+            : { status: 'unsupported_by_context', reason: 'článek předpisu není v podkladech — ověřte' };
+    }
+
     return { status: 'unsupported_by_context', reason: 'neznámý typ citace' };
 }
 
@@ -208,8 +256,13 @@ function verifyCitations(text, opts = {}) {
     );
 
     const raw = extractCitations(text);
+    const kbIndex = opts.kbIndex || null; // { '99/1963': Set('57') } z lib/kb_law_index.js
     const citations = raw.map(c => {
-        const res = verifyOne(c, contextNorm, referenceIndex);
+        let res = verifyOne(c, contextNorm, referenceIndex);
+        if (res.status !== 'verified' && kbIndex && c.law && kbIndex[c.law]) {
+            if (c.type === 'zakon') res = { status: 'verified', reason: 'zákon je ve znalostní bázi' };
+            else if (c.type === 'paragraf' && kbIndex[c.law].has(c.paragraph)) res = { status: 'verified', reason: 'paragraf je ve znalostní bázi zákonů' };
+        }
         // Dohledá, ve kterém chunku citace je (pro odkaz v UI).
         let sourceId = null;
         const rawNorm = normalizeCitation(c.raw);
@@ -224,6 +277,7 @@ function verifyCitations(text, opts = {}) {
             type: c.type,
             law: c.law || null,
             paragraph: c.paragraph || null,
+            article: c.article || null,
             status: res.status,
             reason: res.reason,
             // „no_reference_context_ok" NENÍ ověřeno: bez indexu i bez kontextu nemáme

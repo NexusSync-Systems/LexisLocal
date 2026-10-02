@@ -15,7 +15,7 @@ const { extractLexisSpecFromDocx } = require('./lexis-spec');
 const { logEvent } = require('./audit');
 const Mutex = require('./mutex');
 const { anonymizeText } = require('./anonymizer');
-const { calculateDeadlineDate, collectUnitDeadlines, runAIExtractor, extractDeliveryDates } = require('./extraction'); // sdílený AI-extraktor
+const { calculateDeadlineDate, collectUnitDeadlines, runAIExtractor, extractDeliveryDates, pickProceduralDeadline } = require('./extraction'); // sdílený AI-extraktor
 
 const { WATCH_DIR, dataPath } = require('./config'); // jeden zdroj pravdy, viz lib/config.js
 const { getIngestDir } = require('./config');
@@ -172,6 +172,9 @@ async function processDocument(filePath) {
         console.error(`❌ Chyba extrakce textu z ${fileName}:`, extractErr.message);
     }
     
+    if (text && text.trim()) {
+        try { require('./text_cache').setText(filePath, text); } catch (e) { /* cache je jen optimalizace */ }
+    }
     if (!text || !text.trim()) {
         console.warn(`⚠️ Soubor ${fileName} je prázdný nebo nelze přečíst.`);
         // Volající (upload) musí vědět, že dokument NEBYL zpracován — dřív API hlásilo
@@ -190,9 +193,12 @@ async function processDocument(filePath) {
             if (refinedMetadata.caseNumber) metadata.caseNumber = refinedMetadata.caseNumber;
             if (refinedMetadata.plaintiff) metadata.plaintiff = refinedMetadata.plaintiff;
             if (refinedMetadata.defendant) metadata.defendant = refinedMetadata.defendant;
-            if (refinedMetadata.deadlineDays !== undefined) {
+            // Procesní lhůta nalezená v textu (odvolání/odpor/vyjádření) má přednost
+            // před číslem od AI — to si u rozsudku vybralo 3denní pariční lhůtu.
+            if (refinedMetadata.deadlineDays !== undefined && !metadata.deadlineProcedural) {
                 metadata.deadlineDays = refinedMetadata.deadlineDays;
-                metadata.deadlineDate = calculateDeadlineDate(refinedMetadata.deadlineDays, metadata.deliveryDate || undefined);
+                metadata.deadlineDate = refinedMetadata.deadlineDays
+                    ? calculateDeadlineDate(refinedMetadata.deadlineDays, metadata.deliveryDate || undefined) : null;
             }
             if (refinedMetadata.summary) metadata.summary = refinedMetadata.summary;
         }
@@ -246,6 +252,7 @@ async function processDocument(filePath) {
         deadlineDays: metadata.deadlineDays || 0,
         deadlineDate: metadata.deadlineDate || null,
         deadlineBase: metadata.deadlineBase || null,
+        deadlineContext: metadata.deadlineContext || null,
         deliveryDate: metadata.deliveryDate || null,
         deliveryConflict: !!metadata.deliveryConflict,
         detectedDeadlines: unitDeadlines,
@@ -323,7 +330,14 @@ function runRegexExtractor(text) {
     metadata.deliveryDate = delivery.date;
     metadata.deliveryDates = delivery.all;
     metadata.deliveryConflict = delivery.conflict;
-    if (matchDeadline) {
+    const proc = pickProceduralDeadline(text);
+    if (proc) {
+        metadata.deadlineDays = proc.days;
+        metadata.deadlineDate = calculateDeadlineDate(proc.days, delivery.date || undefined);
+        metadata.deadlineBase = delivery.date ? 'doručení' : 'zpracování (datum doručení nenalezeno — OVĚŘIT)';
+        metadata.deadlineProcedural = true;
+        metadata.deadlineContext = proc.context;
+    } else if (matchDeadline && !/pr[aá]vn[ií]\s+moc/i.test(text.substr(matchDeadline.index, 80))) {
         const days = parseInt(matchDeadline[1]);
         metadata.deadlineDays = days;
         metadata.deadlineDate = calculateDeadlineDate(days, delivery.date || undefined);

@@ -183,6 +183,33 @@ function detectDeadlines(text) {
     return out;
 }
 
+// Která denní lhůta je ta PROCESNÍ (k odvolání/odporu/vyjádření)?
+// Test 2. 10. 2026: u rozsudku vzal AI-extraktor 3denní pariční lhůtu („do tří dnů
+// od právní moci“) místo 15denní lhůty k odvolání → advokát by viděl 18. 9. místo 30. 9.
+// Pariční lhůta běží od PRÁVNÍ MOCI, ne od doručení — tu do lhůtníku nedáváme.
+// Vrací { days, context } nebo null.
+const PROC_RE = /(odvol|odpor|dovol[aá]n|vyj[aá]d[rř]|n[aá]mitk|st[ií][zž]nost|rozklad|kasa[cč]n|ode\s+dne\s+doru[cč]|od\s+doru[cč])/i;
+const NONPROC_RE = /(pr[aá]vn[ií]\s+moc|zaplatit|splatn|uhradit|vyklidit|plnit)/i;
+function pickProceduralDeadline(text) {
+    if (!text) return null;
+    // věty místo řádků — PDF láme řádky uprostřed věty („do tří\ndnů“)
+    const flat = String(text).replace(/\s*[\r\n]+\s*/g, ' ');
+    const sentences = flat.split(/(?<=[.!?])\s+(?=[A-ZÁ-Ž0-9IVX])/);
+    let best = null;
+    sentences.forEach(sent => {
+        detectDeadlines(sent).filter(d => d.unit === 'day').forEach(d => {
+            let score = 0;
+            if (PROC_RE.test(sent)) score += 2;
+            if (NONPROC_RE.test(sent)) score -= 2;
+            if (score <= 0) return;
+            if (!best || score > best.score || (score === best.score && d.amount > best.days)) {
+                best = { days: d.amount, context: sent.trim().slice(0, 200), score };
+            }
+        });
+    });
+    return best ? { days: best.days, context: best.context } : null;
+}
+
 // Ollama AI extraktor strukturovaných metadat z českého právního textu.
 async function runAIExtractor(text) {
     // Build a highly optimized, single-shot structured JSON prompt
@@ -192,13 +219,13 @@ Reaguj VÝHRADNĚ validním JSON objektem s těmito poli:
   "caseNumber": "spisová značka ve formátu např. '23 C 120/2026'",
   "plaintiff": "jméno žalobce",
   "defendant": "jméno žalovaného",
-  "deadlineDays": 15, // lhůta k vyjádření VE DNECH jako číslo (pouze pokud je uvedena přímo ve dnech, jinak null)
+  "deadlineDays": 15, // PROCESNÍ lhůta (k odvolání, odporu, vyjádření) VE DNECH jako číslo; NE lhůta k zaplacení „od právní moci“ (jinak null)
   "deadlineAmount": null, // číslo lhůty, pokud je uvedena v TÝDNECH / MĚSÍCÍCH / LETECH (jinak null)
   "deadlineUnit": null, // jednotka k deadlineAmount: "week" | "month" | "year" (jinak null)
-  "summary": "krátké shrnutí obsahu jednou větou"
+  "summary": "krátké shrnutí obsahu jednou větou; začni typem dokumentu podle jeho skutečné formy (např. E-mail klienta, Smlouva o dílo, Rozsudek, Výzva soudu)"
 }
 Pokud některý údaj v textu NENÍ, vrať null — jména, spisové značky ani lhůty si NEVYMÝŠLEJ.
-Smlouva, e-mail nebo dopis obvykle žalobce/žalovaného ani spisovou značku nemají.
+Smlouva, e-mail nebo dopis obvykle žalobce/žalovaného ani spisovou značku nemají. E-mail nebo dopis, který o žalobě jen mluví, NENÍ žaloba.
 
 Text k analýze:
 ${text.substring(0, 3000)}`;
@@ -274,4 +301,4 @@ function extractDeliveryDates(text) {
     return { date: all[0] || null, all, conflict: all.length > 1 };
 }
 
-module.exports = { calculateDeadlineDate, extractDeliveryDates, validateExtraction, calculateDeadlineByUnit, detectDeadlines, normalizeDeadlineUnit, collectUnitDeadlines, runAIExtractor };
+module.exports = { pickProceduralDeadline, calculateDeadlineDate, extractDeliveryDates, validateExtraction, calculateDeadlineByUnit, detectDeadlines, normalizeDeadlineUnit, collectUnitDeadlines, runAIExtractor };

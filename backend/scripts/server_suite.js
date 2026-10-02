@@ -256,7 +256,7 @@ async function phaseC() {
     // C21–C24 RAG / znalostní báze
     const rs = await get('/api/rag/status');
     record('C', 'C21', 'RAG index běží', ok2(rs.status), { severity: 'high', detail: short(rs.text, 160) });
-    const se = await get('/api/rag/search?query=' + encodeURIComponent('jistota u nájmu bytu nejvýše trojnásobek'));
+    const se = await get('/api/rag/search?scope=kb&query=' + encodeURIComponent('jistota u nájmu bytu nejvýše trojnásobek'));
     record('C', 'C22', 'Vyhledávání v bázi zákonů najde § 2254', ok2(se.status) && /2254/.test(se.text), { severity: 'high', detail: short(se.text, 160) });
     const dob = await get('/api/rag/detect-obor?query=' + encodeURIComponent('výpověď z nájmu bytu'));
     record('C', 'C23', 'Detekce oboru (nájem)', ok2(dob.status) && /n[aá]jem|nemovit/i.test(dob.text), { severity: 'low', detail: short(dob.text, 120) });
@@ -338,7 +338,11 @@ async function phaseD() {
         const c = await get('/api/inbox/content?fileName=' + encodeURIComponent(f));
         const text = (c.json && (c.json.content || c.json.text)) || '';
         inboxText[f] = text;
-        record('D', 'D-txt-' + f, `${f}: text dokumentu je čitelný`, ok2(c.status) && text.length > 150, { severity: 'high', detail: `${text.length} znaků` });
+        // binární obsah (ZIP/DOCX „PK“, PNG, PDF hlavička, řídicí znaky) není čitelný text
+        const binary = /^(PK\u0003\u0004|\uFFFDPNG|%PDF-)/.test(text) || /^.PNG/.test(text) ||
+            ((text.slice(0, 2000).match(/[\u0000-\u0008\u000E-\u001F\uFFFD]/g) || []).length > 20);
+        record('D', 'D-txt-' + f, `${f}: text dokumentu je čitelný`, ok2(c.status) && text.length > 150 && !binary,
+            { severity: 'high', detail: `${text.length} znaků${binary ? ', BINÁRNÍ obsah' : ''}` });
     }
     // chybný soubor: zpracování musí selhat viditelně
     const broken = await post('/api/inbox/upload', { fileName: 'E2E-poskozeny.pdf', base64: Buffer.from('toto není PDF').toString('base64') });

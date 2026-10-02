@@ -1,3 +1,17 @@
+// Jednotka lhůty česky a ve správném tvaru („15 dnů“, ne „15 day“ — test 2. 10. 2026).
+function unitLabelCs(unit, amount) {
+    const n = Math.abs(parseInt(amount, 10));
+    const F = {
+        day: ['den', 'dny', 'dnů'], week: ['týden', 'týdny', 'týdnů'],
+        month: ['měsíc', 'měsíce', 'měsíců'], year: ['rok', 'roky', 'let']
+    }[String(unit || '').toLowerCase()];
+    if (!F) return String(unit || '');
+    if (n === 1) return F[0];
+    if (n >= 2 && n <= 4) return F[1];
+    return F[2];
+}
+if (typeof module !== 'undefined' && module.exports) module.exports = Object.assign(module.exports || {}, { unitLabelCs });
+
 /**
  * app-spisova.js — dashboard: Spisová služba (spisy, lhůtník, skartace,
  * fakturace, nezařazené dokumenty) a AML / Onboarding klienta.
@@ -67,7 +81,7 @@ Object.assign(LexisLocalApp.prototype, {
             const s = d.spis;
             const m = d.metrics;
             const docs = d.documents.map(f => `<li>${escapeHtml(f.fileName || f.id)}</li>`).join('') || '<li style="opacity:0.6;">žádné</li>';
-            const dls = d.deadlines.map(dl => `<li>${escapeHtml(dl.date || '—')} — ${escapeHtml(String(dl.amount || ''))} ${escapeHtml(dl.unit)}${dl.needsReview ? ' <span style="color:#eab308;">(k ověření)</span>' : ''}</li>`).join('') || '<li style="opacity:0.6;">žádné</li>';
+            const dls = d.deadlines.map(dl => `<li>${escapeHtml(dl.date || '—')} — ${escapeHtml(String(dl.amount || ''))} ${escapeHtml(unitLabelCs(dl.unit, dl.amount))}${dl.needsReview ? ' <span style="color:#eab308;">(k ověření)</span>' : ''}</li>`).join('') || '<li style="opacity:0.6;">žádné</li>';
             const events = d.events.slice(-8).reverse().map(ev => `<li style="font-size:0.8rem;"><b>${escapeHtml(ev.type)}</b> — ${escapeHtml(ev.note)} <span style="opacity:0.5;">${escapeHtml((ev.createdAt || '').split('T')[0])}</span></li>`).join('') || '<li style="opacity:0.6;">žádné</li>';
             el.innerHTML = `
                 <h3 style="margin-top:0;">${escapeHtml(s.spisZn || s.nazev)}</h3>
@@ -249,7 +263,7 @@ Object.assign(LexisLocalApp.prototype, {
             const rows = items.map(i => `
                 <tr>
                     <td style="padding:6px;color:${color[i.urgency]};">${escapeHtml(i.date || '—')}</td>
-                    <td style="padding:6px;">${escapeHtml(String(i.amount || ''))} ${escapeHtml(i.unit)}</td>
+                    <td style="padding:6px;">${escapeHtml(String(i.amount || ''))} ${escapeHtml(unitLabelCs(i.unit, i.amount))}</td>
                     <td style="padding:6px;font-size:0.8rem;">${escapeHtml(i.caseNumber || '—')}</td>
                     <td style="padding:6px;">${i.daysLeft === null ? '—' : i.daysLeft + ' dní'}</td>
                     <td style="padding:6px;">${i.needsReview

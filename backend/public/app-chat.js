@@ -538,58 +538,91 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async handleFileSelected(file) {
+        return this.handleFilesSelected([file]);
+    },
+
+    // Nahrání více souborů najednou (výběr s Ctrl/⌘ nebo přetažení). Soubory jdou
+    // na server POSTUPNĚ — každý se hned zpracovává (OCR + AI), souběh by přetížil
+    // model. Stav každého souboru je vidět v panelu vpravo dole, žádné alerty.
+    async handleFilesSelected(files) {
+        const ALLOWED = /\.(pdf|txt|docx|html?|png|jpe?g|tiff?|bmp|webp)$/i;
+        const MAX = 40 * 1024 * 1024; // JSON limit serveru 50 MB, base64 +33 %
         const uploadBtn = document.getElementById('btn-upload-file');
-        const originalText = uploadBtn ? uploadBtn.textContent : "📥 Nahrát spis";
-        
-        if (uploadBtn) {
-            uploadBtn.textContent = "📥 Nahrávám...";
-            uploadBtn.disabled = true;
+        if (uploadBtn) uploadBtn.disabled = true;
+
+        let panel = document.getElementById('lexis-upload-panel');
+        if (!panel) {
+            panel = document.createElement('div');
+            panel.id = 'lexis-upload-panel';
+            panel.setAttribute('role', 'status');
+            panel.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9999;width:min(380px,calc(100vw - 32px));max-height:50vh;overflow:auto;background:var(--surface-1,#fff);color:var(--text-primary,#111);border:1px solid var(--border-glass,#ddd);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:12px;font-size:0.85rem;';
+            document.body.appendChild(panel);
         }
-        
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const base64 = e.target.result;
+        panel.innerHTML = '';
+        const head = document.createElement('div');
+        head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:600;';
+        const title = document.createElement('span');
+        const close = document.createElement('button');
+        close.type = 'button'; close.textContent = '×'; close.title = 'Zavřít';
+        close.style.cssText = 'border:none;background:none;font-size:1.1rem;cursor:pointer;color:inherit;';
+        close.onclick = () => panel.remove();
+        head.append(title, close);
+        panel.appendChild(head);
+
+        const rows = files.map(f => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:8px;padding:4px 0;border-top:1px solid var(--border-glass,#eee);';
+            const st = document.createElement('span'); st.textContent = '⏳'; st.style.flex = '0 0 auto';
+            const nm = document.createElement('span'); nm.style.cssText = 'flex:1;min-width:0;overflow-wrap:anywhere;';
+            nm.textContent = f.name;
+            const msg = document.createElement('div'); msg.style.cssText = 'font-size:0.78rem;opacity:.8;';
+            nm.appendChild(msg);
+            row.append(st, nm);
+            panel.appendChild(row);
+            return { st, msg };
+        });
+
+        const readB64 = f => new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(r.result);
+            r.onerror = () => reject(new Error('soubor nejde přečíst z disku'));
+            r.readAsDataURL(f);
+        });
+
+        let ok = 0, warn = 0, fail = 0;
+        for (let i = 0; i < files.length; i++) {
+            const f = files[i], ui = rows[i];
+            title.textContent = `Nahrávání ${i + 1}/${files.length}…`;
+            if (!ALLOWED.test(f.name)) { ui.st.textContent = '⛔'; ui.msg.textContent = 'nepodporovaný typ souboru'; fail++; continue; }
+            if (f.size > MAX) { ui.st.textContent = '⛔'; ui.msg.textContent = `příliš velký (${(f.size / 1048576).toFixed(1)} MB, max 40 MB)`; fail++; continue; }
+            ui.st.textContent = '🔄'; ui.msg.textContent = 'zpracovávám (OCR + AI)…';
             try {
+                const base64 = await readB64(f);
                 const res = await fetch(`${this.apiBase}/inbox/upload`, {
                     method: 'POST',
                     headers: this.getHeaders({ 'Content-Type': 'application/json' }),
-                    body: JSON.stringify({
-                        fileName: file.name,
-                        base64: base64
-                    })
+                    body: JSON.stringify({ fileName: f.name, base64 })
                 });
-                const data = await res.json();
-                if (data.success && data.processed === false) {
-                    alert(`⚠️ ${data.warning || 'Soubor byl uložen, ale zpracování selhalo.'}`);
-                } else if (data.success) {
-                    alert(`✓ Spis ${file.name} byl úspěšně nahrán a AI ho zanalyzovala!`);
-                    await this.loadInbox();
-                    await this.checkRagStatus();
+                let data = {}; try { data = await res.json(); } catch (e) { /* ne-JSON odpověď */ }
+                if (res.ok && data.success && data.processed === false) {
+                    ui.st.textContent = '⚠️'; ui.msg.textContent = data.warning || 'uloženo, ale zpracování selhalo'; warn++;
+                } else if (res.ok && data.success) {
+                    ui.st.textContent = '✅'; ui.msg.textContent = 'nahráno a zanalyzováno'; ok++;
                 } else {
-                    alert("❌ Chyba při nahrávání: " + (data.error || "Neznámá chyba"));
+                    ui.st.textContent = '❌'; ui.msg.textContent = data.error || `chyba serveru (HTTP ${res.status})`; fail++;
                 }
             } catch (err) {
-                alert("❌ Chyba spojení při nahrávání: " + err.message);
-            } finally {
-                if (uploadBtn) {
-                    uploadBtn.textContent = originalText;
-                    uploadBtn.disabled = false;
-                }
-                // Clear input value to allow uploading the same file again
-                const fileUploader = document.getElementById('file-uploader');
-                if (fileUploader) fileUploader.value = '';
+                ui.st.textContent = '❌'; ui.msg.textContent = 'chyba spojení: ' + err.message; fail++;
             }
-        };
-        
-        reader.onerror = () => {
-            alert("❌ Nepodařilo se přečíst soubor z disku.");
-            if (uploadBtn) {
-                uploadBtn.textContent = originalText;
-                uploadBtn.disabled = false;
-            }
-        };
-        
-        reader.readAsDataURL(file);
+        }
+        title.textContent = `Hotovo: ${ok} ✅` + (warn ? `, ${warn} ⚠️` : '') + (fail ? `, ${fail} ❌` : '');
+        if (uploadBtn) uploadBtn.disabled = false;
+        const fileUploader = document.getElementById('file-uploader');
+        if (fileUploader) fileUploader.value = '';
+        if (ok || warn) {
+            try { await this.loadInbox(); await this.checkRagStatus(); } catch (e) { /* obnova seznamu je best-effort */ }
+        }
+        return { ok, warn, fail };
     },
 
     async loadRegistryConfig() {

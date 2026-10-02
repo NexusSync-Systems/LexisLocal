@@ -132,7 +132,17 @@ router.post('/add', async (req, res) => {
             console.log(`⚖️ Registrováno soudní jednání pro sledování změn: sp. zn. ${spisovaZnacka.cisloSenatu} ${spisovaZnacka.druhVeci} ${spisovaZnacka.bcVec}/${spisovaZnacka.rocnik}`);
         }
 
-        res.json({ success: true, filePath, syncStatus, message: "ICS soubor byl úspěšně vygenerován a synchronizován do kalendáře." });
+        // Událost uložíme i do databáze — dřív vznikl jen .ics soubor a v kalendáři
+        // dashboardu (/events) se nová lhůta/jednání vůbec neobjevila (test 2. 10. 2026).
+        try {
+            const list = (db.get('calendar_events') || []).filter(e => e.id !== cleanId);
+            list.push({ id: cleanId, type: isHearing ? 'hearing' : 'deadline', title: cleanTitle, date: dueDate,
+                time: time || '', status: 'scheduled', description: cleanDesc, location: location || '',
+                createdAt: new Date().toISOString() });
+            db.set('calendar_events', list);
+        } catch (dbErr) { console.warn('⚠️ Kalendář: uložení události do DB selhalo:', dbErr.message); }
+
+        res.json({ success: true, id: cleanId, filePath, syncStatus, message: "ICS soubor byl úspěšně vygenerován a synchronizován do kalendáře." });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: `Chyba při generování ICS kalendáře: ${err.message}` });
@@ -182,6 +192,12 @@ router.get('/events', async (req, res) => {
                 description: `Soudní jednání - sp. zn. ${hearing.spisovaZnacka ? (hearing.spisovaZnacka.cisloSenatu + ' ' + hearing.spisovaZnacka.druhVeci + ' ' + hearing.spisovaZnacka.bcVec + '/' + hearing.spisovaZnacka.rocnik) : ''}`,
                 location: hearing.location || ''
             });
+        });
+
+        // Události přidané přes /add (lhůty a jednání zadané ručně / z inboxu)
+        const seen = new Set(events.map(e => e.id));
+        (db.get('calendar_events') || []).forEach(e => {
+            if (!seen.has(e.id)) events.push(Object.assign({}, e));
         });
 
         // Rezervované schůzky

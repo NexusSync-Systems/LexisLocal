@@ -11,7 +11,8 @@ const router = express.Router();
 const crypto = require('crypto');
 const { loadAgents, agentTemperature } = require('../lib/agents');
 const { searchSimilar, agentRagK } = require('../lib/rag');
-const { anonymizeText } = require('../lib/anonymizer');
+const { anonymizeText, pseudonymizeText, restorePseudonyms } = require('../lib/anonymizer');
+const injectionGuard = require('../lib/injection_guard');
 const { logEvent } = require('../lib/audit');
 const { calculateInferenceMetrics } = require('../lib/green_monitor');
 const db = require('../lib/database');
@@ -130,9 +131,29 @@ router.post('/:agentId', async (req, res) => {
             console.warn("⚠️ RAG: Selhalo automatické sémantické vyhledávání pro agenta:", ragErr.message);
         }
 
+        // Kontext se před modelem PSEUDONYMIZUJE vratně: model vidí [OSOBA_1], [ADRESA_1]…
+        // a po odpovědi se doplní skutečné údaje (dřív nevratná anonymizace → Spisovatel
+        // nemohl v plné moci uvést jméno klienta). AGENT_CONTEXT_REDACTION=irreversible
+        // vrací staré chování (např. pro vzdálený/cloudový model).
+        let pseudoMap = null;
         if (context) {
-            const anonymizedContext = anonymizeText(context);
-            messages.push({ role: 'system', content: `Kontext dokumentu / spisové podklady:\n${anonymizedContext}` });
+            let ctxForModel;
+            if (process.env.AGENT_CONTEXT_REDACTION === 'irreversible') {
+                ctxForModel = anonymizeText(context);
+            } else {
+                const ps = pseudonymizeText(context);
+                ctxForModel = ps.text; pseudoMap = ps.map;
+            }
+            const note = pseudoMap && Object.keys(pseudoMap).length
+                ? '\n\n(Osobní údaje jsou nahrazeny symboly jako [OSOBA_1], [ADRESA_1]. Pokud je v odpovědi potřebuješ, napiš symbol PŘESNĚ v tomto tvaru — systém za něj doplní skutečný údaj. Nevymýšlej jména ani adresy.)'
+                : '';
+            messages.push({ role: 'system', content: `Kontext dokumentu / spisové podklady:\n${ctxForModel}${note}` });
+        }
+        // Text v podkladech, který se vydává za pokyn pro AI (prompt injection).
+        const injectionHits = injectionGuard.detectInjection([prompt, context, ...ragContextChunks.map(c => c.text)].filter(Boolean).join('\n'));
+        if (injectionHits.length) {
+            messages.push({ role: 'system', content: injectionGuard.MODEL_NOTE });
+            console.warn(`⚠️ Agent: podklady obsahují možný pokyn pro AI (${injectionHits.length}×).`);
         }
 
         // Datumovou aritmetiku dělá program, ne model (viz lib/date_facts.js).
@@ -175,13 +196,22 @@ router.post('/:agentId', async (req, res) => {
             response = await ollama.chat({ model: selectedModel, messages: messages, options: chatOptions });
         }
 
+        if (pseudoMap && response && response.message) {
+            response.message.content = restorePseudonyms(response.message.content, pseudoMap);
+        }
+
         // #2: Antihalucinační kontrola citací i v single-agent routě (dřív jen v
         // orchestrátoru). Neověřené §/sp. zn. se advokátovi označí. Best-effort —
         // chyba ověření nesmí shodit odpověď agenta.
         let citationCheck = null;
         try {
             const { verifyCitationsWithSources } = require('../lib/citation_verifier');
-            const cc = await verifyCitationsWithSources(response.message.content, { contextChunks: ragContextChunks });
+            // Podklady = RAG pasáže + zadání + kontext ze spisu (citace převzaté z dokumentu
+            // klienta nejsou halucinace) + index § z celé báze zákonů (ne jen top-k pasáží).
+            const { getKbLawIndex } = require('../lib/kb_law_index');
+            const verifyChunks = ragContextChunks.concat(
+                [prompt, context].filter(Boolean).map(t => ({ text: String(t), fileName: 'zadání' })));
+            const cc = await verifyCitationsWithSources(response.message.content, { contextChunks: verifyChunks, kbIndex: getKbLawIndex() });
             citationCheck = cc ? {
                 total: cc.total,
                 unverifiedCount: cc.unverifiedCount,
@@ -200,9 +230,9 @@ router.post('/:agentId', async (req, res) => {
             const sourceText = [prompt, context, ...ragContextChunks.map(c => c.text)].filter(Boolean).join('\n');
             const g = guardInventedIdentifiers(response.message.content, sourceText);
             const lawIssues = checkLawNames(g.text);
-            const warn = buildWarnings({ replaced: g.replaced, lawIssues, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0 });
+            const warn = buildWarnings({ replaced: g.replaced, lawIssues, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits)] });
             response.message.content = g.text + warn;
-            outputGuard = { replaced: g.replaced, lawIssues };
+            outputGuard = { replaced: g.replaced, lawIssues, injection: injectionHits };
         } catch (gErr) {
             console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);
         }

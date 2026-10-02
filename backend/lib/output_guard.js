@@ -78,8 +78,9 @@ function checkLawNames(output) {
 }
 
 /** Sestaví upozornění pro advokáta (nebo '' když je vše v pořádku). */
-function buildWarnings({ replaced = [], lawIssues = [], unverifiedCount = 0 }) {
+function buildWarnings({ replaced = [], lawIssues = [], unverifiedCount = 0, extra = [] }) {
     const w = [];
+    for (const e of extra) if (e) w.push(e);
     if (replaced.length) {
         w.push(`• ${replaced.length}× identifikátor, který nebyl v zadání (${[...new Set(replaced.map(r => r.label))].join(', ')}), byl nahrazen polem k doplnění.`);
     }
