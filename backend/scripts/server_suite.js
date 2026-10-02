@@ -14,6 +14,9 @@
  *   E  agenti           — eval sada cases.json (must / mustNot / meta), opakování
  *   F  více agentů      — Oponentní diskuse (debate), orchestrace
  *   G  zátěž            — souběh 1/4/8 dotazů, chybovost, p50/p95
+ *   K  koncepty + podpisy — sdílené koncepty (verze, souběh, zámek, schválení, export .docx
+ *                         se spec), Spisovatel uloží koncept / reviduje podle připomínek,
+ *                         ověření podpisu PDF (platný / změněný), escapování výstupu AI v chatu
  *   H  LLM-judge        — volitelné hodnocení odpovědí z E silnějším modelem
  *                         (JUDGE_API_KEY + JUDGE_MODEL v prostředí, Anthropic API)
  *
@@ -135,7 +138,9 @@ const ROUTE_SAMPLES = [
     ['GET', '/api/readiness'], ['GET', '/api/calendar/events'], ['GET', '/api/models'], ['GET', '/api/system/export'],
     ['GET', '/api/system/telemetry'], ['GET', '/api/registry/check?ico=1'], ['GET', '/api/email/settings'], ['GET', '/api/email/tasks'],
     ['GET', '/api/settings/ingest-dir'], ['GET', '/api/lhutnik'], ['GET', '/api/skartace/navrh'], ['GET', '/api/fakturace'],
-    ['GET', '/api/aml/checks'], ['GET', '/api/workflows/rules'], ['POST', '/api/pair/new', {}], ['GET', '/api/status']
+    ['GET', '/api/aml/checks'], ['GET', '/api/workflows/rules'], ['POST', '/api/pair/new', {}], ['GET', '/api/status'],
+    ['GET', '/api/drafts'], ['POST', '/api/drafts', { text: 'x' }], ['GET', '/api/drafts/drf_neexistuje/export.docx'],
+    ['POST', '/api/document/verify-signature', { fileBase64: 'eA==' }]
 ];
 async function phaseB() {
     console.log('\nB — řízení přístupu');
@@ -170,7 +175,7 @@ async function phaseB() {
 }
 
 // ─── C: funkce ───────────────────────────────────────────────────────────────
-const created = { spisy: [], invoices: [], knowledge: [] };
+const created = { spisy: [], invoices: [], knowledge: [], drafts: [] };
 async function phaseC() {
     console.log('\nC — funkce');
     // C1 spisy CRUD
@@ -455,6 +460,78 @@ async function phaseG() {
     return load;
 }
 
+// ─── K: koncepty + podpisy ──────────────────────────────────────────────────
+async function phaseK() {
+    console.log('\nK — koncepty a podpisy');
+    const tag = 'E2E-koncept-' + Date.now().toString(36);
+    const put = (p, body) => request('PUT', p, { body });
+    const c = await post('/api/drafts', { title: tag, text: 'VÝZVA K PLNĚNÍ\nVážený pane,\nvyzýváme Vás k úhradě částky 10 000 Kč.' });
+    const id = c.json && c.json.id;
+    if (id) created.drafts.push(id);
+    record('K', 'K1', 'Založení konceptu', c.status === 201 && !!id && c.json.status === 'koncept', { severity: 'high', detail: `${c.status} ${short(c.text, 120)}` });
+    if (!id) return;
+    const spec = { blocks: [{ type: 'paragraph', text: 'Vážený pane,' }, { type: 'paragraph', text: 'vyzýváme Vás k úhradě do 15 dnů.' }] };
+    const v2 = await put('/api/drafts/' + id, { spec, baseVersion: 1, note: 'E2E úprava' });
+    record('K', 'K2', 'Uložení nové verze', ok2(v2.status) && v2.json && v2.json.version === 2, { severity: 'high', detail: `${v2.status}` });
+    const conf = await put('/api/drafts/' + id, { text: 'souběžná úprava', baseVersion: 1 });
+    const after = await get('/api/drafts/' + id);
+    record('K', 'K3', 'Souběžná úprava → 409, nic se nepřepíše', conf.status === 409 && after.json && after.json.version === 2 &&
+        /15 dnů/.test(JSON.stringify(after.json.spec)), { severity: 'high', detail: `${conf.status} v${after.json && after.json.version}`,
+        repro: 'PUT se starou baseVersion', expected: '409 a verze 2 beze změny' });
+    const lock = await post(`/api/drafts/${id}/lock`, {});
+    const agentLocked = await post('/api/agent/spisovatel', { prompt: 'Uprav.', draftId: id });
+    await request('DELETE', `/api/drafts/${id}/lock`);
+    record('K', 'K4', 'Zamčený koncept: agent nezapisuje (423, model se nevolá)', ok2(lock.status) && agentLocked.status === 423, { severity: 'high', detail: `${lock.status}/${agentLocked.status}` });
+    const xp = await get(`/api/drafts/${id}/export.docx`);
+    record('K', 'K5', 'Export .docx s vnořeným LexisEditor spec', ok2(xp.status) && xp.text.startsWith('PK') && xp.text.includes('customXml/item1.xml'),
+        { severity: 'medium', detail: `${xp.status} ${(xp.headers['content-type'] || '')}` });
+    await post(`/api/drafts/${id}/comments`, { text: 'Doplň, že při nezaplacení podáme žalobu.' });
+    const appr = await post(`/api/drafts/${id}/status`, { status: 'schvaleno' });
+    const roPut = await put('/api/drafts/' + id, { text: 'změna po schválení', baseVersion: 2 });
+    const agentAppr = await post('/api/agent/spisovatel', { prompt: 'Uprav.', draftId: id });
+    record('K', 'K6', 'Schválený koncept je jen pro čtení (člověk i agent)', appr.json && appr.json.status === 'schvaleno' && roPut.status === 409 && agentAppr.status === 409,
+        { severity: 'high', detail: `${appr.status}/${roPut.status}/${agentAppr.status}` });
+    await post(`/api/drafts/${id}/status`, { status: 'koncept' });
+
+    // Agent s reálným modelem: automatický koncept + revize podle připomínky
+    const t0 = Date.now();
+    const auto = await post('/api/agent/spisovatel', { prompt: 'Sepiš krátkou předžalobní výzvu k zaplacení 25 000 Kč za neuhrazenou fakturu č. 2026-117. Dlužník: E2E Testovací s.r.o.',
+        saveDraft: 'auto', draftTitle: tag + '-ai', model: O.model || undefined });
+    const d = auto.json && auto.json.draft;
+    if (d && d.id) created.drafts.push(d.id);
+    let txt = '';
+    if (d && d.id) { const t = await get(`/api/drafts/${d.id}/text`); txt = (t.json && t.json.text) || ''; }
+    record('K', 'K7', 'Spisovatel uloží koncept „ke kontrole“ (AI)', ok2(auto.status) && d && d.created && d.status === 'ke_kontrole' && txt.length > 80 && !/⚠️/.test(txt),
+        { severity: 'high', detail: `${auto.status} ${short(JSON.stringify(d), 160)} · ${Math.round((Date.now() - t0) / 1000)} s`, ms: Date.now() - t0 });
+    if (id) {
+        const t1 = Date.now();
+        const rev = await post('/api/agent/spisovatel', { prompt: 'Zapracuj připomínky do konceptu.', draftId: id, model: O.model || undefined });
+        const dd = await get('/api/drafts/' + id);
+        const last = dd.json && dd.json.versions && dd.json.versions[dd.json.versions.length - 1];
+        record('K', 'K8', 'Revize konceptu agentem podle připomínky → nová verze (AI)', ok2(rev.status) && rev.json && rev.json.draft && rev.json.draft.version === 3 &&
+            last && last.kind === 'ai' && dd.json.status === 'ke_kontrole', { severity: 'medium',
+            detail: `${rev.status} v${dd.json && dd.json.version} · ${short(dd.json && JSON.stringify(dd.json.spec), 160)}`, ms: Date.now() - t1 });
+        const mentions = /žalob/i.test(JSON.stringify(dd.json && dd.json.spec));
+        record('K', 'K9', 'Revize obsahuje připomínku (zmínka o žalobě)', mentions, { severity: 'low', detail: mentions ? 'ano' : 'ne' });
+    }
+
+    // Ověření podpisu PDF (syntetická fixture z testů)
+    const fx = path.join(__dirname, '..', 'tests', 'fixtures', 'signed_synthetic.pdf');
+    if (fs.existsSync(fx)) {
+        const buf = fs.readFileSync(fx);
+        const okSig = await post('/api/document/verify-signature', { fileBase64: buf.toString('base64') });
+        const bad = Buffer.from(buf); bad[20] ^= 1;
+        const badSig = await post('/api/document/verify-signature', { fileBase64: bad.toString('base64') });
+        record('K', 'K10', 'Ověření podpisu PDF: platný projde, změněný je neplatný', okSig.json && okSig.json.allValid === true && badSig.json && badSig.json.anyInvalid === true,
+            { severity: 'high', detail: `${okSig.status}/${badSig.status} ${short(okSig.json && okSig.json.summary, 100)}` });
+    } else record('K', 'K10', 'Ověření podpisu PDF (fixture chybí)', false, { severity: 'info', detail: fx });
+
+    // Výstup AI v chatu se escapuje (regrese XSS 2. 10. 2026)
+    const js = await get('/app-chat.js', { token: '' });
+    record('K', 'K11', 'Chat dashboardu escapuje výstup AI', ok2(js.status) && /escapeHtml\(data\.response/.test(js.text) && !/sendTextToLexisEditor\('\$\{data\.finalOutput/.test(js.text),
+        { severity: 'high', detail: String(js.status) });
+}
+
 // ─── H: LLM-judge (volitelně) ────────────────────────────────────────────────
 async function phaseH() {
     console.log('\nH — LLM-judge');
@@ -485,6 +562,7 @@ async function phaseH() {
 async function cleanup() {
     console.log('\nÚklid testovacích objektů');
     for (const id of created.spisy) await request('DELETE', `/api/spisy/${encodeURIComponent(id)}`);
+    for (const id of created.drafts) await request('DELETE', `/api/drafts/${encodeURIComponent(id)}`);
     for (const [a, f] of created.knowledge) await request('DELETE', `/api/agent-knowledge/${a}/${encodeURIComponent(f)}`);
     for (const f of [...Object.keys(INBOX_EXPECT), 'E2E-poskozeny.pdf', 'E2E-mimo.txt']) await post('/api/inbox/delete', { fileName: f });
 }
@@ -553,6 +631,7 @@ function writeReport(meta) {
         if (phaseOn('D')) await phaseD();
         if (phaseOn('E')) await phaseE();
         if (phaseOn('F')) await phaseF();
+        if (phaseOn('K')) await phaseK();
         if (phaseOn('G')) meta.load = await phaseG();
         if (phaseOn('H')) meta.judge = await phaseH();
     } catch (e) {

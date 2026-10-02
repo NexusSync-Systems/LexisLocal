@@ -17,7 +17,7 @@ set -uo pipefail
 export HOME="${HOME:-/root}"
 
 RESULTS_BUCKET="lexislocal-bench-results-485237569555"
-MAX_MINUTES=120                    # jak dlouho server poběží (pak se sám smaže)
+MAX_MINUTES=200                    # jak dlouho server poběží (pak se sám vypne)
 CHAT_MODEL="qwen2.5:7b"            # model agentů; 32b: "qwen2.5:32b" (pomalejší, 1–2 uživatelé)
 NUM_PARALLEL=4                     # kolik dotazů Ollama zpracuje souběžně
 KB="backend/eval/kb/zakony.tar.gz" # veřejné zákony (OZ, OSŘ, ZOK)
@@ -72,6 +72,14 @@ fi
 git clone --depth 1 -b "$BRANCH" "$REPO" /opt/LexisLocal
 cd /opt/LexisLocal
 npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
+# Která verze kódu běží + kontrola, že GitHub obsahuje dnešní změny (koncepty, podpisy, audit).
+{
+  echo "commit: $(git rev-parse --short HEAD) — $(git log -1 --format='%s (%ci)')"
+  for f in backend/routes/drafts.js backend/lib/signature_check.js backend/public/app-drafts.js; do
+    [ -f "$f" ] && echo "OK   $f" || echo "CHYBÍ $f  ← na GitHubu nejsou dnešní změny (git push?)"
+  done
+  echo "nodemailer: $(node -p "require('nodemailer/package.json').version" 2>/dev/null)  express: $(node -p "require('express/package.json').version" 2>/dev/null)"
+} > "$OUT/_version.txt"; cat "$OUT/_version.txt"; upload
 echo "=== npm hotovo (exit $?) $(date -Is)"
 
 # 3) TLS certifikát (self-signed na veřejnou IP) + token
@@ -159,7 +167,7 @@ upload
 #    RUN_SUITE=0 vypne. Běží na pozadí serveru; testovací objekty mají prefix E2E-.
 if [ "${RUN_SUITE:-1}" = "1" ] && [ -f backend/scripts/server_suite.js ]; then
   echo "=== server_suite start $(date -Is)"
-  node backend/scripts/server_suite.js --base https://127.0.0.1 --token "$TOKEN" --insecure \
+  node backend/scripts/server_suite.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
     --label server-loopback --out "$OUT/suite" 2>&1 | tail -n 60 || echo "!! server_suite skončil s chybou"
   echo "=== server_suite hotovo $(date -Is)"
   upload
