@@ -20,8 +20,9 @@ const ollama = require('../lib/ai_provider'); // Ollama | OpenAI | Anthropic (st
 const { generateAgentFallback } = require('../lib/agent_fallback');
 const { buildRagScope } = require('../lib/rag_request');
 const agentTools = require('../lib/agent_tools'); // interní tool-registry (Fáze 1, za AGENT_TOOLS=1)
-const { buildDateFacts } = require('../lib/date_facts');
-const { guardInventedIdentifiers, checkLawNames, buildWarnings } = require('../lib/output_guard');
+const { buildDateFacts, dateFactsAppendix } = require('../lib/date_facts');
+const clauseScan = require('../lib/clause_scan');
+const { guardInventedIdentifiers, fixLawNames, buildWarnings } = require('../lib/output_guard');
 const { agentNumCtx, isEmbeddingModel, isModelMissingError } = require('../lib/agent_options');
 
 // POST /api/agent/:agentId - Volání agenta s modelem dle výběru
@@ -181,8 +182,17 @@ router.post('/:agentId', async (req, res) => {
         }
 
         // Datumovou aritmetiku dělá program, ne model (viz lib/date_facts.js).
-        const dateFacts = buildDateFacts(`${prompt || ''}\n${context || ''}`);
+        const dateFacts = buildDateFacts(`${prompt || ''}\n${context || ''}`, { question: prompt });
         if (dateFacts) messages.push({ role: 'system', content: dateFacts.text });
+
+        // Rizikové doložky ve smlouvě najde program (lib/clause_scan.js) — model je jen vysvětlí.
+        // Poznámka pro model nese jen článek, typ a § (žádné osobní údaje z textu).
+        let clauseFindings = [];
+        try {
+            const reviewAsked = agentId === 'kontrolor' || /smlouv|ustanoven|rizik|dolo[žz]k|nevyv[aá][žz]/i.test(String(prompt || ''));
+            if (reviewAsked) clauseFindings = clauseScan.scanContract(context || prompt);
+            if (clauseFindings.length) messages.push({ role: 'system', content: clauseScan.modelNote(clauseFindings) });
+        } catch (csErr) { console.warn('⚠️ Agent: kontrola doložek selhala (nekritické):', csErr.message); }
 
         messages.push({ role: 'user', content: prompt });
 
@@ -261,11 +271,20 @@ router.post('/:agentId', async (req, res) => {
         try {
             const sourceText = [prompt, context, ...ragContextChunks.map(c => c.text)].filter(Boolean).join('\n');
             const g = guardInventedIdentifiers(response.message.content, sourceText);
-            const lawIssues = checkLawNames(g.text);
-            const warn = buildWarnings({ replaced: g.replaced, lawIssues, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits)] });
-            response.message.content = g.text + warn;
-            draftBody = g.text; draftWarn = warn;
-            outputGuard = { replaced: g.replaced, lawIssues, injection: injectionHits };
+            // Chybný název u správného čísla zákona (§ v bázi existuje) → opravit v textu.
+            let kbIdx = null;
+            try { kbIdx = require('../lib/kb_law_index').getKbLawIndex(); } catch (e) { kbIdx = null; }
+            const lf = fixLawNames(g.text, kbIdx);
+            const lawIssues = lf.issues;
+            // Co model z kontrolního seznamu doložek / výpočtů lhůt vynechal, doplní program.
+            const clauseApx = clauseFindings.length ? clauseScan.missingAppendix(lf.text, clauseFindings) : { text: '', missing: [] };
+            const dateApx = dateFactsAppendix(lf.text, dateFacts);
+            const body = lf.text + clauseApx.text + dateApx;
+            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits)] });
+            response.message.content = body + warn;
+            draftBody = body; draftWarn = warn;
+            outputGuard = { replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
+                clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx };
         } catch (gErr) {
             console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);
         }

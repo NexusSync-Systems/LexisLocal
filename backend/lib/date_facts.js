@@ -58,7 +58,7 @@ function _rawEnd(baseKey, amount, unit) {
  * Z textu (prompt + kontext) vytáhne data a délky lhůt a spočítá konce.
  * Vrací { facts: [{base, amount, unit, raw, end, shifted}], deliveryConflict, text } nebo null.
  */
-function buildDateFacts(text, { maxFacts = 8 } = {}) {
+function buildDateFacts(text, { maxFacts = 8, question = null } = {}) {
     const src = String(text || '');
     const dates = findDates(src);
     if (!dates.length) return null;
@@ -89,7 +89,9 @@ function buildDateFacts(text, { maxFacts = 8 } = {}) {
             facts.push({ base, amount: d.amount, unit: d.unit, raw, end, shifted: raw !== end });
         }
     }
-    if (!facts.length && !delivery.conflict) return null;
+    // Promlčení jen když se na náhradu škody / promlčení ptá zadání (ne u každé smlouvy se slovem „škoda“).
+    const limitation = (question == null || CLAIM_CTX.test(String(question))) ? limitationFacts(src) : null;
+    if (!facts.length && !delivery.conflict && !limitation) return null;
     const lines = facts.map(f =>
         `• ${_fmt(f.base)} + ${f.amount} ${_plural(f.amount, f.unit)} = ${_fmt(f.raw)}` +
         (f.shifted ? ` → připadá na víkend/svátek, konec lhůty se posouvá na ${_fmt(f.end)} (§ 57 odst. 2 o.s.ř.)` : '')
@@ -98,8 +100,79 @@ function buildDateFacts(text, { maxFacts = 8 } = {}) {
         lines.push(`• POZOR: v podkladech jsou RŮZNÁ data doručení (${delivery.all.map(_fmt).join(', ')}). ` +
             `Upozorni na rozpor a konzervativně počítej od nejdřívějšího.`);
     }
+    if (limitation) lines.push(...limitation.lines);
     const textOut = 'Výpočty dat (spočítal program, jsou správné — převezmi je DOSLOVA, sám datumy nepočítej):\n' + lines.join('\n');
-    return { facts, deliveryConflict: delivery.conflict, text: textOut };
+    // Konzervativní konec lhůty při rozporu dat doručení = od nejdřívějšího data.
+    let conflictEnd = null;
+    if (delivery.conflict) {
+        const f0 = facts.find(f => f.base === delivery.all[0]);
+        if (f0) conflictEnd = f0.end;
+    }
+    return { facts, deliveryConflict: delivery.conflict, deliveryDates: delivery.all, conflictEnd, limitation, text: textOut };
 }
 
-module.exports = { buildDateFacts, findDates };
+// ── Promlčení práva na náhradu škody (§ 619, § 620, § 629, § 636 OZ) ──────────
+// Změřeno 2. 10. 2026: Rešeršník u vytopení bytu nespočítal konec promlčecí lhůty.
+// Vezmeme datum škodní události z textu (věta se slovy škoda/vytopil/nehoda/zjistil…)
+// a spočítáme subjektivní 3 roky a objektivních 10 let. Posun z víkendu/svátku § 607 OZ.
+const DAMAGE_CTX = /(škod|vytopil|vytopen|nehod|poškod|způsobil|zranil|úraz|havári|praskl|vznikl)/i;
+const CLAIM_CTX = /(náhrad\S*\s+škod|vymáh|odškodn|promlč|uplatnit\s+nárok|zaplatit\s+škod|škod[ayu]\b)/i;
+
+function limitationFacts(src) {
+    const t = String(src || '');
+    if (!CLAIM_CTX.test(t)) return null;
+    // Datum škodní události: první datum, v jehož okolí (−60 / +160 znaků) je škodní kontext.
+    // Data z hlaviček e-mailu („Datum: …“) se přeskakují.
+    let event = null, knownSameDay = false;
+    const re = /(?<!\d)(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})(?!\d)/g; let m;
+    while (!event && (m = re.exec(t))) {
+        const lineStart = t.lastIndexOf('\n', m.index) + 1;
+        if (/^\s*(Datum|Date|Odesláno|Sent|Doručeno)\s*:/i.test(t.slice(lineStart, m.index))) continue;
+        const win = t.slice(Math.max(lineStart, m.index - 60), m.index + 160);
+        if (!DAMAGE_CTX.test(win)) continue;
+        const key = findDates(m[0])[0];
+        if (!key) continue;
+        event = key;
+        const after = t.slice(m.index, m.index + 300);
+        knownSameDay = /(ten den|téhož dne|tentýž den|ihned|hned)[^.?!]{0,40}zjist|zjistil\S*[^.?!]{0,20}(ten den|téhož dne|ihned|hned)/i.test(after);
+    }
+    if (!event) return null;
+    const subj = calculateDeadlineByUnit(3, 'year', event + 'T12:00:00');
+    const subjRaw = _rawEnd(event, 3, 'year');
+    const obj = calculateDeadlineByUnit(10, 'year', event + 'T12:00:00');
+    const objRaw = _rawEnd(event, 10, 'year');
+    if (!subj || !obj) return null;
+    const shift = (raw, end) => raw !== end ? ` → připadá na víkend/svátek, posouvá se na ${_fmt(end)} (§ 607 OZ)` : '';
+    const lines = [
+        `• PROMLČENÍ náhrady škody — škodní událost ${_fmt(event)}.`,
+        `• Subjektivní promlčecí lhůta 3 roky (§ 629 odst. 1 OZ) běží ode dne, kdy se poškozený dozvěděl o škodě a o tom, kdo ji má nahradit (§ 619 odst. 1, § 620 odst. 1 OZ)` +
+            (knownSameDay ? ' — podle podkladů ještě týž den' : ' — pokud se to dozvěděl ten den') +
+            `: ${_fmt(event)} + 3 roky = ${_fmt(subjRaw)}${shift(subjRaw, subj)}.`,
+        `• Objektivní lhůta nejpozději 10 let ode dne vzniku škody (§ 636 odst. 2 OZ): ${_fmt(objRaw)}${shift(objRaw, obj)}.`,
+        `• Do konce subjektivní lhůty je třeba nárok uplatnit u soudu (podat žalobu) — mimosoudní výzva běh lhůty nestaví.`
+    ];
+    return { event, subjectiveEnd: subj, objectiveEnd: obj, knownSameDay, lines };
+}
+
+/**
+ * Co model z vypočtených dat vynechal, doplní program pod odpověď:
+ * rozpor dat doručení (bez zmínky o rozporu) a konec promlčecí lhůty (bez data).
+ */
+function dateFactsAppendix(response, df) {
+    if (!df) return '';
+    const r = String(response || '');
+    const out = [];
+    if (df.deliveryConflict && !/rozpor|nesoulad|r[uů]zn[aáé]\s+dat|dv[eě]\s+(r[uů]zn[aá]\s+)?dat|odli[šs]n/i.test(r)) {
+        out.push(`⚠️ Podklady uvádějí RŮZNÁ data doručení (${(df.deliveryDates || []).map(_fmt).join(', ')}). ` +
+            (df.conflictEnd ? `Konzervativně počítáno od nejdřívějšího: konec lhůty ${_fmt(df.conflictEnd)}. ` : '') +
+            'Ověřte skutečné datum doručení (datová schránka / doručenka).');
+    }
+    if (df.limitation) {
+        const [y, m, d] = df.limitation.subjectiveEnd.split('-').map(Number);
+        const re = new RegExp(`(?<!\\d)${d}\\.\\s?${m}\\.\\s?${y}`);
+        if (!re.test(r)) out.push(...df.limitation.lines.map(l => l.replace(/^• /, '• ')));
+    }
+    return out.length ? '\n\n---\n📅 Doplněno programem (výpočet lhůt):\n' + out.join('\n') : '';
+}
+
+module.exports = { buildDateFacts, findDates, limitationFacts, dateFactsAppendix };

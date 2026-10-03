@@ -77,10 +77,51 @@ function checkLawNames(output) {
     return issues;
 }
 
+/**
+ * Opraví název předpisu přímo v textu, když je to jednoznačné: citovaný § v daném zákoně
+ * podle báze zákonů EXISTUJE (číslo zákona je tedy správně, chybný je jen název).
+ * Když § v bázi není (nebo báze chybí), text se nemění a zůstane jen upozornění.
+ * kbIndex: { '89/2012': Set('1023', …) } z lib/kb_law_index.
+ */
+function fixLawNames(output, kbIndex) {
+    let t = String(output || '');
+    const fixed = [], issues = [];
+    const re = /(\d{1,4}\/\d{4})\s*Sb\.?\s*(\(|,\s*)((?:zákon|zákoník|občansk|trestn|správn|soudní|insolven|exekuč|obchodní)[^)\n;]{0,60})/gi;
+    const edits = [];
+    let m;
+    while ((m = re.exec(t))) {
+        const law = LAWS[m[1]];
+        if (!law) continue;
+        const stated = m[3];
+        if (law.kw.some(k => stated.toLowerCase().includes(k))) continue;
+        // Název končí u „)“, čárky nebo tečky — dál už může být jiný text („…, § 2910“).
+        const nameEnd = stated.search(/[.,]\s|[.,]$/);
+        const oldName = stated.slice(0, nameEnd === -1 ? stated.length : nameEnd).trim();
+        // Nejbližší § před citací (do 80 znaků), jinak hned za názvem (do 40 znaků).
+        const before = t.slice(Math.max(0, m.index - 80), m.index).match(/§\s*(\d{1,4}[a-z]?)(?!.*§)/i);
+        const nameStart = m.index + m[0].length - stated.length;
+        const after = t.slice(nameStart + oldName.length, nameStart + oldName.length + 40).match(/§\s*(\d{1,4}[a-z]?)/i);
+        const par = (before && before[1]) || (after && after[1]) || null;
+        const set = kbIndex && kbIndex[m[1]];
+        const issue = { number: m[1], stated: oldName, expected: law.name, paragraph: par };
+        if (par && set && typeof set.has === 'function' && set.has(par.toLowerCase())) {
+            edits.push({ start: nameStart, len: oldName.length, text: law.name });
+            fixed.push(issue);
+        } else {
+            issues.push(issue);
+        }
+    }
+    for (const e of edits.sort((a, b) => b.start - a.start)) t = t.slice(0, e.start) + e.text + t.slice(e.start + e.len);
+    return { text: t, fixed, issues };
+}
+
 /** Sestaví upozornění pro advokáta (nebo '' když je vše v pořádku). */
-function buildWarnings({ replaced = [], lawIssues = [], unverifiedCount = 0, extra = [] }) {
+function buildWarnings({ replaced = [], lawIssues = [], lawFixed = [], unverifiedCount = 0, extra = [] }) {
     const w = [];
     for (const e of extra) if (e) w.push(e);
+    for (const f of lawFixed) {
+        w.push(`• Opraven název předpisu: č. ${f.number} Sb. je ${f.expected} (§ ${f.paragraph} v něm podle báze zákonů je); model uvedl „${f.stated}“.`);
+    }
     if (replaced.length) {
         w.push(`• ${replaced.length}× identifikátor, který nebyl v zadání (${[...new Set(replaced.map(r => r.label))].join(', ')}), byl nahrazen polem k doplnění.`);
     }
@@ -93,4 +134,4 @@ function buildWarnings({ replaced = [], lawIssues = [], unverifiedCount = 0, ext
     return w.length ? '\n\n---\n⚠️ Automatická kontrola LexisLocal:\n' + w.join('\n') : '';
 }
 
-module.exports = { guardInventedIdentifiers, checkLawNames, buildWarnings, PLACEHOLDER };
+module.exports = { guardInventedIdentifiers, checkLawNames, fixLawNames, buildWarnings, PLACEHOLDER, LAWS };

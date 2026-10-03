@@ -66,6 +66,13 @@ class ChiefOrchestrator {
             }
         }
 
+        // Výpočty lhůt (doručení, promlčení) dělá program — dostanou je všechny kroky i syntéza.
+        let dateFacts = null;
+        try {
+            dateFacts = require('./date_facts').buildDateFacts(`${prompt || ''}\n${context || ''}`, { question: prompt });
+            if (dateFacts) accumulatedContext += `${dateFacts.text}\n\n`;
+        } catch (e) { dateFacts = null; }
+
         // --- KROK 2: Sekvenční spuštění (Delegation & Sandbox) ---
         const agents = loadAgents();
 
@@ -320,6 +327,16 @@ class ChiefOrchestrator {
         }
 
         if (pseudoMap && typeof finalResponse === 'string') finalResponse = restorePseudonyms(finalResponse, pseudoMap);
+
+        // Deterministické dorovnání: chybný název zákona u správného čísla + vynechané výpočty lhůt.
+        if (typeof finalResponse === 'string') {
+            try {
+                const { fixLawNames, buildWarnings } = require('./output_guard');
+                const lf = fixLawNames(finalResponse, require('./kb_law_index').getKbLawIndex());
+                finalResponse = lf.text + require('./date_facts').dateFactsAppendix(lf.text, dateFacts) +
+                    buildWarnings({ lawIssues: lf.issues, lawFixed: lf.fixed });
+            } catch (e) { /* doplněk nesmí shodit orchestraci */ }
+        }
 
         const durationMs = Date.now() - startTime;
         console.log(`🏁 Chief Orchestrator: Kompletní orchestrace úspěšně dokončena za ${durationMs}ms.`);
