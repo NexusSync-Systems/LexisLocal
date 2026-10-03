@@ -229,9 +229,16 @@ Object.assign(LexisLocalApp.prototype, {
         durationEl.textContent = `${totalDurationS}s`;
     },
 
-    renderAuditLogs(logs) {
+    // Vykresluje se po stránkách (200 řádků) — celý log (tisíce záznamů) zbytečně zdržoval záložku.
+    // keepLimit=true jen u „Zobrazit další“; nové načtení / filtr začíná od první stránky.
+    renderAuditLogs(logs, keepLimit) {
         const tbody = document.getElementById('audit-log-table-body');
         if (!tbody) return;
+        const PAGE = 200;
+        if (!keepLimit) this._auditLimit = PAGE;
+        this._auditRendered = logs;
+        const total = logs.length;
+        logs = logs.slice(0, this._auditLimit || PAGE);
 
         if (logs.length === 0) {
             tbody.innerHTML = `
@@ -290,6 +297,15 @@ Object.assign(LexisLocalApp.prototype, {
                 </tr>
             `;
         }).join('');
+        if (total > logs.length) {
+            const more = document.createElement('tr');
+            more.innerHTML = `<td colspan="5" style="text-align:center;padding:14px;"><button class="btn btn-secondary" id="audit-more-btn" style="padding:6px 14px;font-size:0.8rem;">Zobrazit dalších ${Math.min(PAGE, total - logs.length)} (zobrazeno ${logs.length} z ${total})</button></td>`;
+            tbody.appendChild(more);
+            more.querySelector('#audit-more-btn').addEventListener('click', () => {
+                this._auditLimit = (this._auditLimit || PAGE) + PAGE;
+                this.renderAuditLogs(this._auditRendered, true);
+            });
+        }
     },
 
     async clearAuditLogs() {

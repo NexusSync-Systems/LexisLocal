@@ -466,6 +466,22 @@ function revokeSpisAccess(id, userId) {
     return updated;
 }
 
+/** Změna vlastníka spisu (odpovědný uživatel). Původní vlastník přístup ztrácí, pokud ho nemá sdílený. */
+function setSpisOwner(id, userId) {
+    const spis = getSpis(id);
+    if (!spis) throw new Error('Spis nenalezen.');
+    if (!userId) throw new Error('Chybí nový vlastník.');
+    const acc = require('./access').normalizeAccess(spis);
+    const prev = acc.owner;
+    acc.owner = String(userId);
+    acc.readers = acc.readers.filter(u => u !== acc.owner);
+    acc.writers = acc.writers.filter(u => u !== acc.owner);
+    const updated = db.update('spisy', id, { access: acc });
+    addEvent(id, 'vlastnik', 'Změna vlastníka spisu: „' + prev + '“ → „' + acc.owner + '“.', { from: prev, to: acc.owner });
+    try { require('./audit').logEvent('Spisová služba', 'Změna vlastníka spisu', spis.spisZn || spis.nazev, { spisId: id, from: prev, to: acc.owner }); } catch (e) { /* audit best-effort */ }
+    return updated;
+}
+
 /** Aktuální ACL spisu (owner/readers/writers). */
 function getSpisAccess(id) {
     const spis = getSpis(id);
@@ -494,6 +510,7 @@ module.exports = {
     shareSpis,
     revokeSpisAccess,
     getSpisAccess,
+    setSpisOwner,
     // exportováno pro testy
     _normCase,
     _caseKey,

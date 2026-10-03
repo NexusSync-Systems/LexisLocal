@@ -31,6 +31,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async loadUsersTab() {
+        if (typeof this.loadFirmModeCard === 'function') this.loadFirmModeCard();
         const list = document.getElementById('users-list');
         const roleSel = document.getElementById('user-new-role');
         if (!list) return;
@@ -178,4 +179,98 @@ Object.assign(LexisLocalApp.prototype, {
 // Identita do hlavičky hned po startu (instance vzniká v app.js na DOMContentLoaded).
 window.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => { if (window.appInstance && window.appInstance.initIdentity) window.appInstance.initIdentity(); }, 0);
+});
+
+// ── Firemní režim + přístup ke spisu ────────────────────────────────────────
+Object.assign(LexisLocalApp.prototype, {
+
+    async loadFirmModeCard() {
+        const el = document.getElementById('firm-mode-card');
+        if (!el) return;
+        try {
+            const r = await fetch(`${this.apiBase}/settings/firm-mode`, { headers: this.getHeaders() });
+            const d = await r.json();
+            if (!r.ok) { el.innerHTML = `<div style="color:#b45309;">${escapeHtml(d.error || 'Nelze načíst.')}</div>`; return; }
+            const locked = d.source === 'env';
+            el.innerHTML = `
+                <h3 style="margin:0 0 6px;">🔐 Firemní režim</h3>
+                <p style="font-size:0.78rem;opacity:0.8;margin:0 0 10px;line-height:1.45;">
+                    Zapnutý: každý uživatel vidí jen spisy, které vlastní nebo které s ním někdo sdílel (správce vidí vše).
+                    Vypnutý: všichni přihlášení vidí všechny spisy.</p>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                    <strong style="color:${d.enabled ? '#15803d' : 'var(--text-secondary)'};">${d.enabled ? 'Zapnuto' : 'Vypnuto'}</strong>
+                    ${locked ? '<span style="font-size:0.75rem;opacity:0.7;">(pevně nastaveno na serveru proměnnou LEXIS_FIRM_MODE)</span>'
+                        : `<button class="btn ${d.enabled ? 'btn-secondary' : 'btn-primary'}" id="firm-mode-toggle" data-on="${d.enabled ? '0' : '1'}" style="padding:5px 12px;font-size:0.8rem;">${d.enabled ? 'Vypnout' : 'Zapnout'}</button>`}
+                </div>
+                ${d.spisyWithoutOwnerAccount ? `<div style="font-size:0.75rem;color:#b45309;margin-top:8px;">⚠️ ${escapeHtml(String(d.spisyWithoutOwnerAccount))} z ${escapeHtml(String(d.spisy))} spisů nemá vlastníka s účtem — ve firemním režimu je uvidí jen správce. Vlastníka nastavíte v detailu spisu (Spisová služba → spis → Přístup).</div>` : ''}`;
+            const btn = document.getElementById('firm-mode-toggle');
+            if (btn) btn.addEventListener('click', () => this.setFirmMode(btn.dataset.on === '1'));
+        } catch (e) { el.innerHTML = `<div style="color:#b45309;">⚠️ ${escapeHtml(e.message)}</div>`; }
+    },
+
+    async setFirmMode(enabled) {
+        if (enabled && !confirm('Zapnout firemní režim? Uživatelé pak uvidí jen své a nasdílené spisy.')) return;
+        try {
+            const r = await fetch(`${this.apiBase}/settings/firm-mode`, { method: 'POST', headers: this.getHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ enabled }) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) alert('❌ ' + (d.error || ('HTTP ' + r.status)));
+        } catch (e) { alert('❌ ' + e.message); }
+        this.loadFirmModeCard();
+    },
+
+    async renderSpisAccess(spisId) {
+        const el = document.getElementById('ss-spis-access');
+        if (!el) return;
+        const H = this.getHeaders();
+        try {
+            const [cr, ar, fr] = await Promise.all([
+                fetch(`${this.apiBase}/me/colleagues`, { headers: H }),
+                fetch(`${this.apiBase}/spisy/${encodeURIComponent(spisId)}/access`, { headers: H }),
+                fetch(`${this.apiBase}/settings/firm-mode`, { headers: H })
+            ]);
+            const colleagues = cr.ok ? ((await cr.json()).users || []) : [];
+            if (!colleagues.length) { el.innerHTML = ''; return; } // bez uživatelů nemá sdílení smysl
+            const acc = ar.ok ? (await ar.json()).access : null;
+            const firm = fr.ok ? (await fr.json()).enabled : false;
+            if (!acc) { el.innerHTML = ''; return; }
+            const byId = Object.fromEntries(colleagues.map(u => [u.id, u]));
+            const nm = (id) => byId[id] ? byId[id].name : id;
+            const me = this.me || {};
+            const canManage = (me.scopes || []).includes('admin') || me.userId === acc.owner;
+            const shared = [...acc.writers.map(id => ({ id, level: 'write' })), ...acc.readers.map(id => ({ id, level: 'read' }))];
+            const sid = String(spisId).replace(/[^A-Za-z0-9_.:-]/g, '');
+            const opts = (filter) => colleagues.filter(filter).map(u => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name)} (${escapeHtml(u.roleLabel || u.role)})</option>`).join('');
+            el.innerHTML = `
+                <div class="glass" style="padding:12px 14px;border-radius:10px;border:1px solid var(--border-glass);font-size:0.82rem;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <strong>🔐 Přístup</strong>
+                        <span style="font-size:0.72rem;opacity:0.75;">${firm ? 'Firemní režim: přístup se vynucuje' : 'Firemní režim vypnutý — přístup se zatím nevynucuje'}</span>
+                    </div>
+                    <div style="margin-top:8px;">Vlastník: <b>${escapeHtml(nm(acc.owner))}</b>
+                        ${canManage ? `<select id="acc-owner" style="margin-left:6px;padding:3px 6px;border-radius:6px;font-size:0.78rem;"><option value="">— změnit —</option>${opts(u => u.id !== acc.owner)}</select>` : ''}</div>
+                    <div style="margin-top:6px;">Sdíleno s: ${shared.length ? shared.map(x => `<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0;padding:2px 8px;border-radius:12px;background:var(--sf-02);">${escapeHtml(nm(x.id))} · ${x.level === 'write' ? 'úpravy' : 'čtení'}${canManage ? ` <a href="#" data-revoke="${escapeHtml(x.id)}" title="Odebrat přístup" style="text-decoration:none;">✕</a>` : ''}</span>`).join('') : '<span style="opacity:0.6;">nikým</span>'}</div>
+                    ${canManage ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                        <select id="acc-share-user" style="padding:3px 6px;border-radius:6px;font-size:0.78rem;"><option value="">Sdílet s…</option>${opts(u => u.id !== acc.owner && !shared.some(x => x.id === u.id))}</select>
+                        <select id="acc-share-level" style="padding:3px 6px;border-radius:6px;font-size:0.78rem;"><option value="read">jen čtení</option><option value="write">čtení i úpravy</option></select>
+                        <button class="btn btn-secondary" id="acc-share-btn" style="padding:3px 10px;font-size:0.75rem;">Sdílet</button></div>` : ''}
+                </div>`;
+            const post = async (path, body) => {
+                const r = await fetch(`${this.apiBase}/spisy/${encodeURIComponent(sid)}/${path}`, { method: 'POST', headers: this.getHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) alert('❌ ' + (d.error || ('HTTP ' + r.status)));
+                this.renderSpisAccess(sid);
+            };
+            const own = document.getElementById('acc-owner');
+            if (own) own.addEventListener('change', () => { if (own.value && confirm('Změnit vlastníka spisu?')) post('owner', { userId: own.value }); });
+            const sb = document.getElementById('acc-share-btn');
+            if (sb) sb.addEventListener('click', () => {
+                const u = document.getElementById('acc-share-user').value;
+                if (u) post('share', { userId: u, level: document.getElementById('acc-share-level').value });
+            });
+            el.querySelectorAll('[data-revoke]').forEach(a => a.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                if (confirm('Odebrat přístup ke spisu?')) post('revoke', { userId: a.dataset.revoke });
+            }));
+        } catch (e) { el.innerHTML = ''; }
+    }
 });

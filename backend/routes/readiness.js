@@ -83,11 +83,11 @@ router.get('/', async (req, res) => {
         const cloud = c.chat !== 'ollama' || c.embed !== 'ollama';
         if (c.localOnly) {
             add('mlcenlivost', 'Mlčenlivost (local-only)', c.compliant ? 'ok' : 'fail',
-                c.compliant ? 'zapnuto a v souladu — data neopouští tento počítač' : 'zapnuto, ale AI míří do cloudu',
+                c.compliant ? 'zapnuto a v souladu — data neopouští server LexisLocal (žádná cloudová AI)' : 'zapnuto, ale AI míří do cloudu',
                 c.compliant ? null : 'Nastav lokálního poskytovatele (Ollama) — jinak se server záměrně nespustí.');
         } else {
             add('mlcenlivost', 'Mlčenlivost (local-only)', cloud ? 'warn' : 'ok',
-                cloud ? `vypnuto a AI míří do cloudu (chat: ${c.chat}, embed: ${c.embed})` : 'AI běží lokálně (Ollama) — data neopouští stroj',
+                cloud ? `vypnuto a AI míří do cloudu (chat: ${c.chat}, embed: ${c.embed})` : 'AI běží na serveru LexisLocal (Ollama) — data neopouští server',
                 cloud ? 'Pro tvrdou pojistku zapni proměnnou LEXIS_PILOT_LOCAL_ONLY=1.' : null);
         }
     } catch (e) { /* ai_provider nedostupný */ }

@@ -207,7 +207,26 @@ router.post('/:id/share', (req, res) => {
         const spis = spisy.getSpis(req.params.id);
         if (!spis) return res.status(404).json({ error: 'Spis nenalezen.' });
         if (!requireAccess(req, res, spis, 'admin')) return;
-        const updated = spisy.shareSpis(req.params.id, req.body && req.body.userId, req.body && req.body.level);
+        const target = req.body && req.body.userId;
+        const usersLib = require('../lib/users');
+        if (usersLib.listUsers().length && !usersLib.getUser(target)) return res.status(400).json({ error: 'Sdílet lze jen s uživatelem kanceláře.' });
+        const updated = spisy.shareSpis(req.params.id, target, req.body && req.body.level);
+        res.json({ success: true, access: spisy.getSpisAccess(req.params.id), spis: updated });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// POST /api/spisy/:id/owner — změna vlastníka { userId } (vlastník nebo správce)
+router.post('/:id/owner', (req, res) => {
+    try {
+        const spis = spisy.getSpis(req.params.id);
+        if (!spis) return res.status(404).json({ error: 'Spis nenalezen.' });
+        if (access.isFirmMode()) { if (!requireAccess(req, res, spis, 'admin')) return; }
+        const uid = req.body && req.body.userId;
+        const u = uid && require('../lib/users').getUser(uid);
+        if (!u || u.disabled) return res.status(400).json({ error: 'Vlastníkem může být jen aktivní uživatel kanceláře.' });
+        const updated = spisy.setSpisOwner(req.params.id, uid);
         res.json({ success: true, access: spisy.getSpisAccess(req.params.id), spis: updated });
     } catch (err) {
         res.status(400).json({ error: err.message });

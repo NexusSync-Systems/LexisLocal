@@ -23,7 +23,7 @@ NUM_PARALLEL=4                     # kolik dotazů Ollama zpracuje souběžně
 # Srovnání modelů stejné třídy na eval sadě agentů (fáze E) po hlavním testu. Prázdné = vypnuto.
 COMPARE_MODELS="qwen3.5:9b llama3.1:8b granite4.2:8b mistral-nemo:12b"
 KB="backend/eval/kb/zakony.tar.gz" # veřejné zákony (OZ, OSŘ, ZOK)
-REPO="https://github.com/Zdenekdi/LexisLocal.git"
+REPO="https://github.com/NexusSync-Systems/LexisLocal.git"
 BRANCH="release-prep"
 
 exec > >(tee -a /var/log/lexis-remote.log) 2>&1

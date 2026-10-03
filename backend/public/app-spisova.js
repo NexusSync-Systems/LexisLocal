@@ -126,12 +126,14 @@ Object.assign(LexisLocalApp.prototype, {
                     <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.openSpisTimeline('${safeId(s.id)}')">🕒 Časová osa</button>
                     <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.openSpisDrafts('${safeId(s.id)}')">📄 Koncepty</button>
                 </div>
+                <div id="ss-spis-access" style="margin-bottom:14px;"></div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                     <div><h4 style="margin:0 0 6px;">Dokumenty</h4><ul style="margin:0;padding-left:18px;font-size:0.85rem;">${docs}</ul></div>
                     <div><h4 style="margin:0 0 6px;">Lhůty</h4><ul style="margin:0;padding-left:18px;font-size:0.85rem;">${dls}</ul></div>
                 </div>
                 <h4 style="margin:14px 0 6px;">Spisový deník</h4>
                 <ul style="margin:0;padding-left:18px;">${events}</ul>`;
+            if (typeof this.renderSpisAccess === 'function') this.renderSpisAccess(s.id);
         } catch (e) {
             el.innerHTML = `<div style="color:#f87171;padding:12px;">Chyba: ${escapeHtml(e.message)}</div>`;
         }

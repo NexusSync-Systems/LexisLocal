@@ -2391,6 +2391,7 @@ var qrcode = function() {
 </script>
 <script>
 (function(){
+  function escHtml(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   var _st = (function(){ try { return localStorage.getItem('lexis_api_token') || ''; } catch(e){ return ''; } })();
   var token = (_st.indexOf('llu_') === 0 ? _st : '') || window.LEXIS_API_TOKEN || _st;
   var qrbox=document.getElementById('qrbox'), codeEl=document.getElementById('code'),
@@ -2429,12 +2430,12 @@ var qrcode = function() {
         codeEl.textContent=d.code; codeWrap.classList.remove('hide');
         if(d.urls && d.urls.length){
           renderQR(d.urls[0]);
-          urlsEl.innerHTML='Odkaz: '+d.urls.map(function(u){return '<b>'+u+'</b>';}).join('<br>');
+          urlsEl.innerHTML='Odkaz: '+d.urls.map(function(u){return '<b>'+escHtml(u)+'</b>';}).join('<br>');
           urlsEl.classList.remove('hide');
         } else {
           qrbox.innerHTML='<span class="mono" style="color:var(--muted);font-size:13px;text-align:center;padding:0 10px">Server nerozpoznal síťovou adresu.<br>Otevřete na telefonu ručně (viz níže).</span>';
           urlsEl.classList.remove('hide');
-          urlsEl.innerHTML='Na telefonu otevřete <b>http://&lt;IP-počítače&gt;:'+(location.port||'4000')+'/m?pair='+d.code+'</b><br>nebo v editoru přes ⚙ zadejte kód ručně.';
+          urlsEl.innerHTML='Na telefonu otevřete <b>http://&lt;IP-počítače&gt;:'+escHtml(location.port||'4000')+'/m?pair='+escHtml(d.code)+'</b><br>nebo v editoru přes ⚙ zadejte kód ručně.';
         }
         var eb=document.getElementById('editorbox');
         if(d.editor && d.editor.connectUrl){

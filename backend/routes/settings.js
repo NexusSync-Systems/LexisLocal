@@ -62,4 +62,42 @@ router.post('/external-research', (req, res) => {
     } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+// ── Firemní režim (přístup ke spisům podle vlastníka a sdílení) ──────────────
+// GET /api/settings/firm-mode — stav + kolik spisů nemá vlastníka s účtem (uvidí je jen správce).
+router.get('/firm-mode', (req, res) => {
+    try {
+        const access = require('../lib/access');
+        const users = require('../lib/users').listUsers().filter(u => !u.disabled);
+        const ids = new Set(users.map(u => u.id));
+        const norm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        const names = new Set(users.map(u => norm(u.name)));
+        const spisy = require('../lib/spisy').listSpisy();
+        const orphan = spisy.filter(sp => {
+            const o = access.normalizeAccess(sp).owner;
+            return !ids.has(o) && !names.has(norm(o));
+        });
+        res.json({
+            enabled: access.isFirmMode(), source: access.firmModeSource(),
+            users: users.length, spisy: spisy.length, spisyWithoutOwnerAccount: orphan.length
+        });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/settings/firm-mode { enabled } — jen správce (lib/authz: POST /api/settings).
+router.post('/firm-mode', (req, res) => {
+    try {
+        const access = require('../lib/access');
+        const want = !!(req.body && req.body.enabled);
+        if (access.firmModeSource() === 'env') {
+            return res.status(409).json({ error: 'Firemní režim je pevně nastaven proměnnou LEXIS_FIRM_MODE na serveru — v dashboardu ho nelze změnit.' });
+        }
+        if (want && require('../lib/users').listUsers().filter(u => !u.disabled).length === 0) {
+            return res.status(409).json({ error: 'Nejdřív založte uživatele kanceláře — bez účtů by firemní režim nikoho nerozlišil.' });
+        }
+        const enabled = access.persistFirmMode(want);
+        logEvent('Nastavení', enabled ? 'Zapnutí firemního režimu' : 'Vypnutí firemního režimu', 'Přístup ke spisům', { by: req.principal && req.principal.name });
+        res.json({ success: true, enabled });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 module.exports = router;

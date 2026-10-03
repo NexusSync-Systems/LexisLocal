@@ -21,10 +21,37 @@ function _sameName(a, b) { return !!_nm(a) && _nm(a) === _nm(b); }
 // --- Firemní vs. solo režim -------------------------------------------------
 // Výchozí = solo (neomezuje). Zapnout přes env LEXIS_FIRM_MODE=1 nebo setFirmMode().
 let _firmModeOverride = null;
+// Pořadí: přepnutí za běhu (testy) → env LEXIS_FIRM_MODE → uložené nastavení (dashboard).
+let _cache = { at: 0, val: false };
+function _persisted() {
+    const now = Date.now();
+    if (now - _cache.at < 2000) return _cache.val;
+    let v = false;
+    try { v = !!require('./config').readSettings().firmMode; } catch (e) { v = false; }
+    _cache = { at: now, val: v };
+    return v;
+}
 function isFirmMode() {
     if (_firmModeOverride !== null) return _firmModeOverride;
     const v = process.env.LEXIS_FIRM_MODE;
-    return v === '1' || v === 'true';
+    if (v === '1' || v === 'true') return true;
+    if (v === '0' || v === 'false') return false;
+    return _persisted();
+}
+function firmModeSource() {
+    if (_firmModeOverride !== null) return 'runtime';
+    const v = process.env.LEXIS_FIRM_MODE;
+    if (v === '1' || v === 'true' || v === '0' || v === 'false') return 'env';
+    return 'setting';
+}
+/** Uloží volbu firemního režimu (dashboard). Env LEXIS_FIRM_MODE má dál přednost. */
+function persistFirmMode(enabled) {
+    const config = require('./config');
+    const st = config.readSettings();
+    st.firmMode = !!enabled;
+    config.writeSettings(st);
+    _cache = { at: 0, val: false };
+    return isFirmMode();
 }
 function setFirmMode(v) { _firmModeOverride = (v == null ? null : !!v); }
 
@@ -85,4 +112,5 @@ function revoke(spis, userId) {
     return acl;
 }
 
-module.exports = { isFirmMode, setFirmMode, canAccess, grant, revoke, normalizeAccess };
+module.exports = {
+    firmModeSource, persistFirmMode, isFirmMode, setFirmMode, canAccess, grant, revoke, normalizeAccess };

@@ -105,6 +105,11 @@ me.get('/', (req, res) => {
     res.json(out);
 });
 
+// Kolegové pro sdílení spisu / koncepty (jen jméno a role — bez zařízení a tokenů).
+me.get('/colleagues', (req, res) => {
+    res.json({ users: users.listUsers().filter(u => !u.disabled).map(u => ({ id: u.id, name: u.name, role: u.role, roleLabel: u.roleLabel })) });
+});
+
 me.delete('/devices/:deviceId', (req, res) => {
     const p = req.principal;
     if (!p || p.kind !== 'user') return res.status(400).json({ error: 'Zařízení spravuje jen uživatel s vlastním účtem.' });
