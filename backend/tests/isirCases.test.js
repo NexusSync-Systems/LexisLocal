@@ -79,8 +79,22 @@ describe('fetchInsCase', () => {
         const r = await isir.fetchInsCase('INS 1/2026', { post: postOf(resp([], '<kodChyby>WS4</kodChyby><textChyby>Data nejsou aktuální</textChyby>')) });
         expect(r).toMatchObject({ ok: false, kind: 'stale' });
     });
+    test('první spojení selže prázdnou chybou (AggregateError) → druhý pokus projde', async () => {
+        let n = 0;
+        const post = () => (++n === 1 ? Promise.reject(new AggregateError([Object.assign(new Error(''), { code: 'ETIMEDOUT' })], ''))
+            : Promise.resolve(resp([{ senat: 56, bc: 1000, rok: 2026, stav: 'KONKURS' }])));
+        const r = await isir.fetchInsCase('INS 1000/2026', { post, retryDelayMs: 0 });
+        expect(r.ok).toBe(true);
+        expect(n).toBe(2);
+    });
+    test('trvalý výpadek: chyba má čitelný důvod i u prázdné zprávy', async () => {
+        const post = () => Promise.reject(new AggregateError([Object.assign(new Error(''), { code: 'ETIMEDOUT' })], ''));
+        const r = await isir.fetchInsCase('INS 1000/2026', { post, retryDelayMs: 0 });
+        expect(r).toMatchObject({ ok: false, kind: 'unavailable' });
+        expect(r.reason).toContain('ETIMEDOUT');
+    });
     test('výpadek sítě / HTML místo SOAP', async () => {
-        const r1 = await isir.fetchInsCase('INS 1/2026', { post: () => Promise.reject(new Error('ECONNREFUSED')) });
+        const r1 = await isir.fetchInsCase('INS 1/2026', { post: () => Promise.reject(new Error('ECONNREFUSED')), retryDelayMs: 0 });
         expect(r1).toMatchObject({ ok: false, kind: 'unavailable' });
         const r2 = await isir.fetchInsCase('INS 1/2026', { post: postOf('<html>Maintenance</html>') });
         expect(r2).toMatchObject({ ok: false, kind: 'invalid_response' });
@@ -118,7 +132,7 @@ describe('checkInsolvencySpisy — hlídač', () => {
     });
     test('výpadek ISIR stav nemění a upozornění nezakládá', async () => {
         mockDb.spisy = [{ id: 's1', spisZn: 'INS 1000/2026', stav: 'aktivni', isirStav: 'KONKURS' }];
-        const r = await isir.checkInsolvencySpisy({ post: () => Promise.reject(new Error('timeout')), now });
+        const r = await isir.checkInsolvencySpisy({ post: () => Promise.reject(new Error('timeout')), now, retryDelayMs: 0 });
         expect(r.failed).toBe(1);
         expect(mockDb.spisy[0].isirStav).toBe('KONKURS');
         expect(mockDb.spisy[0].isirError).toMatch(/nedostupný/);

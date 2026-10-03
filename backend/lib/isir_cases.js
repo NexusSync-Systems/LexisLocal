@@ -100,6 +100,12 @@ function _post(xml) {
     });
 }
 
+function _errText(e) {
+    if (!e) return 'neznámá chyba';
+    const inner = Array.isArray(e.errors) && e.errors.length ? e.errors.map(x => x.code || x.message).filter(Boolean).join(', ') : '';
+    return e.message || inner || e.code || e.name || 'neznámá chyba';
+}
+
 /**
  * Insolvenční řízení podle sp. zn. opts.post = injektovatelné odeslání (testy).
  * Když zadání obsahuje číslo senátu, vrátí jen řízení s tímto senátem.
@@ -107,9 +113,18 @@ function _post(xml) {
 async function fetchInsCase(spisZn, opts = {}) {
     const p = typeof spisZn === 'string' ? parseInsZn(spisZn) : spisZn;
     if (!p) return { ok: false, kind: 'not_configured', reason: 'Spisová značka insolvenčního řízení ve tvaru „KSBR 56 INS 1000/2026“ nebo „INS 1000/2026“.' };
-    let xml;
-    try { xml = await (opts.post || _post)(buildRequest(p)); }
-    catch (e) { return { ok: false, kind: 'unavailable', reason: `ISIR nedostupný (${e.message}).` }; }
+    // Server test 3. 10. 2026 (AWS): první spojení na :8443 občas selže prázdnou chybou
+    // (AggregateError z výběru IPv4/IPv6), hned další dotaz projde → jeden opakovaný pokus.
+    let xml, lastErr;
+    for (let attempt = 0; attempt < 2 && xml === undefined; attempt++) {
+        try { xml = await (opts.post || _post)(buildRequest(p)); }
+        catch (e) {
+            lastErr = e;
+            if (/^HTTP 4/.test(String(e && e.message))) break;
+            if (attempt === 0) await new Promise(r => setTimeout(r, opts.retryDelayMs != null ? opts.retryDelayMs : 1000));
+        }
+    }
+    if (xml === undefined) return { ok: false, kind: 'unavailable', reason: `ISIR nedostupný (${_errText(lastErr)}).` };
     const r = parseResponse(xml);
     if (r.ok && p.cisloSenatu) r.cases = r.cases.filter(c => !c.cisloSenatu || c.cisloSenatu === String(parseInt(p.cisloSenatu, 10)));
     if (r.ok) r.empty = r.cases.length === 0;
