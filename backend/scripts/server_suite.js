@@ -25,6 +25,9 @@
  *   I  integrace živě   — InfoJednání (soudy, síně, hledání podle síně a data → zpětně podle
  *                         nalezené sp. zn.) a ISIR (řízení podle sp. zn., nenalezeno, hlídač
  *                         stavu u spisu, žádné falešné upozornění). Skutečná síť ze serveru.
+ *   P  pilotní tok      — datová zpráva .zfo → příloha v doručené poště s datem doručení z ISDS,
+ *                         lhůtou, úkolem a stranami; import spisů z CSV (náhled, založení,
+ *                         duplicity); pilotní profil; přístupy k datové schránce bez hesla v odpovědi
  *   H  LLM-judge        — volitelné hodnocení odpovědí z E silnějším modelem
  *                         (JUDGE_API_KEY + JUDGE_MODEL v prostředí, Anthropic API)
  *
@@ -792,6 +795,69 @@ async function phaseI() {
         { severity: 'medium', detail: `po změně ${s3.isirStav || '—'} → po kontrole ${s4.isirStav || '—'}, upozornění ${a4.length}` });
 }
 
+// ─── P: pilotní tok (datová schránka, CSV import, profil) ─────────────────────
+function _zfo(xml) {
+    const forge = require('node-forge');
+    const keys = forge.pki.rsa.generateKeyPair(1024);
+    const cert = forge.pki.createCertificate();
+    cert.publicKey = keys.publicKey; cert.serialNumber = '01';
+    cert.validity.notBefore = new Date(Date.now() - 864e5); cert.validity.notAfter = new Date(Date.now() + 864e5);
+    const a = [{ name: 'commonName', value: 'E2E ISDS' }]; cert.setSubject(a); cert.setIssuer(a); cert.sign(keys.privateKey);
+    const p7 = forge.pkcs7.createSignedData();
+    p7.content = forge.util.createBuffer(forge.util.encodeUtf8(xml));
+    p7.addCertificate(cert);
+    p7.addSigner({ key: keys.privateKey, certificate: cert, digestAlgorithm: forge.pki.oids.sha256 });
+    p7.sign();
+    return Buffer.from(forge.asn1.toDer(p7.toAsn1()).getBytes(), 'binary');
+}
+async function phaseP() {
+    console.log('\nP — pilotní tok');
+    const dmID = String(Date.now()).slice(-7);
+    const text = 'Okresní soud v Jihlavě\nSp. zn. 77 C 7/2026\nROZSUDEK\nŽalobce: E2E Alfa s.r.o.\nŽalovaný: E2E Beta a.s.\n' +
+        'Poučení: Proti tomuto rozsudku lze podat odvolání do 15 dnů ode dne doručení písemného vyhotovení.\n';
+    const xml = '<?xml version="1.0" encoding="UTF-8"?><p:MessageDownloadResponse xmlns:p="http://isds.czechpoint.cz/v20"><p:dmReturnedMessage><p:dmDm>' +
+        `<p:dmID>${dmID}</p:dmID><p:dmSender>Okresní soud v Jihlavě</p:dmSender><p:dmAnnotation>E2E rozsudek</p:dmAnnotation><p:dmFiles>` +
+        `<p:dmFile dmMimeType="text/plain" dmFileMetaType="main" dmFileDescr="E2E-rozsudek.txt"><p:dmEncodedContent>${Buffer.from(text).toString('base64')}</p:dmEncodedContent></p:dmFile>` +
+        '</p:dmFiles></p:dmDm><p:dmDeliveryTime>2026-09-30T14:00:00+02:00</p:dmDeliveryTime><p:dmAcceptanceTime>2026-10-01T06:15:00+02:00</p:dmAcceptanceTime>' +
+        '<p:dmMessageStatus>6</p:dmMessageStatus></p:dmReturnedMessage><p:dmStatus><p:dmStatusCode>0000</p:dmStatusCode></p:dmStatus></p:MessageDownloadResponse>';
+    let zfo = null;
+    try { zfo = _zfo(xml); } catch (e) { record('P', 'P1', 'Sestavení testovací .zfo', false, { severity: 'medium', detail: e.message }); }
+    if (zfo) {
+        const up = await post('/api/inbox/upload', { fileName: `E2E-${dmID}.zfo`, base64: zfo.toString('base64') }, { timeout: 300000 });
+        record('P', 'P1', 'Nahrání datové zprávy .zfo', ok2(up.status) && up.json && up.json.dmID === dmID && up.json.delivery && up.json.delivery.date === '2026-10-01',
+            { severity: 'high', detail: `${up.status} ${short(up.json && (up.json.message || up.json.error), 200)}`, repro: 'POST /api/inbox/upload s .zfo', expected: 'doručeno 2026-10-01 (přihlášením)', actual: short(up.text, 300) });
+        const all = ((await get('/api/inbox/all')).json || {}).inbox || [];
+        const it = all.find(f => f.isds && f.isds.dmID === dmID);
+        record('P', 'P2', 'Příloha v doručené poště: lhůta od doručení do schránky', !!it && it.deliveryDate === '2026-10-01' && it.deadlineDate === '2026-10-16',
+            { severity: 'high', detail: it ? `doručeno ${it.deliveryDate}, lhůta ${it.deadlineDays} dnů → ${it.deadlineDate} (${it.deadlineBase})` : 'položka nenalezena' });
+        record('P', 'P3', 'Úkol k písemnosti a strany sporu', !!it && it.action === 'Zvážit odvolání do 16. 10. 2026 (15 dnů od doručení)' && it.plaintiff === 'E2E Alfa s.r.o.' && it.defendant === 'E2E Beta a.s.',
+            { severity: 'medium', detail: it ? `úkol „${it.action}“, žalobce „${it.plaintiff}“, žalovaný „${it.defendant}“` : '' });
+        const again = await post('/api/inbox/upload', { fileName: `E2E-${dmID}-znovu.zfo`, base64: zfo.toString('base64') });
+        record('P', 'P4', 'Stejná zpráva podruhé → duplicita', !!(again.json && again.json.duplicate), { severity: 'low', detail: short(again.text, 160) });
+        if (it) {
+            const c = await get('/api/inbox/content?fileName=' + encodeURIComponent(it.relativePath));
+            record('P', 'P5', 'Obsah přílohy v podsložce jde otevřít', ok2(c.status) && /77 C 7\/2026/.test((c.json || {}).content || ''), { severity: 'medium', detail: String(c.status) });
+            await post('/api/inbox/delete', { fileName: it.relativePath });
+        }
+    }
+    const csv = `Spisová značka;Název;Klient;Soud;Insolvence\nE2E ${dmID} C 1/2026;E2E import A;E2E Klient;Okresní soud v Jihlavě;\nE2E ${dmID} C 2/2026;E2E import B;E2E Klient;Krajský soud v Brně;INS 1000/2026\n`;
+    const dry = await post('/api/spisy/import', { csv, dryRun: true });
+    const imp = await post('/api/spisy/import', { csv });
+    const twice = await post('/api/spisy/import', { csv });
+    const okImp = dry.json && dry.json.summary.nove === 2 && imp.json && imp.json.summary.nove === 2 && twice.json && twice.json.summary.existuje === 2;
+    ((imp.json || {}).rows || []).forEach(r => { if (r.id) created.spisy.push(r.id); });
+    record('P', 'P6', 'Import spisů z CSV (náhled, založení, podruhé „existuje“)', !!okImp, { severity: 'medium', detail: `náhled ${short(JSON.stringify(dry.json && dry.json.summary), 120)} · podruhé ${short(JSON.stringify(twice.json && twice.json.summary), 120)}` });
+    const prof0 = (await get('/api/settings/profile')).json || {};
+    const setP = await post('/api/settings/profile', { profile: 'pilot' });
+    const prof1 = (await get('/api/settings/profile')).json || {};
+    await post('/api/settings/profile', { profile: prof0.profile || 'full' });
+    record('P', 'P7', 'Pilotní profil skryje moduly mimo pilot', ok2(setP.status) && (prof1.hiddenTabs || []).includes('aml') && !(prof1.hiddenTabs || []).includes('inbox'),
+        { severity: 'low', detail: `skryto: ${(prof1.hiddenTabs || []).join(', ')}` });
+    const cfg = await get('/api/registries/config');
+    record('P', 'P8', 'Přístupy k datové schránce: stav příjmu, nikdy heslo', ok2(cfg.status) && cfg.json && cfg.json.config && cfg.json.config.isds && cfg.json.config.isds.inbox && !/"password"/.test(cfg.text),
+        { severity: 'medium', detail: `${cfg.status} · příjem ${cfg.json && cfg.json.config && cfg.json.config.isds && JSON.stringify(cfg.json.config.isds.inbox && { configured: cfg.json.config.isds.inbox.configured, enabled: cfg.json.config.isds.inbox.enabled })}` });
+}
+
 // ─── úklid ───────────────────────────────────────────────────────────────────
 async function cleanup() {
     console.log('\nÚklid testovacích objektů');
@@ -869,6 +935,7 @@ function writeReport(meta) {
         if (phaseOn('K')) await phaseK();
         if (phaseOn('U')) await phaseU();
         if (phaseOn('I')) await phaseI();
+        if (phaseOn('P')) await phaseP();
         if (phaseOn('G')) meta.load = await phaseG();
         if (phaseOn('H')) meta.judge = await phaseH();
     } catch (e) {

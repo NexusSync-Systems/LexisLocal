@@ -209,6 +209,11 @@ if [ "${RUN_SUITE:-1}" = "1" ] && [ -f backend/scripts/server_suite.js ]; then
   echo "=== server_suite hotovo $(date -Is)"
   upload
 fi
+# 7b) Záloha + zkouška obnovy na serveru. Archiv obsahuje klíč k databázi → zůstává jen
+#     na instanci (zanikne s ní), do S3 jde jen výsledek ověření.
+( set -a; . /opt/LexisLocal/.env; set +a; node backend/scripts/backup.js --bez-spisovny --out /root/zaloha-test ) > "$OUT/_zaloha.txt" 2>&1 \
+  || echo "!! záloha / zkouška obnovy selhala (viz _zaloha.txt)"
+cat "$OUT/_zaloha.txt"; upload
 # 8) Srovnání modelů (backend/scripts/model_compare.js) → report do S3 (*_remote/suite/*_model-compare.md).
 if [ -n "${COMPARE_MODELS:-}" ] && [ -f backend/scripts/model_compare.js ]; then
   echo "=== srovnání modelů start $(date -Is): $CHAT_MODEL $COMPARE_MODELS"
