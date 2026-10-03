@@ -23,6 +23,8 @@ const agentTools = require('../lib/agent_tools'); // interní tool-registry (Fá
 const { buildDateFacts, dateFactsAppendix } = require('../lib/date_facts');
 const clauseScan = require('../lib/clause_scan');
 const { taskProfile, redactForOpponent } = require('../lib/agent_outlines');
+const { proceduralFacts, proceduralAppendix } = require('../lib/procedural_facts');
+const czProofread = require('../lib/cz_proofread');
 const { reviewInChunks } = require('../lib/chunked_review');
 const { guardInventedIdentifiers, fixLawNames, buildWarnings } = require('../lib/output_guard');
 const { agentNumCtx, isEmbeddingModel, isModelMissingError } = require('../lib/agent_options');
@@ -188,6 +190,10 @@ router.post('/:agentId', async (req, res) => {
         // Datumovou aritmetiku dělá program, ne model (viz lib/date_facts.js).
         const dateFacts = buildDateFacts(`${prompt || ''}\n${context || ''}`, { question: prompt });
         if (dateFacts) messages.push({ role: 'system', content: dateFacts.text });
+        // Procesní lhůty (odvolání, odpor, dovolání) a příslušnost soudu dodá program (lib/procedural_facts.js).
+        let procFacts = null;
+        try { procFacts = proceduralFacts({ prompt, context }); } catch (pfErr) { procFacts = null; }
+        if (procFacts) messages.push({ role: 'system', content: procFacts.text });
 
         // Rizikové doložky ve smlouvě najde program (lib/clause_scan.js) — model je jen vysvětlí.
         // Poznámka pro model nese jen článek, typ a § (žádné osobní údaje z textu).
@@ -201,6 +207,13 @@ router.post('/:agentId', async (req, res) => {
         // Pevná osnova odpovědi a teplota podle typu úkolu (lib/agent_outlines.js).
         const profile = taskProfile({ agentId, prompt, context, hasClauseFindings: clauseFindings.length > 0 });
         if (profile.outline) messages.push({ role: 'system', content: profile.outline });
+        // Korektura: jisté chyby (i/y, bě/pě, shoda, čárka před „že“) najde program (lib/cz_proofread.js).
+        let proofTarget = null;
+        if (profile.kind === 'proofread') {
+            proofTarget = czProofread.extractTarget(prompt) || (context ? String(context).slice(0, 4000) : null);
+            const note = proofTarget ? czProofread.modelNote(czProofread.fixText(proofTarget).fixes) : '';
+            if (note) messages.push({ role: 'system', content: note });
+        }
 
         messages.push({ role: 'user', content: prompt });
 
@@ -309,13 +322,15 @@ router.post('/:agentId', async (req, res) => {
             // Co model z kontrolního seznamu doložek / výpočtů lhůt vynechal, doplní program.
             const clauseApx = clauseFindings.length ? clauseScan.missingAppendix(lf.text, clauseFindings) : { text: '', missing: [] };
             const dateApx = dateFactsAppendix(lf.text, dateFacts);
-            const body = lf.text + clauseApx.text + dateApx;
+            const procApx = proceduralAppendix(lf.text, procFacts);
+            const mainText = profile.kind === 'proofread' ? czProofread.finalize(lf.text, proofTarget) : lf.text;
+            const body = mainText + clauseApx.text + dateApx + procApx;
             const oppLine = oppRedacted.length ? `• Z dopisu protistraně odstraněno: ${oppRedacted.join(', ')} (protistrana je nepotřebuje).` : '';
             const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), oppLine] });
             response.message.content = body + warn;
             draftBody = body; draftWarn = warn;
             outputGuard = { replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
-                clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx,
+                clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx, proceduralAppended: !!procApx,
                 taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted,
                 chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null };
         } catch (gErr) {

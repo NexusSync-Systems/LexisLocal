@@ -72,6 +72,12 @@ class ChiefOrchestrator {
             dateFacts = require('./date_facts').buildDateFacts(`${prompt || ''}\n${context || ''}`, { question: prompt });
             if (dateFacts) accumulatedContext += `${dateFacts.text}\n\n`;
         } catch (e) { dateFacts = null; }
+        // Procesní lhůty a příslušnost soudu (lib/procedural_facts.js).
+        let procFacts = null;
+        try {
+            procFacts = require('./procedural_facts').proceduralFacts({ prompt, context });
+            if (procFacts) accumulatedContext += `${procFacts.text}\n\n`;
+        } catch (e) { procFacts = null; }
 
         // --- KROK 2: Sekvenční spuštění (Delegation & Sandbox) ---
         const agents = loadAgents();
@@ -334,6 +340,7 @@ class ChiefOrchestrator {
                 const { fixLawNames, buildWarnings } = require('./output_guard');
                 const lf = fixLawNames(finalResponse, require('./kb_law_index').getKbLawIndex());
                 finalResponse = lf.text + require('./date_facts').dateFactsAppendix(lf.text, dateFacts) +
+                    require('./procedural_facts').proceduralAppendix(lf.text, procFacts) +
                     buildWarnings({ lawIssues: lf.issues, lawFixed: lf.fixed });
             } catch (e) { /* doplněk nesmí shodit orchestraci */ }
         }

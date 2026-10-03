@@ -48,7 +48,7 @@ const OUTLINES = {
         'OSNOVA ODPOVĚDI (dodrž):\n' +
         '1. Opravený text — zachovej původní formulace, slovosled a význam; opravuj JEN chyby ' +
         '(pravopis, i/y, čárky, shoda podmětu s přísudkem, např. „my jsme nuceni“, ne „jsme nucený“).\n' +
-        '2. Seznam oprav: „původně → opraveno“ (max. 6 bodů).',
+        '2. Seznam oprav: jen OPRAVENÉ tvary a druh chyby, např. „uběhla (pravopis)“ (max. 6 bodů; chybné tvary neopakuj).',
     opponent_letter:
         'PRAVIDLA PRO DOPIS PROTISTRANĚ (dodrž):\n' +
         '• Uveď jen údaje nutné k věci: kdo píše a za koho, výše dluhu/nároku, právní důvod, lhůta, následky. Platební údaje nech jako [Doplnit – číslo účtu pro platbu].\n' +
