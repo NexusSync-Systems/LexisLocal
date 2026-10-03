@@ -61,7 +61,8 @@ function _rawEnd(baseKey, amount, unit) {
 function buildDateFacts(text, { maxFacts = 8, question = null } = {}) {
     const src = String(text || '');
     const dates = findDates(src);
-    if (!dates.length) return null;
+    // Bez českých dat může jít o anglický podklad (splatnost „15 July 2026“) → promlčení se zkusí níže.
+    if (!dates.length && !/(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}|\d{4}\s*$/i.test(src)) return null;
     const delivery = extractDeliveryDates(src);
     // Základem jsou přednostně data doručení; jinak všechna nalezená data.
     const bases = delivery.all.length ? delivery.all : dates;
@@ -90,7 +91,11 @@ function buildDateFacts(text, { maxFacts = 8, question = null } = {}) {
         }
     }
     // Promlčení jen když se na náhradu škody / promlčení ptá zadání (ne u každé smlouvy se slovem „škoda“).
-    const limitation = (question == null || CLAIM_CTX.test(String(question))) ? limitationFacts(src) : null;
+    // Ptá se zadání (nebo klient v podkladech) „do kdy / how long“? Samotné slovo „lhůta“ v podkladech nestačí.
+    const asksTimeQ = /how long|do we have|time limit|limitation|do kdy|promlč|lh[uů]t/i;
+    const asksTimeSrc = /how long|do we have|time limit|do kdy\s*\?|do kdy m[uů]/i;
+    const limitation = (question == null || CLAIM_CTX.test(String(question)) || asksTimeQ.test(String(question)) || asksTimeSrc.test(src))
+        ? (limitationFacts(src) || debtLimitationFacts(src)) : null;
     if (!facts.length && !delivery.conflict && !limitation) return null;
     const lines = facts.map(f =>
         `• ${_fmt(f.base)} + ${f.amount} ${_plural(f.amount, f.unit)} = ${_fmt(f.raw)}` +
@@ -154,6 +159,40 @@ function limitationFacts(src) {
     return { event, subjectiveEnd: subj, objectiveEnd: obj, knownSameDay, lines };
 }
 
+// ── Promlčení peněžité pohledávky (faktura / splatnost) — § 629 odst. 1, § 619 odst. 2 OZ ──
+const EN_MONTHS = { january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+const DEBT_CTX = /(faktur|invoice|splatn|due\s+(on|date)|dlu[žz]|pohled[aá]vk|nezaplatil|neuhradil|not\s+paid|unpaid|have not paid)/i;
+
+function _dueDate(t) {
+    let m = t.match(/splatn\S*[^.\d]{0,25}(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/i);
+    if (m) return _key(+m[3], +m[2], +m[1]);
+    m = t.match(/due(?:\s+(?:on|date|by))?[^.\d]{0,15}(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})/i);
+    if (m) return _key(+m[3], EN_MONTHS[m[2].toLowerCase()], +m[1]);
+    m = t.match(/due(?:\s+(?:on|date|by))?[^.\d]{0,15}(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})/i);
+    if (m) return _key(+m[3], EN_MONTHS[m[1].toLowerCase()], +m[2]);
+    return null;
+}
+
+function debtLimitationFacts(src) {
+    const t = String(src || '');
+    if (!DEBT_CTX.test(t)) return null;
+    const due = _dueDate(t);
+    if (!due) return null;
+    const end = calculateDeadlineByUnit(3, 'year', due + 'T12:00:00');
+    const raw = _rawEnd(due, 3, 'year');
+    if (!end) return null;
+    const [y, mo, d] = end.split('-').map(Number);
+    const enDate = `${d} ${Object.keys(EN_MONTHS)[mo - 1].replace(/^./, c => c.toUpperCase())} ${y}`;
+    const lines = [
+        `• PROMLČENÍ peněžité pohledávky — splatnost ${_fmt(due)}.`,
+        `• Promlčecí lhůta 3 roky (§ 629 odst. 1 OZ) běží od doby, kdy šlo právo uplatnit poprvé, tj. od splatnosti (§ 619 OZ): ` +
+            `${_fmt(due)} + 3 roky = ${_fmt(raw)}` + (raw !== end ? ` → připadá na víkend/svátek, posouvá se na ${_fmt(end)} (§ 607 OZ)` : '') +
+            ` (English: limitation period three years, ends ${enDate}).`,
+        `• Do té doby je třeba podat žalobu (uplatnění práva u soudu běh lhůty zastaví — § 648 OZ); písemné uznání dluhu dlužníkem běh lhůty také mění.`
+    ];
+    return { event: due, subjectiveEnd: end, objectiveEnd: null, kind: 'debt', lines };
+}
+
 /**
  * Co model z vypočtených dat vynechal, doplní program pod odpověď:
  * rozpor dat doručení (bez zmínky o rozporu) a konec promlčecí lhůty (bez data).
@@ -175,4 +214,4 @@ function dateFactsAppendix(response, df) {
     return out.length ? '\n\n---\n📅 Doplněno programem (výpočet lhůt):\n' + out.join('\n') : '';
 }
 
-module.exports = { buildDateFacts, findDates, limitationFacts, dateFactsAppendix };
+module.exports = { buildDateFacts, findDates, limitationFacts, debtLimitationFacts, dateFactsAppendix };

@@ -22,6 +22,8 @@ const { buildRagScope } = require('../lib/rag_request');
 const agentTools = require('../lib/agent_tools'); // interní tool-registry (Fáze 1, za AGENT_TOOLS=1)
 const { buildDateFacts, dateFactsAppendix } = require('../lib/date_facts');
 const clauseScan = require('../lib/clause_scan');
+const { taskProfile, redactForOpponent } = require('../lib/agent_outlines');
+const { reviewInChunks } = require('../lib/chunked_review');
 const { guardInventedIdentifiers, fixLawNames, buildWarnings } = require('../lib/output_guard');
 const { agentNumCtx, isEmbeddingModel, isModelMissingError } = require('../lib/agent_options');
 
@@ -161,6 +163,7 @@ router.post('/:agentId', async (req, res) => {
         // nemohl v plné moci uvést jméno klienta). AGENT_CONTEXT_REDACTION=irreversible
         // vrací staré chování (např. pro vzdálený/cloudový model).
         let pseudoMap = null;
+        let ctxModelText = null, ctxMsgIndex = -1, ctxNote = '';
         if (context) {
             let ctxForModel;
             if (process.env.AGENT_CONTEXT_REDACTION === 'irreversible') {
@@ -173,6 +176,7 @@ router.post('/:agentId', async (req, res) => {
                 ? '\n\n(Osobní údaje jsou nahrazeny symboly jako [OSOBA_1], [ADRESA_1]. Pokud je v odpovědi potřebuješ, napiš symbol PŘESNĚ v tomto tvaru — systém za něj doplní skutečný údaj. Nevymýšlej jména ani adresy.)'
                 : '';
             messages.push({ role: 'system', content: `Kontext dokumentu / spisové podklady:\n${ctxForModel}${note}` });
+            ctxModelText = ctxForModel; ctxMsgIndex = messages.length - 1; ctxNote = note;
         }
         // Text v podkladech, který se vydává za pokyn pro AI (prompt injection).
         const injectionHits = injectionGuard.detectInjection([prompt, context, ...ragContextChunks.map(c => c.text)].filter(Boolean).join('\n'));
@@ -194,13 +198,37 @@ router.post('/:agentId', async (req, res) => {
             if (clauseFindings.length) messages.push({ role: 'system', content: clauseScan.modelNote(clauseFindings) });
         } catch (csErr) { console.warn('⚠️ Agent: kontrola doložek selhala (nekritické):', csErr.message); }
 
+        // Pevná osnova odpovědi a teplota podle typu úkolu (lib/agent_outlines.js).
+        const profile = taskProfile({ agentId, prompt, context, hasClauseFindings: clauseFindings.length > 0 });
+        if (profile.outline) messages.push({ role: 'system', content: profile.outline });
+
         messages.push({ role: 'user', content: prompt });
 
         // Okno kontextu: bez num_ctx Ollama použije výchozí malé okno (2–4k tokenů) a dlouhý
         // spis TIŠE ořízne zepředu — změřeno 1. 10. 2026: u 40článkové smlouvy model viděl
         // jen konec a riziko v čl. 31 nenašel. AGENT_NUM_CTX (výchozí 8192).
         const numCtx = agentNumCtx();
-        const chatOptions = { temperature: agentTemperature(agent, 0.3), num_ctx: numCtx };
+        const baseTemp = agentTemperature(agent, 0.3);
+        const chatOptions = { temperature: profile.temperature != null ? Math.min(baseTemp, profile.temperature) : baseTemp, num_ctx: numCtx };
+        // Jeden opakovaný pokus při přechodné chybě spojení s Ollamou (souběh, reset).
+        const llm = require('../lib/ollama_retry').retryingProvider(ollama, {
+            onRetry: (e) => console.warn(`🔁 Ollama: přechodná chyba (${e.message}) — opakuji dotaz agenta ${agent.name}.`)
+        });
+        // Dlouhá smlouva: projít po částech (lib/chunked_review.js), finální odpověď z dílčích nálezů.
+        let chunked = null;
+        if (profile.kind === 'contract_review' && ctxModelText && ctxMsgIndex >= 0 &&
+            ctxModelText.length / 3 > numCtx * 0.55 && process.env.AGENT_CHUNKED_REVIEW !== '0') {
+            try {
+                chunked = await reviewInChunks({ llm, model: selectedModel, systemPrompt: systemPromptText, text: ctxModelText, prompt, numCtx, options: chatOptions });
+                if (chunked) {
+                    messages[ctxMsgIndex] = { role: 'system', content:
+                        `Smlouva je dlouhá (${Math.round(ctxModelText.length / 1000)} tis. znaků), proto ji model prošel po ${chunked.chunks} částech. ` +
+                        `Dílčí nálezy z jednotlivých částí (z nich sestav finální odpověď, nic nevynechej):\n${chunked.notes}` +
+                        (chunked.skipped ? `\n\n(Pozor: ${chunked.skipped} dalších částí se nevešlo do limitu a nebylo zkontrolováno.)` : '') + ctxNote };
+                    console.log(`🧩 Agent [${agent.name}]: dlouhá smlouva prošla po ${chunked.chunks} částech.`);
+                }
+            } catch (chErr) { console.warn('⚠️ Agent: kontrola po částech selhala, pokračuji celým textem:', chErr.message); chunked = null; }
+        }
         // Hrubý odhad tokenů (čeština ~3 znaky/token); při přetečení to advokátovi řekneme.
         const approxTokens = Math.round(messages.reduce((n, m) => n + String(m.content || '').length, 0) / 3);
         const contextOverflow = approxTokens > numCtx * 0.85;
@@ -209,10 +237,6 @@ router.post('/:agentId', async (req, res) => {
         // get_document, check_registry) v mezích svých oprávnění. Za AGENT_TOOLS=1; jinak
         // beze změny. RAG kontext je už předvyplněný výše — tooly slouží ke zpřesnění.
         let response, toolsUsed = [];
-        // Jeden opakovaný pokus při přechodné chybě spojení s Ollamou (souběh, reset).
-        const llm = require('../lib/ollama_retry').retryingProvider(ollama, {
-            onRetry: (e) => console.warn(`🔁 Ollama: přechodná chyba (${e.message}) — opakuji dotaz agenta ${agent.name}.`)
-        });
         if (agentTools.enabled() && agentTools.toolsForAgent(agent).length > 0) {
             const ctx = {
                 ragFilters: resolvedFilters, // search_rag respektuje scope/přístup agenta
@@ -270,7 +294,13 @@ router.post('/:agentId', async (req, res) => {
         let draftBody = null, draftWarn = '';
         try {
             const sourceText = [prompt, context, ...ragContextChunks.map(c => c.text)].filter(Boolean).join('\n');
-            const g = guardInventedIdentifiers(response.message.content, sourceText);
+            let modelText = response.message.content;
+            let oppRedacted = [];
+            if (profile.kind === 'opponent_letter') {
+                const rr = redactForOpponent(modelText, sourceText);
+                modelText = rr.text; oppRedacted = rr.removed;
+            }
+            const g = guardInventedIdentifiers(modelText, sourceText);
             // Chybný název u správného čísla zákona (§ v bázi existuje) → opravit v textu.
             let kbIdx = null;
             try { kbIdx = require('../lib/kb_law_index').getKbLawIndex(); } catch (e) { kbIdx = null; }
@@ -280,11 +310,14 @@ router.post('/:agentId', async (req, res) => {
             const clauseApx = clauseFindings.length ? clauseScan.missingAppendix(lf.text, clauseFindings) : { text: '', missing: [] };
             const dateApx = dateFactsAppendix(lf.text, dateFacts);
             const body = lf.text + clauseApx.text + dateApx;
-            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits)] });
+            const oppLine = oppRedacted.length ? `• Z dopisu protistraně odstraněno: ${oppRedacted.join(', ')} (protistrana je nepotřebuje).` : '';
+            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), oppLine] });
             response.message.content = body + warn;
             draftBody = body; draftWarn = warn;
             outputGuard = { replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
-                clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx };
+                clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx,
+                taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted,
+                chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null };
         } catch (gErr) {
             console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);
         }
@@ -346,7 +379,9 @@ router.post('/:agentId', async (req, res) => {
             citationCheck: citationCheck,
             toolsUsed: toolsUsed,
             contextOverflow: contextOverflow ? { approxTokens, numCtx } : null,
-            dateFacts: dateFacts ? dateFacts.facts : null,
+            dateFacts: dateFacts ? dateFacts.facts.concat(dateFacts.limitation ? [{
+                kind: 'promlceni', base: dateFacts.limitation.event, end: dateFacts.limitation.subjectiveEnd, objectiveEnd: dateFacts.limitation.objectiveEnd
+            }] : []) : null,
             outputGuard: outputGuard,
             timestamp: new Date().toISOString()
         });

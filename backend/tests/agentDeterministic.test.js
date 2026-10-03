@@ -111,10 +111,16 @@ describe('3) lhůty', () => {
         expect(buildDateFacts(q + '\n' + email(), { question: q }).limitation.event).not.toBe('2026-09-29');
     });
 
-    test('bez otázky na škodu/promlčení se promlčení nepočítá', () => {
-        const q = 'Shrň e-mail.';
-        const df = buildDateFacts(q + '\n' + email(), { question: q });
+    test('smlouva se slovy „škoda“ a „lhůta“ bez otázky na promlčení → nepočítá se', () => {
+        const q = 'Shrň smlouvu.';
+        const smlouva = 'SMLOUVA O DÍLO\nČl. V Náhrada škody\nZhotovitel nahradí škodu vzniklou dne 1. 2. 2026 při montáži. Lhůta splatnosti je 14 dnů.';
+        const df = buildDateFacts(q + '\n' + smlouva, { question: q });
         expect(df && df.limitation).toBeFalsy();
+    });
+
+    test('klientka se v e-mailu sama ptá „do kdy“ → promlčení se spočítá i u obecného zadání', () => {
+        const q = 'Shrň e-mail.';
+        expect(buildDateFacts(q + '\n' + email(), { question: q }).limitation.subjectiveEnd).toBe('2028-03-13');
     });
 
     test('rozpor dat doručení: doplní se jen, když ho model nezmíní', () => {

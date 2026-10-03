@@ -17,9 +17,11 @@ set -uo pipefail
 export HOME="${HOME:-/root}"
 
 RESULTS_BUCKET="lexislocal-bench-results-485237569555"
-MAX_MINUTES=200                    # jak dlouho server poběží (pak se sám vypne)
+MAX_MINUTES=320                    # jak dlouho server poběží (pak se sám vypne); se srovnáním modelů ~+90 min
 CHAT_MODEL="qwen2.5:7b"            # model agentů; 32b: "qwen2.5:32b" (pomalejší, 1–2 uživatelé)
 NUM_PARALLEL=4                     # kolik dotazů Ollama zpracuje souběžně
+# Srovnání modelů stejné třídy na eval sadě agentů (fáze E) po hlavním testu. Prázdné = vypnuto.
+COMPARE_MODELS="qwen3.5:9b llama3.1:8b granite4.2:8b mistral-nemo:12b"
 KB="backend/eval/kb/zakony.tar.gz" # veřejné zákony (OZ, OSŘ, ZOK)
 REPO="https://github.com/Zdenekdi/LexisLocal.git"
 BRANCH="release-prep"
@@ -170,6 +172,22 @@ if [ "${RUN_SUITE:-1}" = "1" ] && [ -f backend/scripts/server_suite.js ]; then
   node backend/scripts/server_suite.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
     --label server-loopback --out "$OUT/suite" 2>&1 | tail -n 60 || echo "!! server_suite skončil s chybou"
   echo "=== server_suite hotovo $(date -Is)"
+  upload
+fi
+# 8) Srovnání modelů (backend/scripts/model_compare.js) → report do S3 (*_remote/suite/*_model-compare.md).
+if [ -n "${COMPARE_MODELS:-}" ] && [ -f backend/scripts/model_compare.js ]; then
+  echo "=== srovnání modelů start $(date -Is): $CHAT_MODEL $COMPARE_MODELS"
+  OK_MODELS="$CHAT_MODEL"
+  for m in $COMPARE_MODELS; do
+    if curl -sf http://127.0.0.1:11434/api/pull -d "{\"model\":\"$m\",\"stream\":false}" >/dev/null; then
+      echo "model $m stažen"; OK_MODELS="$OK_MODELS,$m"
+    else
+      echo "!! model $m nejde stáhnout — ze srovnání vynechán"
+    fi
+  done
+  node backend/scripts/model_compare.js --base https://127.0.0.1 --token "$TOKEN" --insecure \
+    --models "$OK_MODELS" --out "$OUT/suite" 2>&1 | tail -n 40 || echo "!! srovnání modelů skončilo s chybou"
+  echo "=== srovnání modelů hotovo $(date -Is)"
   upload
 fi
 echo "=== připraveno pro vzdálený test, server běží do vypnutí $(date -Is)"
