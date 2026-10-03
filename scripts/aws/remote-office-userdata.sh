@@ -28,10 +28,11 @@ BRANCH="release-prep"
 # Profil (nastaví bootstrap user-data: export PROFILE=integrace):
 #   plny      — vše výše (výchozí, ~5 h)
 #   integrace — celý server_suite vč. fáze I (živě InfoJednání + ISIR ze serveru), bez srovnání
-#               modelů a bez měření vzdálené odezvy; ~2 h, pak se instance sama vypne
+#               modelů a bez měření vzdálené odezvy; ~2,5–3 h, nejpozději po 4 h se instance vypne
 PROFILE="${PROFILE:-plny}"
 if [ "$PROFILE" = "integrace" ]; then
-  MAX_MINUTES=150; COMPARE_MODELS=""; SKIP_PROBE=1
+  # 3. 10. 2026: samotné nahrání OZ trvalo 43 min → 150 min nestačilo na celý suite.
+  MAX_MINUTES=240; COMPARE_MODELS=""; SKIP_PROBE=1
 fi
 
 exec > >(tee -a /var/log/lexis-remote.log) 2>&1

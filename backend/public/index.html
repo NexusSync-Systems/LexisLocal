@@ -102,7 +102,7 @@
                     <button class="btn btn-primary" id="btn-upload-file">
                         <span class="btn-ic"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m8 7 4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg></span>Nahrát spis
                     </button>
-                    <input type="file" id="file-uploader" multiple style="display: none;" accept=".pdf,.txt,.docx,.html,.htm,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" />
+                    <input type="file" id="file-uploader" multiple style="display: none;" accept=".pdf,.txt,.docx,.html,.htm,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.zfo" />
                     
                     <button class="btn btn-secondary" id="btn-parse-test" title="Generuje náhodný demo spis pro vyzkoušení offline">
                         <span class="btn-ic"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 4v3M19.5 5.5h-3"/></svg></span>Generovat demo
@@ -245,8 +245,26 @@
                             <button class="btn btn-primary" id="btn-registry-search">Prověřit subjekt</button>
                         </div>
                         <details id="registry-config" style="margin-top: 14px;" ontoggle="if(this.open){ window.appInstance.loadRegistryConfig(); }">
-                            <summary style="cursor: pointer; font-size: 0.82rem; color: var(--text-muted); user-select: none;">⚙️ Nastavení přístupu k CEE / Katastru (volitelné)</summary>
+                            <summary style="cursor: pointer; font-size: 0.82rem; color: var(--text-muted); user-select: none;">⚙️ Přístupy: datová schránka, CEE, Katastr</summary>
                             <div style="margin-top: 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+                                <h4 style="margin: 0; font-size: 0.85rem;">📨 Datová schránka kanceláře</h4>
+                                <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0; line-height: 1.5;">Server bude každých 15 minut stahovat doručené zprávy, uloží je do spisovny (složka <code>datova-schranka</code>) a lhůty spočítá od <b>skutečného doručení</b>. <b style="color: #f59e0b;">Pozor: přihlášení serveru účtem, který smí číst zprávy, je přihlášení oprávněné osoby — zprávy se tím doručí a začnou běžet lhůty.</b> Heslo se ukládá jen lokálně a šifrovaně a nikdy se nezobrazuje zpět.</p>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <select id="reg-cfg-isds-url" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                        <option value="https://ws1.mojedatovaschranka.cz/DS/dx">Ostrý provoz (mojedatovaschranka.cz)</option>
+                                        <option value="https://ws1.czebox.cz/DS/dx">Testovací prostředí (czebox.cz)</option>
+                                    </select>
+                                    <input type="text" id="reg-cfg-isds-login" autocomplete="off" placeholder="Přihlašovací jméno do schránky" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                    <input type="password" id="reg-cfg-isds-password" autocomplete="new-password" placeholder="Heslo (prázdné = beze změny)" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                    <label style="font-size: 0.8rem; display: flex; gap: 8px; align-items: center;"><input type="checkbox" id="reg-cfg-isds-inbox"> Stahovat doručené zprávy automaticky</label>
+                                </div>
+                                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-isds-poll" onclick="window.appInstance.isdsPollNow()" style="padding:6px 14px; font-size:0.8rem;">Stáhnout teď</button>
+                                    <span id="reg-cfg-isds-status" style="font-size: 0.78rem; color: var(--text-muted);"></span>
+                                </div>
+                                <p style="font-size: 0.74rem; color: var(--text-muted); margin: 0;">Zprávy stažené jinde (Datovka, web) nahrajte jako soubor <code>.zfo</code> do doručené pošty — přílohy se rozbalí a lhůta se spočítá od data doručení ze zprávy.</p>
+                                <hr style="border: 0; border-top: 1px solid var(--border-glass); margin: 4px 0;">
+                                <h4 style="margin: 0; font-size: 0.85rem;">CEE a Katastr (volitelné)</h4>
                                 <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0; line-height: 1.5;">CEE (exekuce) a Katastr jsou <b>placené registrované služby</b>. Bez přístupu se nedotazují (žádná odhadovaná data). Klíč se ukládá <b>jen lokálně a šifrovaně</b> a nikdy se nezobrazuje zpět. URL musí obsahovat <code>{ico}</code>.</p>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                                     <input type="text" id="reg-cfg-cee-url" placeholder="CEE API URL (obsahuje {ico})" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
@@ -406,6 +424,7 @@
                                 <b>Role:</b> Správce — vše vč. uživatelů a nastavení · Advokát — může schvalovat koncepty a výstupy AI · Koncipient, Asistent/ka — připravují, schvaluje advokát · Jen čtení — nahlížení.
                             </div>
                             <div id="firm-mode-card" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-glass);"></div>
+                            <div id="profile-card" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-glass);"></div>
                         </div>
                     </div>
                 </section>
@@ -1058,7 +1077,10 @@
                     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
                         <button class="btn btn-primary" onclick="window.appInstance.syncSpisy()">🔄 Synchronizovat z inboxu</button>
                         <button class="btn btn-secondary" onclick="window.appInstance.novySpis()">➕ Nový spis</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('ss-import-file').click()">📄 Import spisů z CSV</button>
+                        <input type="file" id="ss-import-file" accept=".csv,text/csv,.txt" hidden onchange="window.appInstance.importSpisyCsv(this)">
                     </div>
+                    <div id="ss-import-panel" hidden class="glass" style="padding:16px 20px;border-radius:16px;border:1px solid var(--border-glass);margin-bottom:16px;"></div>
                     <div style="display:grid;grid-template-columns:0.9fr 1.1fr;gap:20px;">
                         <div class="glass" style="padding:20px;border-radius:16px;border:1px solid var(--border-glass);">
                             <h3 style="margin-top:0;">📁 Spisy</h3>

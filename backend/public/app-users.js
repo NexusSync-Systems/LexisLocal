@@ -13,6 +13,7 @@ Object.assign(LexisLocalApp.prototype, {
             const isAdmin = (me.scopes || []).includes('admin');
             const nav = document.getElementById('nav-users');
             if (nav) nav.style.display = isAdmin ? '' : 'none';
+            if (typeof this.applyProfile === 'function') this.applyProfile();
             if (chip) {
                 chip.style.display = '';
                 chip.textContent = '';
@@ -32,6 +33,7 @@ Object.assign(LexisLocalApp.prototype, {
 
     async loadUsersTab() {
         if (typeof this.loadFirmModeCard === 'function') this.loadFirmModeCard();
+        if (typeof this.loadProfileCard === 'function') this.loadProfileCard();
         const list = document.getElementById('users-list');
         const roleSel = document.getElementById('user-new-role');
         if (!list) return;
@@ -205,6 +207,51 @@ Object.assign(LexisLocalApp.prototype, {
                 ${d.spisyWithoutOwnerAccount ? `<div style="font-size:0.75rem;color:#b45309;margin-top:8px;">⚠️ ${escapeHtml(String(d.spisyWithoutOwnerAccount))} z ${escapeHtml(String(d.spisy))} spisů nemá vlastníka s účtem — ve firemním režimu je uvidí jen správce. Vlastníka nastavíte v detailu spisu (Spisová služba → spis → Přístup).</div>` : ''}`;
             const btn = document.getElementById('firm-mode-toggle');
             if (btn) btn.addEventListener('click', () => this.setFirmMode(btn.dataset.on === '1'));
+        } catch (e) { el.innerHTML = `<div style="color:#b45309;">⚠️ ${escapeHtml(e.message)}</div>`; }
+    },
+
+    // Pilotní profil: skryje v navigaci moduly, které v pilotu nejsou.
+    async applyProfile() {
+        try {
+            const r = await fetch(`${this.apiBase}/settings/profile`, { headers: this.getHeaders() });
+            if (!r.ok) return;
+            const d = await r.json();
+            const hidden = new Set(d.hiddenTabs || []);
+            document.querySelectorAll('.sidebar-nav .nav-btn[data-tab]').forEach(b => {
+                if (b.id === 'nav-users') return;
+                b.hidden = hidden.has(b.dataset.tab);
+            });
+            const active = document.querySelector('.sidebar-nav .nav-btn.active');
+            if (active && active.hidden && typeof this.switchTab === 'function') this.switchTab('overview');
+            this.profile = d.profile;
+        } catch (e) { /* bez profilu je vidět vše */ }
+    },
+
+    async loadProfileCard() {
+        const el = document.getElementById('profile-card');
+        if (!el) return;
+        try {
+            const r = await fetch(`${this.apiBase}/settings/profile`, { headers: this.getHeaders() });
+            const d = await r.json();
+            const pilot = d.profile === 'pilot';
+            el.innerHTML = `
+                <h3 style="margin:0 0 6px;">🧪 Pilotní profil</h3>
+                <p style="font-size:0.78rem;opacity:0.8;margin:0 0 10px;line-height:1.45;">
+                    Zapnutý: v nabídce zůstane jen doručená pošta, lhůty a jednání, spisy, koncepty, asistenti, lustrace a audit.
+                    Skryje se správce modelů, konzultace s AI, time-tracking, rizika a judikatura, AML a manažerský přehled. Data se nemažou.</p>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                    <strong style="color:${pilot ? '#15803d' : 'var(--text-secondary)'};">${pilot ? 'Zapnuto' : 'Vypnuto'}</strong>
+                    ${d.source === 'env' ? '<span style="font-size:0.75rem;opacity:0.7;">(pevně nastaveno na serveru proměnnou LEXIS_PROFILE)</span>'
+                        : `<button class="btn ${pilot ? 'btn-secondary' : 'btn-primary'}" id="profile-toggle" style="padding:5px 12px;font-size:0.8rem;">${pilot ? 'Vypnout' : 'Zapnout'}</button>`}
+                </div>`;
+            const btn = document.getElementById('profile-toggle');
+            if (btn) btn.addEventListener('click', async () => {
+                const rr = await fetch(`${this.apiBase}/settings/profile`, { method: 'POST', headers: this.getHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ profile: pilot ? 'full' : 'pilot' }) });
+                const dd = await rr.json().catch(() => ({}));
+                if (!rr.ok) alert('❌ ' + (dd.error || ('HTTP ' + rr.status)));
+                await this.applyProfile();
+                this.loadProfileCard();
+            });
         } catch (e) { el.innerHTML = `<div style="color:#b45309;">⚠️ ${escapeHtml(e.message)}</div>`; }
     },
 

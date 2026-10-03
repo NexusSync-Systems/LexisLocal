@@ -253,6 +253,52 @@ Object.assign(LexisLocalApp.prototype, {
         } catch (e) { alert('Chyba synchronizace: ' + e.message); }
     },
 
+    // Import stávajících spisů z CSV: nejdřív náhled, založení až po potvrzení.
+    async importSpisyCsv(input) {
+        const file = input.files && input.files[0];
+        input.value = '';
+        if (!file) return;
+        const panel = document.getElementById('ss-import-panel');
+        panel.hidden = false;
+        panel.innerHTML = 'Načítám ' + escapeHtml(file.name) + '…';
+        let csv;
+        try {
+            const buf = await file.arrayBuffer();
+            csv = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+        } catch (e) {
+            // Starší český Excel ukládá CSV ve Windows-1250.
+            try { csv = new TextDecoder('windows-1250').decode(await file.arrayBuffer()); }
+            catch (e2) { panel.innerHTML = '<span style="color:#f87171;">Soubor nejde přečíst.</span>'; return; }
+        }
+        this._ssImportCsv = csv;
+        try {
+            const r = await this.ssSend('/spisy/import', 'POST', { csv, dryRun: true });
+            const s = r.summary;
+            const rows = r.rows.filter(x => x.status !== 'nový' || x.reason).slice(0, 50);
+            panel.innerHTML = `
+                <h3 style="margin:0 0 6px;">Náhled importu: ${escapeHtml(file.name)}</h3>
+                <p style="margin:0 0 8px;font-size:0.85rem;">Řádků ${s.total} · <b>nových ${s.nove}</b> · už existuje ${s.existuje} · duplicit v souboru ${s.duplicita} · chyb ${s.chyba}${s.upozorneni ? ` · upozornění ${s.upozorneni}` : ''}</p>
+                <p style="margin:0 0 8px;font-size:0.78rem;opacity:0.8;">Rozpoznané sloupce: ${escapeHtml(r.columns.join(', '))}${r.unknownColumns.length ? ` · nerozpoznané (vynechají se): ${escapeHtml(r.unknownColumns.join(', '))}` : ''}</p>
+                ${rows.length ? `<div style="max-height:180px;overflow:auto;font-size:0.78rem;margin-bottom:10px;">${rows.map(x => `<div>řádek ${x.line}: <b>${escapeHtml(x.status)}</b> ${escapeHtml(x.spisZn || x.nazev || '')}${x.reason ? ' — ' + escapeHtml(x.reason) : ''}</div>`).join('')}</div>` : ''}
+                <div style="display:flex;gap:10px;">
+                    <button class="btn btn-primary" id="ss-import-go" ${s.nove ? '' : 'disabled'}>Založit ${s.nove} spisů</button>
+                    <button class="btn btn-secondary" onclick="document.getElementById('ss-import-panel').hidden=true">Zrušit</button>
+                </div>`;
+            const go = document.getElementById('ss-import-go');
+            if (go) go.addEventListener('click', async () => {
+                go.disabled = true; go.textContent = 'Zakládám…';
+                try {
+                    const done = await this.ssSend('/spisy/import', 'POST', { csv: this._ssImportCsv, dryRun: false });
+                    panel.innerHTML = `✅ Založeno ${done.summary.nove} spisů (už existovalo ${done.summary.existuje}, chyb ${done.summary.chyba}). Hlídače jednání a insolvencí je zkontrolují při nejbližším běhu.`;
+                    this._ssImportCsv = null;
+                    this.loadSpisovaTab();
+                } catch (e) { panel.innerHTML = '<span style="color:#f87171;">Import selhal: ' + escapeHtml(e.message) + '</span>'; }
+            });
+        } catch (e) {
+            panel.innerHTML = '<span style="color:#f87171;">' + escapeHtml(e.message) + '</span><p style="font-size:0.78rem;opacity:0.8;">Očekávaná hlavička např.: Spisová značka; Název; Klient; Protistrana; Soud; Advokát; Insolvence</p>';
+        }
+    },
+
     async novySpis() {
         const spisZn = prompt('Spisová značka (např. 23 C 120/2026):');
         if (spisZn === null) return;

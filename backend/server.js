@@ -274,6 +274,15 @@ if (typeof process.env.JEST_WORKER_ID === 'undefined') {
         // 3) insolvenční řízení (ISIR) u spisů se sp. zn. „… INS …“ — změna stavu → upozornění
         .then(() => require('./lib/isir_cases').checkInsolvencySpisy())
         .catch(err => console.error("⚠️ Background monitored hearings check error:", err.message));
+    // Datová schránka: stažení doručených zpráv každých LEXIS_ISDS_INTERVAL_MIN (výchozí 15)
+    // minut — jen když je přístup nastavený a stahování výslovně zapnuté (přihlášení = doručení).
+    const _isdsTimer = setInterval(() => {
+        const ib = require('./lib/isds_inbox');
+        const c = ib.config();
+        if (!c.enabled || !c.login || !c.password) return;
+        ib.pollOnce().catch(err => console.error('⚠️ Datová schránka: chyba stahování:', err.message));
+    }, (parseInt(process.env.LEXIS_ISDS_INTERVAL_MIN || '', 10) || 15) * 60 * 1000);
+    if (_isdsTimer && typeof _isdsTimer.unref === 'function') _isdsTimer.unref();
     const _hearingsTimer = setInterval(_runHearings,
         (parseInt(process.env.LEXIS_HEARINGS_INTERVAL_MIN || '', 10) || 60) * 60 * 1000);
     // První kontrola krátce po startu (po obnovení serveru se nečeká hodinu).

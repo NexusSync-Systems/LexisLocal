@@ -202,6 +202,24 @@ router.post('/upload', async (req, res) => {
         return res.status(400).json({ error: "Název souboru a base64 obsah jsou povinné." });
     }
 
+    // Datová zpráva (.zfo z Datovky / webu ISDS): rozbalí přílohy a vezme datum doručení.
+    if (/\.zfo$/i.test(String(fileName))) {
+        try {
+            const buf = Buffer.from(String(base64).replace(/^data:.*?;base64,/, ''), 'base64');
+            const r = await require('../lib/isds_inbox').importZfo(buf);
+            if (!r.ok) return res.status(400).json({ error: r.reason });
+            if (r.duplicate) return res.json({ success: true, processed: true, duplicate: true, message: `Zpráva ${r.dmID} už byla dříve načtena.` });
+            const failed = r.files.filter(f => typeof f.processed === 'string');
+            return res.status(failed.length ? 202 : 200).json({
+                success: true, processed: !failed.length, dmID: r.dmID, delivery: r.delivery, files: r.files,
+                message: `Datová zpráva ${r.dmID}: ${r.files.length} příloh, doručeno ${r.delivery.date || '?'} (${r.delivery.how}).`,
+                warning: failed.length ? `Nepodařilo se zpracovat: ${failed.map(f => f.file).join(', ')}` : undefined
+            });
+        } catch (e) {
+            return res.status(500).json({ error: `Import datové zprávy selhal: ${e.message}` });
+        }
+    }
+
     let filePath;
     try {
         filePath = safePathInWatchDir(fileName);

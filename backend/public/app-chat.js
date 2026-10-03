@@ -570,7 +570,7 @@ Object.assign(LexisLocalApp.prototype, {
     // na server POSTUPNĚ — každý se hned zpracovává (OCR + AI), souběh by přetížil
     // model. Stav každého souboru je vidět v panelu vpravo dole, žádné alerty.
     async handleFilesSelected(files) {
-        const ALLOWED = /\.(pdf|txt|docx|html?|png|jpe?g|tiff?|bmp|webp)$/i;
+        const ALLOWED = /\.(pdf|txt|docx|html?|png|jpe?g|tiff?|bmp|webp|zfo)$/i;
         const MAX = 40 * 1024 * 1024; // JSON limit serveru 50 MB, base64 +33 %
         const uploadBtn = document.getElementById('btn-upload-file');
         if (uploadBtn) uploadBtn.disabled = true;
@@ -632,7 +632,7 @@ Object.assign(LexisLocalApp.prototype, {
                 if (res.ok && data.success && data.processed === false) {
                     ui.st.textContent = '⚠️'; ui.msg.textContent = data.warning || 'uloženo, ale zpracování selhalo'; warn++;
                 } else if (res.ok && data.success) {
-                    ui.st.textContent = '✅'; ui.msg.textContent = 'nahráno a zanalyzováno'; ok++;
+                    ui.st.textContent = '✅'; ui.msg.textContent = data.dmID ? data.message : 'nahráno a zanalyzováno'; ok++;
                 } else {
                     ui.st.textContent = '❌'; ui.msg.textContent = data.error || `chyba serveru (HTTP ${res.status})`; fail++;
                 }
@@ -665,6 +665,15 @@ Object.assign(LexisLocalApp.prototype, {
             const katKey = document.getElementById('reg-cfg-katastr-key');
             if (ceeKey) ceeKey.placeholder = (c.cee && c.cee.hasKey) ? 'CEE klíč uložen — prázdné = beze změny' : 'CEE klíč (prázdné = beze změny)';
             if (katKey) katKey.placeholder = (c.katastr && c.katastr.hasKey) ? 'Katastr klíč uložen — prázdné = beze změny' : 'Katastr klíč (prázdné = beze změny)';
+            const isds = c.isds || {};
+            const urlSel = document.getElementById('reg-cfg-isds-url');
+            if (urlSel) urlSel.value = /czebox/.test(isds.url || '') ? 'https://ws1.czebox.cz/DS/dx' : 'https://ws1.mojedatovaschranka.cz/DS/dx';
+            set('reg-cfg-isds-login', isds.login);
+            const pw = document.getElementById('reg-cfg-isds-password');
+            if (pw) pw.placeholder = isds.hasPassword ? 'Heslo uloženo — prázdné = beze změny' : 'Heslo';
+            const cb = document.getElementById('reg-cfg-isds-inbox');
+            if (cb) cb.checked = !!(isds.inbox && isds.inbox.enabled);
+            this._renderIsdsStatus(isds.inbox);
             if (st) { st.textContent = ''; }
         } catch (err) {
             if (st) { st.textContent = 'Nelze načíst: ' + err.message; st.style.color = '#f87171'; }
@@ -676,7 +685,9 @@ Object.assign(LexisLocalApp.prototype, {
         const val = (id) => (document.getElementById(id) || {}).value || '';
         const payload = {
             cee: { url: val('reg-cfg-cee-url'), key: val('reg-cfg-cee-key') },
-            katastr: { url: val('reg-cfg-katastr-url'), key: val('reg-cfg-katastr-key') }
+            katastr: { url: val('reg-cfg-katastr-url'), key: val('reg-cfg-katastr-key') },
+            isds: { url: val('reg-cfg-isds-url'), login: val('reg-cfg-isds-login'), password: val('reg-cfg-isds-password'),
+                inbox: !!(document.getElementById('reg-cfg-isds-inbox') || {}).checked }
         };
         try {
             const res = await fetch(`${this.apiBase}/registries/config`, {
@@ -689,12 +700,41 @@ Object.assign(LexisLocalApp.prototype, {
                 // klíče po uložení vyprázdni z polí (ať se nedrží v DOM)
                 const ck = document.getElementById('reg-cfg-cee-key'); if (ck) ck.value = '';
                 const kk = document.getElementById('reg-cfg-katastr-key'); if (kk) kk.value = '';
-                if (st) { st.textContent = '✅ Uloženo. Dotazy na CEE/Katastr se nyní provedou proti zadanému API.'; st.style.color = '#4ade80'; }
+                const ip = document.getElementById('reg-cfg-isds-password'); if (ip) ip.value = '';
+                if (st) { st.textContent = '✅ Uloženo.'; st.style.color = '#4ade80'; }
                 this.loadRegistryConfig();
             } else if (st) { st.textContent = '❌ ' + (data.error || 'Uložení selhalo.'); st.style.color = '#f87171'; }
         } catch (err) {
             if (st) { st.textContent = '❌ Chyba: ' + err.message; st.style.color = '#f87171'; }
         }
+    },
+
+    _renderIsdsStatus(st) {
+        const el = document.getElementById('reg-cfg-isds-status');
+        if (!el || !st) return;
+        const when = st.lastRunAt ? new Date(st.lastRunAt).toLocaleString('cs-CZ') : null;
+        if (!st.configured) { el.textContent = 'Přístup není nastaven.'; el.style.color = ''; return; }
+        if (st.lastError) { el.textContent = `⚠️ Poslední pokus ${when || ''}: ${st.lastError}`; el.style.color = '#f59e0b'; return; }
+        el.style.color = '';
+        el.textContent = (st.enabled ? 'Stahování zapnuto' : 'Stahování vypnuto') +
+            (when ? ` · naposledy ${when}` : ' · zatím nestahováno') +
+            (st.lastResult ? ` · nových zpráv ${st.lastResult.downloaded}` : '') + ` · celkem ${st.processedCount || 0}`;
+    },
+
+    async isdsPollNow() {
+        const el = document.getElementById('reg-cfg-isds-status');
+        const btn = document.getElementById('btn-isds-poll');
+        if (btn) btn.disabled = true;
+        if (el) { el.textContent = 'Stahuji z datové schránky…'; el.style.color = ''; }
+        try {
+            const res = await fetch(`${this.apiBase}/registries/isds/inbox/poll`, { method: 'POST', headers: this.getHeaders() });
+            const data = await res.json();
+            if (!res.ok) { if (el) { el.textContent = '⚠️ ' + (data.error || 'Stažení selhalo.'); el.style.color = '#f59e0b'; } return; }
+            if (el) { el.textContent = `✅ Zkontrolováno ${data.checked}, staženo nových ${data.downloaded}${data.errors.length ? `, chyb ${data.errors.length}` : ''}.`; el.style.color = '#4ade80'; }
+            if (data.downloaded && typeof this.loadInbox === 'function') this.loadInbox();
+        } catch (e) {
+            if (el) { el.textContent = '⚠️ Síťová chyba: ' + e.message; el.style.color = '#f59e0b'; }
+        } finally { if (btn) btn.disabled = false; }
     },
 
     async performRegistrySearch() {

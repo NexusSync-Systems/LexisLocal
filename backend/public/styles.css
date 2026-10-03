@@ -2352,3 +2352,7 @@ html:not([data-theme="dark"]) .badge-ai { color: #7e22ce; }
 .me-chip { display:inline-flex; align-items:center; gap:2px; padding:6px 10px; border:2px solid var(--m-ink, var(--border-glass)); border-radius:8px; font-size:0.8rem; white-space:nowrap; max-width:260px; overflow:hidden; text-overflow:ellipsis; }
 .me-chip.me-chip-shared { border-style:dashed; opacity:0.8; }
 @media (max-width: 900px) { .users-grid { grid-template-columns: 1fr !important; } .me-chip { max-width:140px; } }
+
+/* Pilotní profil skrývá moduly (app-users.js applyProfile) */
+.nav-btn[hidden] { display: none !important; }
+[hidden] { display: none !important; }

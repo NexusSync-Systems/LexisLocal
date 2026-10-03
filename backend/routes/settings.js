@@ -100,4 +100,27 @@ router.post('/firm-mode', (req, res) => {
     } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+// ── Profil aplikace: „pilot“ skryje moduly, které v pilotu nejsou (plán pilotu 3. 10. 2026).
+// Moduly zůstávají v kódu a API; skrývá se jen navigace. LEXIS_PROFILE na serveru má přednost.
+const PILOT_HIDDEN = ['models', 'chat', 'timetracking', 'risks', 'aml', 'managerial'];
+function _profile() {
+    const env = String(process.env.LEXIS_PROFILE || '').toLowerCase();
+    if (env === 'pilot' || env === 'full') return { profile: env, source: 'env' };
+    const p = config.readSettings().profile;
+    return { profile: p === 'pilot' ? 'pilot' : 'full', source: 'settings' };
+}
+router.get('/profile', (req, res) => {
+    const p = _profile();
+    res.json(Object.assign(p, { hiddenTabs: p.profile === 'pilot' ? PILOT_HIDDEN : [] }));
+});
+// POST /api/settings/profile { profile: 'pilot' | 'full' } — jen správce (lib/authz: POST /api/settings).
+router.post('/profile', (req, res) => {
+    const want = req.body && req.body.profile;
+    if (!['pilot', 'full'].includes(want)) return res.status(400).json({ error: 'Profil musí být „pilot“ nebo „full“.' });
+    if (_profile().source === 'env') return res.status(409).json({ error: 'Profil je pevně nastaven proměnnou LEXIS_PROFILE na serveru.' });
+    const s = config.readSettings(); s.profile = want; config.writeSettings(s);
+    logEvent('Nastavení', want === 'pilot' ? 'Zapnutí pilotního profilu' : 'Vypnutí pilotního profilu', 'Profil aplikace', { by: req.principal && req.principal.name });
+    res.json({ success: true, profile: want, hiddenTabs: want === 'pilot' ? PILOT_HIDDEN : [] });
+});
+
 module.exports = router;

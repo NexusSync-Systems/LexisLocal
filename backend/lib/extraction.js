@@ -125,7 +125,7 @@ function normalizeDeadlineUnit(u) {
 // AI-extraktoru (aiResult.deadlineAmount + deadlineUnit). Sjednotí je (dedup dle
 // amount+unit), spočítá datum (§ 57/2) a KAŽDOU označí needsReview=true — advokát
 // musí potvrdit; nic se tiše nefinalizuje (dny řeší primární deadlineDays cesta).
-function collectUnitDeadlines(text, aiResult) {
+function collectUnitDeadlines(text, aiResult, baseDate) {
     const seen = new Set();
     const out = [];
     function add(amount, unit, context, source) {
@@ -138,7 +138,7 @@ function collectUnitDeadlines(text, aiResult) {
         out.push({
             amount: a,
             unit: u,
-            deadlineDate: calculateDeadlineByUnit(a, u),
+            deadlineDate: calculateDeadlineByUnit(a, u, baseDate),
             context: context ? String(context).trim().replace(/\s+/g, ' ').slice(0, 300) : '',
             source: source,
             needsReview: true

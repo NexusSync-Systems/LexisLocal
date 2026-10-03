@@ -8,7 +8,7 @@
 const express = require('express');
 const router = express.Router();
 const fs = require('fs');
-const { checkSubject, findDataBox, isIsdsConfigured } = require('../lib/registries');
+const { checkSubject, findDataBox, isIsdsConfigured, getRegistryConfig, setRegistryConfig } = require('../lib/registries');
 const { safePathInWatchDir } = require('../lib/pathsafe');
 
 // GET /api/registries/check - Query all registries for an ICO
@@ -82,6 +82,35 @@ router.get('/databox', async (req, res) => {
 // GET /api/registries/isds-status — zda je ISDS nakonfigurováno (bez odhalení hesla).
 router.get('/isds-status', (req, res) => {
     res.json({ configured: isIsdsConfigured() });
+});
+
+// GET/POST /api/registries/config — přístupy k CEE, Katastru a datové schránce.
+// Hesla a klíče se nikdy nevracejí (jen hasKey/hasPassword). Uložení smí jen správce
+// (lib/authz.js). UI na tyto cesty volalo, ale routy chyběly (nalezeno 3. 10. 2026).
+router.get('/config', (req, res) => {
+    const c = getRegistryConfig();
+    c.isds.inbox = require('../lib/isds_inbox').status();
+    res.json({ success: true, config: c });
+});
+router.post('/config', (req, res) => {
+    try {
+        const b = req.body || {};
+        const c = setRegistryConfig({ cee: b.cee, katastr: b.katastr, isds: b.isds });
+        if (b.isds && typeof b.isds.inbox === 'boolean') require('../lib/isds_inbox').setEnabled(b.isds.inbox);
+        try { require('../lib/audit').logEvent('Nastavení', 'Přístupy k registrům a datové schránce', 'registries', { isdsInbox: b.isds && b.isds.inbox }); } catch (e) {}
+        c.isds.inbox = require('../lib/isds_inbox').status();
+        res.json({ success: true, config: c });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
+// Datová schránka — příjem doručených zpráv (lib/isds_inbox.js).
+router.get('/isds/inbox', (req, res) => res.json(require('../lib/isds_inbox').status()));
+router.post('/isds/inbox/poll', async (req, res) => {
+    const r = await require('../lib/isds_inbox').pollOnce();
+    if (!r.ok) return res.status(r.kind === 'unavailable' ? 502 : 400).json({ error: r.reason, kind: r.kind });
+    res.json(r);
 });
 
 // POST /api/registries/save-report - Save structured registry audit to Desktop case directory

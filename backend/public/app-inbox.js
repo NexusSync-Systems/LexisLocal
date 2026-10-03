@@ -234,21 +234,23 @@ Object.assign(LexisLocalApp.prototype, {
                             ${isUnread ? '<span style="width: 6px; height: 6px; background-color: var(--accent-red); border-radius: 50%; display: inline-block; flex-shrink: 0;"></span>' : ''}
                             ${doc.wasOcr ? '<span style="font-size: 0.65rem; background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.25); border-radius: 4px; padding: 1px 5px; flex-shrink: 0;">OCR</span>' : ''}
                             ${_lexSignatureBadge(doc.signatures)}
+                            ${doc.isds ? `<span title="${escapeHtml('Datová schránka · zpráva ' + (doc.isds.dmID || '') + (doc.isds.sender ? ' · od: ' + doc.isds.sender : '') + (doc.isds.annotation ? ' · ' + doc.isds.annotation : ''))}" style="font-size: 0.65rem; background: rgba(14,116,144,0.15); color: #67b7c9; border: 1px solid rgba(14,116,144,0.3); border-radius: 4px; padding: 1px 5px; flex-shrink: 0;">📨 DS · doručeno ${escapeHtml(doc.isds.deliveryDate ? new Date(doc.isds.deliveryDate).toLocaleDateString('cs-CZ') : '?')}${doc.isds.deliveryExact === false ? ' (odhad)' : ''}</span>` : ''}
                         </div>
                         <div style="display: flex; gap: 6px;">
-                            <button class="btn btn-secondary" onclick="window.appInstance.viewSpisContent('${_lexEscJsAttr(doc.fileName)}')" style="padding: 4px 8px; font-size: 0.7rem;">
+                            <button class="btn btn-secondary" onclick="window.appInstance.viewSpisContent('${_lexEscJsAttr(doc.relativePath || doc.fileName)}')" style="padding: 4px 8px; font-size: 0.7rem;">
                                 📖 Zobrazit
                             </button>
                             ${isUnread ? `
-                                <button class="btn btn-secondary" onclick="window.appInstance.markRead('${_lexEscJsAttr(doc.fileName)}')" style="padding: 4px 8px; font-size: 0.7rem;">
+                                <button class="btn btn-secondary" onclick="window.appInstance.markRead('${_lexEscJsAttr(doc.relativePath || doc.fileName)}')" style="padding: 4px 8px; font-size: 0.7rem;">
                                     ✓ Vyřídit
                                 </button>
                             ` : ''}
-                            <button class="btn btn-danger" onclick="window.appInstance.deleteSpis('${_lexEscJsAttr(doc.fileName)}')" style="padding: 4px 6px; font-size: 0.7rem;">
+                            <button class="btn btn-danger" onclick="window.appInstance.deleteSpis('${_lexEscJsAttr(doc.relativePath || doc.fileName)}')" style="padding: 4px 6px; font-size: 0.7rem;">
                                 🗑️
                             </button>
                         </div>
                     </div>
+                    ${(doc.action || doc.summary) ? `<div style="font-size: 0.75rem; color: var(--text-muted); padding: 2px 12px 6px; line-height: 1.45;">${doc.action ? `<b style="color: var(--text-primary);">➡️ ${escapeHtml(doc.action)}</b><br>` : ''}${escapeHtml(String(doc.summary || '').slice(0, 320))}</div>` : ''}
                 `;
             });
 

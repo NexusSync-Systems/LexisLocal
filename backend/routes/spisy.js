@@ -58,6 +58,23 @@ router.post('/', (req, res) => {
     }
 });
 
+// POST /api/spisy/import { csv, dryRun } — import stávajících spisů z CSV (lib/spisy_import.js).
+// Náhled (dryRun) nic nezakládá; vlastníkem nových spisů je importující uživatel.
+router.post('/import', (req, res) => {
+    try {
+        const b = req.body || {};
+        if (typeof b.csv !== 'string' || !b.csv.trim()) return res.status(400).json({ error: 'Chybí obsah CSV.' });
+        if (b.csv.length > 5 * 1024 * 1024) return res.status(413).json({ error: 'CSV je větší než 5 MB.' });
+        const p = req.principal;
+        const r = require('../lib/spisy_import').importCsv(b.csv, { dryRun: !!b.dryRun, owner: p && p.kind === 'user' ? p.userId : null });
+        if (!r.ok) return res.status(400).json({ error: r.reason, header: r.header });
+        if (!r.dryRun) logEvent('Spisová služba', 'Import spisů z CSV', `${r.summary.nove} nových`, r.summary);
+        res.json(r);
+    } catch (err) {
+        res.status(500).json({ error: `Import selhal: ${err.message}` });
+    }
+});
+
 // POST /api/spisy/sync — odvodí/synchronizuje spisy z inboxu (idempotentní)
 router.post('/sync', (req, res) => {
     try {

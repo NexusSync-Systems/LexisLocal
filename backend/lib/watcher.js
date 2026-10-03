@@ -145,8 +145,12 @@ async function saveInbox(inbox) {
 }
 
 // Combined Heuristic and AI extraction engine
-async function processDocument(filePath) {
+async function processDocument(filePath, opts = {}) {
     const fileName = path.basename(filePath);
+    // Příloha zprávy z datové schránky: datum DORUČENÍ z ISDS (lib/isds_inbox.js) má
+    // přednost před datem nalezeným v textu. Watcher (bez opts) si metadata dohledá sám.
+    let isds = opts && opts.isds ? opts.isds : null;
+    if (!isds) { try { isds = require('./isds_inbox').metaForFile(path.relative(_watchedDir, filePath)); } catch (e) { isds = null; } }
     console.log(`⚙️ Analyzuji dokument ${fileName}...`);
 
     // .docx ulozeny LexisEditorem nese vnoreny spec (JSON) - precteme ho, aby sel
@@ -184,6 +188,7 @@ async function processDocument(filePath) {
     
     // 1. Step: Run High-Quality Czech Heuristic Regex Engine (Bulletproof Fallback)
     const metadata = runRegexExtractor(text);
+    if (isds && isds.deliveryDate) applyIsdsDelivery(metadata, isds);
     
     // 2. Step: Refine metadata with Local Ollama AI if online
     let refinedMetadata = null;
@@ -228,7 +233,7 @@ async function processDocument(filePath) {
     // needsReview=true — advokát je má potvrdit (nic se tiše nefinalizuje).
     let unitDeadlines = [];
     try {
-        unitDeadlines = collectUnitDeadlines(text, refinedMetadata);
+        unitDeadlines = collectUnitDeadlines(text, refinedMetadata, metadata.deliveryDate || undefined);
     } catch (e) { /* detekce jednotek je best-effort */ }
     if (unitDeadlines.length) {
         const lbl = { week: 'týd.', month: 'měs.', year: 'r.' };
@@ -270,6 +275,9 @@ async function processDocument(filePath) {
     catch (e) { signatures = null; }
     const signatureNote = signatures ? require('./signature_check').summaryNote(signatures) : '';
 
+    let action = null;
+    try { action = require('./doc_action').actionFor({ metadata, hearings: hearingsFound }); } catch (e) { action = null; }
+
     // 3. Save to inbox
     const inbox = await loadInbox();
     const relativePath = path.relative(_watchedDir, filePath);
@@ -290,7 +298,13 @@ async function processDocument(filePath) {
         deliveryDate: metadata.deliveryDate || null,
         deliveryConflict: !!metadata.deliveryConflict,
         detectedDeadlines: unitDeadlines,
-        summary: (metadata.deliveryConflict
+        action: action,
+        isds: isds ? { dmID: isds.dmID, sender: isds.sender, annotation: isds.annotation, senderRefNumber: isds.senderRefNumber,
+            deliveryDate: isds.deliveryDate, deliveryHow: isds.deliveryHow, deliveryExact: isds.deliveryExact !== false } : null,
+        summary: (isds ? `📨 Datová schránka: doručeno ${isds.deliveryDate || '?'} (${isds.deliveryHow || 'neznámo'})` +
+            `${isds.sender ? ', od: ' + isds.sender : ''}${isds.annotation ? ', věc: ' + isds.annotation : ''}. ` +
+            ((metadata.isdsTextDates || []).length ? `V textu je jiné datum doručení (${metadata.isdsTextDates.join(', ')}) — rozhoduje doručení do datové schránky. ` : '') : '') +
+            (metadata.deliveryConflict
             ? `⚠️ ROZPOR V DATU DORUČENÍ (${(metadata.deliveryDates || []).join(' × ')}) — lhůta počítána od nejdřívějšího, OVĚŘIT. `
             : '') + signatureNote + (metadata.summary || "Nově stažený dokument připravený ke zpracování."),
         ico: metadata.ico || null,
@@ -329,6 +343,27 @@ async function processDocument(filePath) {
     } catch (e) {
         console.error(`❌ RAG: Selhala vektorová indexace pro soubor ${relativePath}:`, e.message);
     }
+}
+
+/**
+ * Datum doručení z ISDS přepíše datum z textu a přepočítá lhůtu. Datum v textu, které
+ * se liší, se jen poznamená (doručenka ISDS je rozhodující).
+ */
+function applyIsdsDelivery(metadata, isds) {
+    const textDates = (metadata.deliveryDates || []).filter(d => d && d !== isds.deliveryDate);
+    metadata.deliveryDate = isds.deliveryDate;
+    metadata.deliveryDates = [isds.deliveryDate];
+    metadata.deliveryConflict = false;
+    if (metadata.deadlineDays) {
+        metadata.deadlineDate = calculateDeadlineDate(metadata.deadlineDays, isds.deliveryDate);
+        metadata.deadlineBase = `doručení do datové schránky ${isds.deliveryHow || ''}`.trim() + (isds.deliveryExact === false ? ' — OVĚŘIT' : '');
+    }
+    if ((!metadata.caseNumber) && isds.senderRefNumber && /\d+\s*[A-Za-zČŠŽčšž]+\s*\d+\/\d{4}/.test(isds.senderRefNumber)) {
+        metadata.caseNumber = isds.senderRefNumber.match(/\d+\s*[A-Za-zČŠŽčšž]+\s*\d+\/\d{4}/)[0].replace(/\s+/g, ' ');
+    }
+    metadata.isdsTextDates = textDates;
+    if (metadata.summary && metadata.deadlineDate) metadata.summary = metadata.summary.replace(/vyprší \d{4}-\d{2}-\d{2}/, 'vyprší ' + metadata.deadlineDate);
+    return metadata;
 }
 
 // Regular Expression extractor for Czech legal documents
@@ -380,13 +415,16 @@ function runRegexExtractor(text) {
     }
     
     // 3. Strany sporu
-    const plaintiffReg = /(?:žalobc[eůa-z]+\s*:\s*|žalující\s*strana\s*:\s*)([^\n,.]+)/i;
+    // Jméno strany až do konce řádku / čárky; tečky uvnitř právní formy („s.r.o.“, „a.s.“)
+    // se zachovají (dřív se jméno uřízlo na „Alfa Test s“, test 3. 10. 2026).
+    const partyName = (m) => m ? m[1].trim().replace(/\.$/, (dot, off, str) => /\b(?:s\.r\.o|a\.s|v\.o\.s|k\.s|z\.s|o\.p\.s|spol)$/i.test(str.slice(0, off)) ? dot : '') : '';
+    const plaintiffReg = /(?:žalobc[eůa-z]+\s*:\s*|žalující\s*strana\s*:\s*)([^\n,;]+)/i;
     const matchPlaintiff = text.match(plaintiffReg);
-    if (matchPlaintiff) metadata.plaintiff = matchPlaintiff[1].trim();
+    if (matchPlaintiff) metadata.plaintiff = partyName(matchPlaintiff);
     
-    const defendantReg = /(?:žalovan[éhomy-]+\s*:\s*|žalovaná\s*strana\s*:\s*)([^\n,.]+)/i;
+    const defendantReg = /(?:žalovan[ýáéhomy-]+\s*:\s*|žalovaná\s*strana\s*:\s*)([^\n,;]+)/i;
     const matchDefendant = text.match(defendantReg);
-    if (matchDefendant) metadata.defendant = matchDefendant[1].trim();
+    if (matchDefendant) metadata.defendant = partyName(matchDefendant);
     
     // 4. IČO Search (Exactly 8 digits, supports spaces inside like '123 456 78')
     const icoReg = /(?:IČO|IČ)\s*[:\-]?\s*(\d(?:\s*\d){7})/i;
@@ -482,4 +520,4 @@ function repointWatcher(newDir) {
     return _watchedDir;
 }
 
-module.exports = { WATCH_DIR, loadInbox, saveInbox, processDocument, setWatcherState, checkAllInsolvencies, repointWatcher };
+module.exports = { WATCH_DIR, loadInbox, saveInbox, processDocument, setWatcherState, checkAllInsolvencies, repointWatcher, applyIsdsDelivery };

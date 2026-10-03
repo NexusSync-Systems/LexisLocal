@@ -19,6 +19,7 @@ const ADMIN_RULES = [
     ['*', '/api/system/rotate-key'],
     ['*', '/api/email/settings'],
     ['POST', '/api/settings'],
+    ['POST', '/api/registries/config'],
     ['POST', '/api/models/pull'],
     ['POST', '/api/watcher/toggle'],
     ['POST', '/api/audit/clear'],
