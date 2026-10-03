@@ -106,6 +106,9 @@ function createSpis(data) {
         // Soud (název) a volitelně kód soudu pro InfoJednání — bez nich nejde hlídat jednání.
         soud: data.soud ? String(data.soud).trim() : '',
         soudKod: data.soudKod ? String(data.soudKod).trim() : '',
+        // Sp. zn. insolvenčního řízení pro hlídač ISIR, když spis sám vede jinou sp. zn.
+        // (např. přihláška pohledávky klienta do cizí insolvence).
+        insZn: data.insZn ? _normCase(data.insZn) : '',
         // ACL přístupu ke spisu (viz access.js). Vlastník = odpovědný advokát,
         // jinak implicitní 'local'. V solo režimu se přístup nevynucuje.
         access: {
@@ -132,6 +135,15 @@ function updateSpis(id, patch) {
     });
     if (patch.spisZn !== undefined) clean.spisZn = _normCase(patch.spisZn);
     if (patch.klientIco !== undefined) clean.klientIco = String(patch.klientIco).replace(/\s+/g, '');
+    if (patch.insZn !== undefined) clean.insZn = _normCase(patch.insZn);
+    // Jiné insolvenční řízení → zapomenout uložený stav ISIR (jinak by hlídač ohlásil
+    // „změnu stavu“, která je ve skutečnosti jen jiné řízení).
+    if (clean.spisZn !== undefined || clean.insZn !== undefined) {
+        const { insKey } = require('./isir_cases');
+        const before = insKey(spis.insZn || spis.spisZn);
+        const after = insKey((clean.insZn !== undefined ? clean.insZn : spis.insZn) || (clean.spisZn !== undefined ? clean.spisZn : spis.spisZn));
+        if (before !== after) { clean.isirStav = null; clean.isirCheckedAt = null; clean.isirError = null; }
+    }
     if (patch.retentionYears !== undefined && Number.isFinite(patch.retentionYears)) {
         clean.retentionYears = patch.retentionYears;
     }

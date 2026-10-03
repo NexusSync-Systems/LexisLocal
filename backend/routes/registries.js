@@ -53,6 +53,16 @@ router.get('/isir/case', async (req, res) => {
     res.json({ query: r.query, syncedAt: r.syncedAt || null, empty: r.empty, cases: r.cases, spisy });
 });
 
+// POST /api/registries/isir/check-now — hlídač insolvencí hned (jinak běží každou hodinu).
+router.post('/isir/check-now', async (req, res) => {
+    try {
+        const r = await require('../lib/isir_cases').checkInsolvencySpisy();
+        res.json(Object.assign({ success: true }, r));
+    } catch (err) {
+        res.status(500).json({ error: `Kontrola ISIR selhala: ${err.message}` });
+    }
+});
+
 // GET /api/registries/databox?ico=... — vyhledání ID datové schránky (ISDS FindDataBox).
 // Vyžaduje nastavené přihlašovací údaje ISDS (ISDS_LOGIN/ISDS_PASSWORD nebo v nastavení).
 // Bez nich vrací available:false, configured:false (nikdy nefabrikuje ID).

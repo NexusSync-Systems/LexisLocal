@@ -22,6 +22,9 @@
  *                         uložení z editoru (editor-spec → PUT), velký upload
  *   U  scénář používání   — spis → doručený rozsudek (lhůta) → Spisovatel napíše odvolání do
  *                         Konceptů → připomínka → revize AI → schválení → uložení do spisu
+ *   I  integrace živě   — InfoJednání (soudy, síně, hledání podle síně a data → zpětně podle
+ *                         nalezené sp. zn.) a ISIR (řízení podle sp. zn., nenalezeno, hlídač
+ *                         stavu u spisu, žádné falešné upozornění). Skutečná síť ze serveru.
  *   H  LLM-judge        — volitelné hodnocení odpovědí z E silnějším modelem
  *                         (JUDGE_API_KEY + JUDGE_MODEL v prostředí, Anthropic API)
  *
@@ -703,6 +706,92 @@ async function phaseH() {
     return out;
 }
 
+// ─── I: integrace se státními systémy (živě) ─────────────────────────────────
+// Ověřuje, že SERVER (ne prohlížeč) dosáhne na InfoJednání a ISIR (port 8443) a že
+// odpovědi projdou celou cestou API → porovnání se spisy → hlídač. Do reportu jdou
+// jen počty, stavy a sp. zn. — žádná jména dlužníků ani soudců.
+function _nextWorkday(n = 1) {
+    const d = new Date(); d.setDate(d.getDate() + n);
+    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+}
+async function phaseI() {
+    console.log('\nI — integrace živě (InfoJednání, ISIR)');
+    // InfoJednání
+    const courts = await get('/api/calendar/hearings/courts');
+    const list = (courts.json && courts.json.courts) || [];
+    record('I', 'I1', 'Číselník soudů InfoJednání (≥ 90)', ok2(courts.status) && list.length >= 90, { severity: 'medium', detail: `${list.length} soudů` });
+    const pick = ['Jihlav', 'Brno-venkov', 'Praze 4', 'Kladn', 'Ostrav'];
+    const cands = pick.map(n => list.find(c => new RegExp(n, 'i').test(c.nazev))).filter(Boolean);
+    let found = null, roomsOk = false, roomCalls = 0, roomErr = '', searched = 0;
+    for (const c of cands) {
+        const rr = await get(`/api/calendar/hearings/rooms?court=${encodeURIComponent(c.kod)}`, { timeout: 60000 });
+        roomCalls++;
+        if (!ok2(rr.status)) { roomErr = `${c.kod}: ${rr.status} ${short(rr.text, 160)}`; continue; }
+        const rooms = (rr.json && rr.json.rooms) || [];
+        if (rooms.length) roomsOk = true;
+        for (const day of [1, 2, 3]) {
+            for (const room of rooms.slice(0, 4)) {
+                const date = _nextWorkday(day);
+                const sr = await get(`/api/calendar/hearings/search?mode=room&court=${encodeURIComponent(c.kod)}&room=${encodeURIComponent(room)}&date=${date}`, { timeout: 60000 });
+                searched++;
+                if (!ok2(sr.status)) { roomErr = `hledání ${c.kod}/${date}: ${sr.status} ${short(sr.text, 160)}`; continue; }
+                const ev = ((sr.json && sr.json.events) || []).find(e => e.spisZn && !e.cancelled);
+                if (ev) { found = { court: c.kod, date, ev }; break; }
+            }
+            if (found) break;
+        }
+        if (found) break;
+    }
+    record('I', 'I2', 'Server načte jednací síně z InfoJednání', roomsOk, { severity: 'high', detail: roomsOk ? `${roomCalls} soud(y)` : roomErr,
+        repro: 'GET /api/calendar/hearings/rooms?court=<kód>', expected: 'seznam síní', actual: roomErr });
+    record('I', 'I3', 'Hledání podle síně a data najde jednání', !!found, { severity: 'medium',
+        detail: found ? `${found.court} ${found.date}: ${found.ev.spisZn} (${searched} dotazů)` : `${searched} dotazů bez jednání${roomErr ? ' · ' + roomErr : ''}` });
+    if (found) {
+        const t0 = Date.now();
+        const zr = await get(`/api/calendar/hearings/search?mode=spzn&court=${encodeURIComponent(found.court)}&spisZn=${encodeURIComponent(found.ev.spisZn)}`, { timeout: 60000 });
+        const hit = ((zr.json && zr.json.events) || []).some(e => e.date === found.date);
+        record('I', 'I4', 'Zpětně podle nalezené sp. zn. vrátí stejné jednání', ok2(zr.status) && hit, { severity: 'high', ms: Date.now() - t0,
+            detail: `${found.ev.spisZn} → ${zr.status}, ${((zr.json && zr.json.events) || []).length} jednání`,
+            repro: `hledání sp. zn. ${found.ev.spisZn} u ${found.court}`, expected: `jednání ${found.date}`, actual: short(zr.text, 300) });
+    }
+
+    // ISIR
+    const t1 = Date.now();
+    const ir = await get('/api/registries/isir/case?spisZn=' + encodeURIComponent('INS 1000/2026'), { timeout: 60000 });
+    const cases = (ir.json && ir.json.cases) || [];
+    record('I', 'I5', 'ISIR: řízení podle sp. zn. (INS 1000/2026) ze serveru', ok2(ir.status) && cases.length > 0 && cases.every(c => c.stav),
+        { severity: 'high', ms: Date.now() - t1, detail: ok2(ir.status) ? `${cases.length} záznam(y), stav ${[...new Set(cases.map(c => c.stav))].join(', ')}, data k ${ir.json.syncedAt || '?'}` : `${ir.status} ${short(ir.text, 200)}`,
+            repro: 'GET /api/registries/isir/case?spisZn=INS 1000/2026', expected: '200 a stav řízení', actual: `${ir.status} ${short(ir.text, 200)}` });
+    const nf = await get('/api/registries/isir/case?spisZn=' + encodeURIComponent('INS 900000/2026'), { timeout: 60000 });
+    record('I', 'I6', 'ISIR: neexistující řízení → prázdný výsledek (ne chyba)', ok2(nf.status) && nf.json && nf.json.empty === true,
+        { severity: 'medium', detail: `${nf.status} ${short(nf.text, 160)}` });
+    const bad = await get('/api/registries/isir/case?spisZn=' + encodeURIComponent('12 C 5/2026'));
+    record('I', 'I7', 'ISIR: neinsolvenční sp. zn. → 400', bad.status === 400, { severity: 'low', detail: String(bad.status) });
+
+    // Hlídač u spisu: první kontrola uloží stav bez upozornění, opakovaná nic nehlásí,
+    // změna sp. zn. na jiné řízení stav vynuluje (žádné falešné „změna stavu“).
+    const cr = await post('/api/spisy', { nazev: `E2E-ISIR ${Date.now()}`, klient: 'E2E Věřitel s.r.o.', insZn: 'KSBR 56 INS 1000/2026' });
+    const sid = cr.json && cr.json.spis && cr.json.spis.id;
+    if (!sid) { record('I', 'I8', 'Hlídač ISIR: spis s insZn', false, { severity: 'high', detail: `${cr.status} ${short(cr.text, 200)}` }); return; }
+    created.spisy.push(sid);
+    const alertsOf = async () => (((await get('/api/workflows/alerts')).json || {}).alerts || []).filter(a => a.kind === 'isir_change' && String(a.payloadDetails || '').includes(sid));
+    const c1 = await post('/api/registries/isir/check-now', {}, { timeout: 300000 });
+    const s1 = ((await get(`/api/spisy/${encodeURIComponent(sid)}`)).json || {}).spis || {};
+    record('I', 'I8', 'Hlídač ISIR uloží stav řízení ke spisu', ok2(c1.status) && !!s1.isirStav && s1.isirStav !== 'nenalezeno' && !s1.isirError,
+        { severity: 'high', detail: `check-now ${c1.status} ${short(c1.text, 120)} · stav ${s1.isirStav || '—'}${s1.isirError ? ' · chyba ' + s1.isirError : ''}` });
+    const c2 = await post('/api/registries/isir/check-now', {}, { timeout: 300000 });
+    const a2 = await alertsOf();
+    record('I', 'I9', 'Opakovaná kontrola beze změny → žádné upozornění', ok2(c2.status) && a2.length === 0, { severity: 'medium', detail: `upozornění ${a2.length}` });
+    await request('PATCH', `/api/spisy/${encodeURIComponent(sid)}`, { body: { insZn: 'INS 900000/2026' } });
+    const s3 = ((await get(`/api/spisy/${encodeURIComponent(sid)}`)).json || {}).spis || {};
+    await post('/api/registries/isir/check-now', {}, { timeout: 300000 });
+    const s4 = ((await get(`/api/spisy/${encodeURIComponent(sid)}`)).json || {}).spis || {};
+    const a4 = await alertsOf();
+    record('I', 'I10', 'Změna sp. zn. na jiné řízení vynuluje stav, bez falešného upozornění', !s3.isirStav && s4.isirStav === 'nenalezeno' && a4.length === 0,
+        { severity: 'medium', detail: `po změně ${s3.isirStav || '—'} → po kontrole ${s4.isirStav || '—'}, upozornění ${a4.length}` });
+}
+
 // ─── úklid ───────────────────────────────────────────────────────────────────
 async function cleanup() {
     console.log('\nÚklid testovacích objektů');
@@ -779,6 +868,7 @@ function writeReport(meta) {
         if (phaseOn('R')) await phaseR();
         if (phaseOn('K')) await phaseK();
         if (phaseOn('U')) await phaseU();
+        if (phaseOn('I')) await phaseI();
         if (phaseOn('G')) meta.load = await phaseG();
         if (phaseOn('H')) meta.judge = await phaseH();
     } catch (e) {

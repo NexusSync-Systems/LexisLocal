@@ -343,7 +343,7 @@ Object.assign(LexisLocalApp.prototype, {
         if (!cases.length) { out.innerHTML = `<div style="opacity:0.8;">Řízení ${escapeHtml(data.query || '')} v ISIR nenalezeno.</div>`; return; }
         const spisInfo = spisy.length
             ? `<div style="font-size:0.8rem;"><span style="background:#1f6f43;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.72rem;">Váš spis: ${spisy.map(s => escapeHtml(s.nazev || s.spisZn || s.id)).join(', ')}</span> — stav řízení se hlídá automaticky každou hodinu, změnu uvidíte v upozorněních.</div>`
-            : '<div style="font-size:0.78rem;opacity:0.8;">Žádný váš spis tuto sp. zn. nemá. Pro automatické hlídání zapište sp. zn. „… INS …“ do spisu (pole sp. zn. nebo „insZn“).</div>';
+            : '<div style="font-size:0.78rem;opacity:0.8;">Žádný váš spis tuto sp. zn. nemá. Pro automatické hlídání otevřete spis a zvolte „Sledovat insolvenci“.</div>';
         out.innerHTML = `<div style="font-size:0.8rem;opacity:0.8;">${escapeHtml(data.query || '')} · nalezeno ${cases.length} ${cases.length === 1 ? 'záznam' : 'záznamů'}${data.syncedAt ? ' · data ISIR k ' + escapeHtml(String(data.syncedAt).replace('T', ' ').slice(0, 16)) : ''}</div>` + spisInfo +
             cases.map(c => `<div class="glass" style="padding:10px 12px;border-radius:10px;border:1px solid ${spisy.length ? '#1f6f43' : 'var(--border-glass)'};display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
                 <div style="display:flex;flex-direction:column;gap:3px;">

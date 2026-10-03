@@ -25,10 +25,18 @@ COMPARE_MODELS="qwen3.5:9b llama3.1:8b granite4.2:8b mistral-nemo:12b"
 KB="backend/eval/kb/zakony.tar.gz" # veřejné zákony (OZ, OSŘ, ZOK)
 REPO="https://github.com/NexusSync-Systems/LexisLocal.git"
 BRANCH="release-prep"
+# Profil (nastaví bootstrap user-data: export PROFILE=integrace):
+#   plny      — vše výše (výchozí, ~5 h)
+#   integrace — celý server_suite vč. fáze I (živě InfoJednání + ISIR ze serveru), bez srovnání
+#               modelů a bez měření vzdálené odezvy; ~2 h, pak se instance sama vypne
+PROFILE="${PROFILE:-plny}"
+if [ "$PROFILE" = "integrace" ]; then
+  MAX_MINUTES=150; COMPARE_MODELS=""; SKIP_PROBE=1
+fi
 
 exec > >(tee -a /var/log/lexis-remote.log) 2>&1
-echo "=== LexisLocal remote-office start $(date -Is)"
-RUN_ID="$(date +%Y-%m-%d_%H%M)_remote"
+echo "=== LexisLocal remote-office start $(date -Is) (profil $PROFILE)"
+RUN_ID="$(date +%Y-%m-%d_%H%M)_remote$([ "$PROFILE" = "plny" ] || echo "_$PROFILE")"
 S3_DEST="s3://$RESULTS_BUCKET/$RUN_ID/"
 OUT=/opt/remote-results
 # Opakovaný start (Stop → Start, zamrznutí, ruční restart): cloud-init na DLAMI pouští
@@ -94,7 +102,7 @@ npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no
 # Která verze kódu běží + kontrola, že GitHub obsahuje dnešní změny (koncepty, podpisy, audit).
 {
   echo "commit: $(git rev-parse --short HEAD) — $(git log -1 --format='%s (%ci)')"
-  for f in backend/routes/drafts.js backend/lib/signature_check.js backend/public/app-drafts.js; do
+  for f in backend/routes/drafts.js backend/lib/signature_check.js backend/public/app-drafts.js backend/lib/isir_cases.js; do
     [ -f "$f" ] && echo "OK   $f" || echo "CHYBÍ $f  ← na GitHubu nejsou dnešní změny (git push?)"
   done
   echo "nodemailer: $(node -p "require('nodemailer/package.json').version" 2>/dev/null)  express: $(node -p "require('express/package.json').version" 2>/dev/null)"
@@ -178,9 +186,18 @@ echo "Báze zákonů naplněna: $(date -Is)" >> "$OUT/_connect.txt"
 upload
 
 # 6) Základ bez sítě: stejný test přes loopback (pro srovnání se vzdáleným přístupem)
+# 5c) Dosah na státní systémy ze serveru (InfoJednání, ISIR na portu 8443) — jen HTTP kódy.
+{
+  echo "== $(date -Is)"
+  echo "infojednani: $(curl -s -o /dev/null -w '%{http_code} %{time_total}s' 'https://infojednani.gov.cz/api/v1/organizace/lovkod/jednaci-sin?idOrganizace=OSJIMJI')"
+  echo "isir-8443:   $(curl -s -o /dev/null -w '%{http_code} %{time_total}s' 'https://isir.justice.cz:8443/isir_cuzk_ws/IsirWsCuzkService?wsdl')"
+} > "$OUT/_dosah.txt"; cat "$OUT/_dosah.txt"; upload
+
+if [ "${SKIP_PROBE:-0}" != "1" ]; then
 node backend/scripts/remote_probe.js --base https://127.0.0.1 --token "$TOKEN" --insecure \
   --levels 1,2,4 --rounds 2 --label server-loopback --out "$OUT" || echo "!! loopback test selhal"
 upload
+fi
 
 # 7) Celý serverový test (server_suite.js) přes loopback → report do S3 (*_remote/suite/).
 #    RUN_SUITE=0 vypne. Běží na pozadí serveru; testovací objekty mají prefix E2E-.

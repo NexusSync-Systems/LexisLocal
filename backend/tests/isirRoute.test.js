@@ -48,3 +48,23 @@ test('výpadek ISIR → 502 s vysvětlením', async () => {
     expect(r.status).toBe(502);
     expect(r.body.error).toMatch(/nedostupný/);
 });
+
+test('POST /isir/check-now spustí hlídač', async () => {
+    const spy2 = jest.spyOn(isir, 'checkInsolvencySpisy').mockResolvedValue({ checked: 2, changed: 0, failed: 0 });
+    const r = await request(app).post('/api/registries/isir/check-now').set(ADMIN).send({});
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ success: true, checked: 2 });
+    spy2.mockRestore();
+});
+
+test('insZn u spisu: jiné řízení vynuluje uložený stav ISIR, stejné řízení jinak zapsané ne', async () => {
+    const db = require('../lib/database');
+    const c = await request(app).post('/api/spisy').set(ADMIN).send({ nazev: 'Přihláška pohledávky', insZn: 'KSBR 56 INS 1000/2026' });
+    const id = c.body.spis.id;
+    expect(c.body.spis.insZn).toBe('KSBR 56 INS 1000/2026');
+    db.update('spisy', id, { isirStav: 'KONKURS' });
+    let p = await request(app).patch(`/api/spisy/${id}`).set(ADMIN).send({ insZn: '56 INS 1000 / 2026' });
+    expect(p.body.spis.isirStav).toBe('KONKURS');
+    p = await request(app).patch(`/api/spisy/${id}`).set(ADMIN).send({ insZn: 'INS 2000/2026' });
+    expect(p.body.spis.isirStav).toBeNull();
+});

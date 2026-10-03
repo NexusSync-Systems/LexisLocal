@@ -111,6 +111,7 @@ Object.assign(LexisLocalApp.prototype, {
                         : s.hearingsCheckedAt ? 'InfoJednání ověřeno ' + escapeHtml(new Date(s.hearingsCheckedAt).toLocaleString('cs-CZ')) : 'čeká na první kontrolu'}
                     <button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px;margin-left:6px;" onclick="window.appInstance.upravitSoudSpisu('${String(s.id).replace(/[^A-Za-z0-9_.:-]/g, '')}')">Upravit soud / advokáta</button>
                 </div>
+                ${this._isirSpisLine(s)}
                 <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-size:0.85rem;">
                     <span>📄 Dokumentů: <b>${escapeHtml(String(m.documentsCount))}</b></span>
                     <span>⏳ Lhůt: <b>${escapeHtml(String(m.deadlinesCount))}</b> (${escapeHtml(String(m.deadlinesNeedsReview))} k ověření)</span>
@@ -260,6 +261,31 @@ Object.assign(LexisLocalApp.prototype, {
         try {
             await this.ssSend('/spisy', 'POST', { spisZn: spisZn, klient: klient, soud: soud });
             this.loadSpisyList();
+        } catch (e) { alert('Chyba: ' + e.message); }
+    },
+
+    // Insolvence (ISIR): sp. zn. „… INS …“ ze spisu nebo z pole insZn → hodinový hlídač stavu.
+    _isirSpisLine(s) {
+        const zn = s.insZn || (/\bINS\s*\d+\s*\/\s*\d{4}/i.test(s.spisZn || '') ? s.spisZn : '');
+        const id = String(s.id).replace(/[^A-Za-z0-9_.:-]/g, '');
+        const btn = `<button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px;margin-left:6px;" onclick="window.appInstance.upravitInsZnSpisu('${id}')">${zn ? 'Změnit' : 'Sledovat insolvenci'}</button>`;
+        if (!zn) return `<div style="font-size:0.82rem;margin:-6px 0 12px;opacity:0.85;">🏦 Insolvence (ISIR): nesleduje se ${btn}</div>`;
+        const st = s.isirError ? `<span style="color:#d97706;">neověřeno: ${escapeHtml(s.isirError)}</span>`
+            : s.isirStav ? `stav <b>${escapeHtml(s.isirStav)}</b>${s.isirCheckedAt ? ' · ověřeno ' + escapeHtml(new Date(s.isirCheckedAt).toLocaleString('cs-CZ')) : ''}`
+            : 'čeká na první kontrolu';
+        return `<div style="font-size:0.82rem;margin:-6px 0 12px;">🏦 Insolvence (ISIR): <b>${escapeHtml(zn)}</b> · ${st} ${btn}</div>`;
+    },
+
+    async upravitInsZnSpisu(id) {
+        try {
+            const d = await this.ssGet(`/spisy/${id}`);
+            const s = d.spis || {};
+            const v = prompt('Spisová značka insolvenčního řízení ke sledování v ISIR (např. KSBR 56 INS 1000/2026; prázdné = nesledovat):', s.insZn || '');
+            if (v === null) return;
+            if (v.trim() && !/\bINS\s*\d+\s*\/\s*\d{4}/i.test(v)) { alert('Zadejte sp. zn. ve tvaru „KSBR 56 INS 1000/2026“ nebo „INS 1000/2026“.'); return; }
+            await this.ssSend(`/spisy/${id}`, 'PATCH', { insZn: v.trim() });
+            if (v.trim()) { try { await this.ssSend('/registries/isir/check-now', 'POST', {}); } catch (e) { /* ověří hodinový hlídač */ } }
+            this.openSpis ? this.openSpis(id) : this.loadSpisyList();
         } catch (e) { alert('Chyba: ' + e.message); }
     },
 
