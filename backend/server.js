@@ -271,6 +271,8 @@ if (typeof process.env.JEST_WORKER_ID === 'undefined') {
     // eviduje lib/hearings_health.js a po LEXIS_HEARINGS_OUTAGE_ALERT_H upozorní.
     const _runHearings = () => HearingsWatcher.checkAllHearings(WATCH_DIR)
         .then(() => HearingsWatcher.checkSpisy(WATCH_DIR))
+        // 3) insolvenční řízení (ISIR) u spisů se sp. zn. „… INS …“ — změna stavu → upozornění
+        .then(() => require('./lib/isir_cases').checkInsolvencySpisy())
         .catch(err => console.error("⚠️ Background monitored hearings check error:", err.message));
     const _hearingsTimer = setInterval(_runHearings,
         (parseInt(process.env.LEXIS_HEARINGS_INTERVAL_MIN || '', 10) || 60) * 60 * 1000);

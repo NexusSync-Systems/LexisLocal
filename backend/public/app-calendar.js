@@ -260,9 +260,20 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     hearingSearchMode() {
-        const room = this._hearingSearchModeValue() === 'room';
+        const mode = this._hearingSearchModeValue();
+        const room = mode === 'room', isir = mode === 'isir';
         document.getElementById('hs-spzn-wrap').style.display = room ? 'none' : '';
         document.getElementById('hs-room-wrap').style.display = room ? 'grid' : 'none';
+        // ISIR: číslo INS je celostátní — soud se nevybírá (zadá se v sp. zn., je-li známý).
+        document.getElementById('hs-court-wrap').style.display = isir ? 'none' : '';
+        document.getElementById('hs-court').required = !isir;
+        const zn = document.getElementById('hs-spzn');
+        zn.placeholder = isir ? 'např. KSBR 56 INS 1000/2026' : 'např. 12 C 45/2026';
+        const note = document.getElementById('hs-note');
+        if (note) note.textContent = isir
+            ? 'Insolvenční rejstřík (veřejná služba ISIR). Posílá se jen spisová značka.'
+            : 'Informativní zdroj (cca 30 dní dopředu). Závazné je předvolání z datové schránky.';
+        document.getElementById('hs-results').innerHTML = '';
         if (room) this.hearingSearchLoadRooms();
     },
 
@@ -284,6 +295,7 @@ Object.assign(LexisLocalApp.prototype, {
         if (ev) ev.preventDefault();
         const out = document.getElementById('hs-results');
         const mode = this._hearingSearchModeValue();
+        if (mode === 'isir') return this._isirSearchRun(out);
         const court = document.getElementById('hs-court').value;
         const q = new URLSearchParams({ mode, court });
         if (mode === 'room') {
@@ -306,6 +318,40 @@ Object.assign(LexisLocalApp.prototype, {
         } catch (e) {
             out.innerHTML = `<div style="color: var(--danger, #e06c75);">⚠️ Síťová chyba: ${escapeHtml(e.message)}</div>`;
         } finally { btn.disabled = false; }
+    },
+
+    // ── Insolvenční řízení podle sp. zn. (ISIR) ─────────────────────────────
+    async _isirSearchRun(out) {
+        const zn = document.getElementById('hs-spzn').value.trim();
+        if (!zn) { out.innerHTML = '<div style="opacity:0.8;">Zadejte spisovou značku, např. „KSBR 56 INS 1000/2026“ nebo „INS 1000/2026“.</div>'; return; }
+        const btn = document.getElementById('hs-submit');
+        btn.disabled = true; out.innerHTML = '<div style="opacity:0.7;">Hledám v insolvenčním rejstříku…</div>';
+        try {
+            const res = await fetch(`${this.apiBase}/registries/isir/case?spisZn=${encodeURIComponent(zn)}`, { headers: this.getHeaders() });
+            const data = await res.json();
+            if (!res.ok) { out.innerHTML = `<div style="color: var(--danger, #e06c75);">⚠️ ${escapeHtml(data.error || 'Vyhledání v ISIR selhalo.')}</div>`; return; }
+            this._renderIsirResults(data);
+        } catch (e) {
+            out.innerHTML = `<div style="color: var(--danger, #e06c75);">⚠️ Síťová chyba: ${escapeHtml(e.message)}</div>`;
+        } finally { btn.disabled = false; }
+    },
+
+    _renderIsirResults(data) {
+        const out = document.getElementById('hs-results');
+        const cases = data.cases || [], spisy = data.spisy || [];
+        const fmt = d => { const p = String(d || '').split('-'); return p.length === 3 ? `${+p[2]}. ${+p[1]}. ${p[0]}` : (d || ''); };
+        if (!cases.length) { out.innerHTML = `<div style="opacity:0.8;">Řízení ${escapeHtml(data.query || '')} v ISIR nenalezeno.</div>`; return; }
+        const spisInfo = spisy.length
+            ? `<div style="font-size:0.8rem;"><span style="background:#1f6f43;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.72rem;">Váš spis: ${spisy.map(s => escapeHtml(s.nazev || s.spisZn || s.id)).join(', ')}</span> — stav řízení se hlídá automaticky každou hodinu, změnu uvidíte v upozorněních.</div>`
+            : '<div style="font-size:0.78rem;opacity:0.8;">Žádný váš spis tuto sp. zn. nemá. Pro automatické hlídání zapište sp. zn. „… INS …“ do spisu (pole sp. zn. nebo „insZn“).</div>';
+        out.innerHTML = `<div style="font-size:0.8rem;opacity:0.8;">${escapeHtml(data.query || '')} · nalezeno ${cases.length} ${cases.length === 1 ? 'záznam' : 'záznamů'}${data.syncedAt ? ' · data ISIR k ' + escapeHtml(String(data.syncedAt).replace('T', ' ').slice(0, 16)) : ''}</div>` + spisInfo +
+            cases.map(c => `<div class="glass" style="padding:10px 12px;border-radius:10px;border:1px solid ${spisy.length ? '#1f6f43' : 'var(--border-glass)'};display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+                <div style="display:flex;flex-direction:column;gap:3px;">
+                    <div><strong>${escapeHtml(c.spisZn)}</strong> · <span style="font-weight:600;">${escapeHtml(c.stav || 'stav neuveden')}</span></div>
+                    <div style="font-size:0.78rem;opacity:0.8;">${escapeHtml(c.dluznik || '')}${c.mesto ? ' · ' + escapeHtml(c.mesto) : ''}${c.zahajeni ? ' · zahájeno ' + escapeHtml(fmt(c.zahajeni)) : ''}${c.ukonceni ? ' · ukončeno ' + escapeHtml(fmt(c.ukonceni)) : ''}${c.dalsiDluznik ? ' · více dlužníků' : ''}</div>
+                </div>
+                ${/^https:\/\/isir\.justice\.cz\//.test(c.url || '') ? `<a class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;" href="${escapeHtml(c.url)}" target="_blank" rel="noopener noreferrer">Detail v ISIR</a>` : ''}
+            </div>`).join('');
     },
 
     _renderHearingResults(data) {

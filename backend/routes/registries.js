@@ -32,6 +32,27 @@ router.get('/check', async (req, res) => {
     }
 });
 
+// GET /api/registries/isir/case?spisZn=KSBR 56 INS 1000/2026 — insolvenční řízení podle
+// SPISOVÉ ZNAČKY (veřejná WS ISIR, posílá se jen sp. zn.). Výsledek porovná se spisy,
+// ke kterým má uživatel přístup (shoda podle čísla INS a ročníku).
+router.get('/isir/case', async (req, res) => {
+    const isir = require('../lib/isir_cases');
+    const zn = String(req.query.spisZn || '').slice(0, 80);
+    if (!isir.parseInsZn(zn)) return res.status(400).json({ error: 'Zadejte spisovou značku insolvenčního řízení, např. „KSBR 56 INS 1000/2026“ nebo „INS 1000/2026“.' });
+    const r = await isir.fetchInsCase(zn);
+    if (!r.ok) return res.status(r.kind === 'not_configured' ? 400 : 502).json({ error: r.reason, kind: r.kind });
+    const key = isir.insKey(zn);
+    let spisy = [];
+    try {
+        const access = require('../lib/access');
+        spisy = (require('../lib/spisy').listSpisy() || [])
+            .filter(s => access.canAccess(s, req.principal, 'read'))
+            .filter(s => isir.insKey(s.insZn || s.spisZn) === key)
+            .map(s => ({ id: s.id, spisZn: s.spisZn, nazev: s.nazev || s.name || null, isirStav: s.isirStav || null }));
+    } catch (e) { /* bez porovnání se spisy */ }
+    res.json({ query: r.query, syncedAt: r.syncedAt || null, empty: r.empty, cases: r.cases, spisy });
+});
+
 // GET /api/registries/databox?ico=... — vyhledání ID datové schránky (ISDS FindDataBox).
 // Vyžaduje nastavené přihlašovací údaje ISDS (ISDS_LOGIN/ISDS_PASSWORD nebo v nastavení).
 // Bez nich vrací available:false, configured:false (nikdy nefabrikuje ID).
