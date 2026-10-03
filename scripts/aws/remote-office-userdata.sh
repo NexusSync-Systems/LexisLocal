@@ -31,7 +31,24 @@ echo "=== LexisLocal remote-office start $(date -Is)"
 RUN_ID="$(date +%Y-%m-%d_%H%M)_remote"
 S3_DEST="s3://$RESULTS_BUCKET/$RUN_ID/"
 OUT=/opt/remote-results
+# Opakovaný start (Stop → Start, zamrznutí, ruční restart): cloud-init na DLAMI pouští
+# user-data znovu. Testy se NEopakují (backend by běžel se starým tokenem → samé 401);
+# jen se dohrají výsledky prvního běhu + logy z předchozího bootu a instance se vypne.
+if [ -f "$OUT/_run_id" ]; then
+  RUN_ID="$(cat "$OUT/_run_id")"; S3_DEST="s3://$RESULTS_BUCKET/$RUN_ID/"
+  echo "=== opakovaný start → jen nahrání výsledků běhu $RUN_ID $(date -Is)"
+  journalctl -k -b -1 --no-pager 2>/dev/null | tail -n 400 > "$OUT/kernel-predchozi-boot.log"
+  journalctl -u ollama -b -1 --no-pager 2>/dev/null | tail -n 300 > "$OUT/ollama-predchozi-boot.log"
+  journalctl -u lexislocal -b -1 --no-pager 2>/dev/null | tail -n 300 > "$OUT/backend-predchozi-boot.log"
+  cp /var/log/lexis-remote.log "$OUT/" 2>/dev/null
+  systemctl stop lexislocal ollama 2>/dev/null
+  AWS=$(command -v aws || true)
+  for i in 1 2 3 4 5 6; do [ -n "$AWS" ] && "$AWS" s3 cp "$OUT" "$S3_DEST" --recursive --only-show-errors && break; echo "!! upload selhal (pokus $i) — chybí IAM role?"; sleep 60; done
+  shutdown -h +2 "LexisLocal remote test: výsledky dohrány"
+  exit 0
+fi
 mkdir -p "$OUT"
+echo "$RUN_ID" > "$OUT/_run_id"
 
 shutdown -h +"$MAX_MINUTES" "LexisLocal remote test: časový limit"
 
@@ -56,7 +73,7 @@ trap finish EXIT
 # 1) Ollama (souběh, dlouhý timeout načtení, model držet v paměti)
 curl -fsSL https://ollama.com/install.sh | sh
 mkdir -p /etc/systemd/system/ollama.service.d
-printf '[Service]\nEnvironment=OLLAMA_LOAD_TIMEOUT=15m\nEnvironment=OLLAMA_NUM_PARALLEL=%s\nEnvironment=OLLAMA_KEEP_ALIVE=-1\n' "$NUM_PARALLEL" \
+printf '[Service]\nEnvironment=OLLAMA_LOAD_TIMEOUT=15m\nEnvironment=OLLAMA_NUM_PARALLEL=%s\nEnvironment=OLLAMA_KEEP_ALIVE=10m\nEnvironment=OLLAMA_MAX_LOADED_MODELS=2\n' "$NUM_PARALLEL" \
   > /etc/systemd/system/ollama.service.d/override.conf
 systemctl daemon-reload; systemctl enable --now ollama; systemctl restart ollama
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 2; done
@@ -124,7 +141,7 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 UNIT
-systemctl daemon-reload; systemctl enable --now lexislocal
+systemctl daemon-reload; systemctl enable lexislocal; systemctl restart lexislocal
 for i in $(seq 1 60); do curl -sfk -H "X-API-Token: $TOKEN" https://127.0.0.1/api/status >/dev/null && break; sleep 3; done
 if curl -sfk -H "X-API-Token: $TOKEN" https://127.0.0.1/api/status >/dev/null; then echo "=== backend běží (HTTPS) $(date -Is)"
 else echo "!! backend nenaběhl — viz backend.log"; upload; fi
@@ -185,9 +202,20 @@ if [ -n "${COMPARE_MODELS:-}" ] && [ -f backend/scripts/model_compare.js ]; then
       echo "!! model $m nejde stáhnout — ze srovnání vynechán"
     fi
   done
-  node backend/scripts/model_compare.js --base https://127.0.0.1 --token "$TOKEN" --insecure \
-    --models "$OK_MODELS" --out "$OUT/suite" 2>&1 | tail -n 40 || echo "!! srovnání modelů skončilo s chybou"
-  echo "=== srovnání modelů hotovo $(date -Is)"
+  # Model po modelu: před každým uvolnit paměť (ollama stop + page cache), zapsat stav
+  # paměti, časový limit na model a nahrát po každém — zamrznutí jednoho modelu tak
+  # nepřijde o výsledky ostatních (3. 10. 2026 instance zamrzla po 1. modelu).
+  for m in $(echo "$OK_MODELS" | tr ',' ' '); do
+    for lm in $(ollama ps 2>/dev/null | awk 'NR>1 && $1!="" {print $1}' | grep -v '^bge-m3'); do ollama stop "$lm" 2>/dev/null; done
+    sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
+    { echo "== $(date -Is) před $m"; free -m; nvidia-smi --query-gpu=memory.used,memory.total --format=csv 2>/dev/null; } >> "$OUT/pamet.log"
+    echo "=== model $m start $(date -Is)"
+    timeout 50m node backend/scripts/model_compare.js --base https://127.0.0.1 --token "$TOKEN" --insecure \
+      --models "$m" --out "$OUT/suite" 2>&1 | tail -n 15 || echo "!! model $m skončil s chybou nebo vypršel čas"
+    { echo "== $(date -Is) po $m"; free -m; } >> "$OUT/pamet.log"
+    upload
+  done
+  echo "=== srovnání modelů hotovo $(date -Is) (souhrn: suite/*_cmp-*.md)"
   upload
 fi
 echo "=== připraveno pro vzdálený test, server běží do vypnutí $(date -Is)"
