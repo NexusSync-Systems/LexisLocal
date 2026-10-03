@@ -35,6 +35,18 @@ describe('court_hearings_source', () => {
     test('parseSpisZn zahodí č. j. za pomlčkou', () => {
         expect(src.parseSpisZn('12 C 45/2026-58')).toEqual({ cisloSenatu: '12', druhVeci: 'C', bcVec: '45', rocnik: '2026' });
         expect(src.parseSpisZn('nesmysl')).toBeNull();
+        // Opatrovnický rejstřík s mezerami (InfoJednání ho bere i jako „P A NC“, ověřeno 3. 10. 2026)
+        expect(src.parseSpisZn('6 P a Nc 53/2026')).toEqual({ cisloSenatu: '6', druhVeci: 'P a Nc', bcVec: '53', rocnik: '2026' });
+    });
+
+    test('normalizeResponse čte skutečnou odpověď InfoJednání (zachyceno 3. 10. 2026)', () => {
+        const real = { nadrizenaOrganizace: 'Krajský soud Brno', organizace: 'Okresní soud Jihlava', jednaciSin: null, datum: null, typ: 'SPZN',
+            cislo: 6, bcVec: 9207, druh: 'NC', rocnik: 2026, platneK: '2026-10-03T08:16:49+02:00',
+            udalosti: [{ cislo: null, bcVec: null, druh: null, rocnik: null, datum: '05.10.2026', cas: '12:45', predmetJednani: null,
+                resitel: 'Mgr. X', jednaniZruseno: null, neverejneJednani: null, druhJednani: 'Jednání', vysledek: null, datumZapisuVysledku: null, jednaciSin: 'č. 04 I. podlaží' }] };
+        expect(src.normalizeResponse(real)).toEqual({ court: 'Okresní soud Jihlava',
+            events: [{ date: '2026-10-05', time: '12:45', room: 'č. 04 I. podlaží', cancelled: false, kind: 'Jednání', result: null }] });
+        expect(src.normalizeResponse(Object.assign({}, real, { udalosti: [] })).events).toEqual([]);
     });
     test('normalizeResponse snese různé názvy polí', () => {
         const a = src.normalizeResponse({ udalosti: [{ datum: '15. 10. 2026', cas: '9:00', jednaciSin: '12', jednaciZruseno: 'Ne' }] });

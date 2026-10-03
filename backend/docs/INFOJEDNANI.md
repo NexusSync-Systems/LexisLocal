@@ -30,7 +30,12 @@ Stav ukazuje `GET /api/calendar/hearings/status`. Ruční spuštění: `POST /ap
 - Číselníky soudů: `/api/v1/organizace/lov` (KS/MS/VS) a `/api/v1/organizace/podrizene/lov` (OS).
   Kopie (96 soudů) je v `backend/data/courts_infojednani_lov.json`. Kód soudu se dohledá z názvu ve spisu („Okresní soud v Jihlavě“ → `OSJIMJI`), i když je název v 6. pádě. Při nejednoznačnosti se nevrátí nic.
 
-Za běhu toto ověřené není: weby jsou od 1. 10. 2026 mimo provoz a 2. 10. rozhraní vracelo HTTP 500.
+**Ověřeno za běhu 3. 10. 2026** (web znovu v provozu, Chrome → Network):
+- `POST /api/v1/jednani/vyhledej` s výše uvedeným tělem funguje; u okresního soudu je `druhOrganizace` = nadřízený KS/MS povinný (samotný OS → HTTP 400 `JEDNANI_VALIDATION_0009`).
+- `druhVeci` nezáleží na velikosti písmen; web vrací velkými („NC“, „P A NC“). Rejstřík „P a Nc“ se posílá s mezerami.
+- Odpověď: `udalosti[].datum` ve tvaru `05.10.2026`, `cas` `12:45`, `jednaciSin`, `jednaniZruseno` (null = nezrušeno), `platneK`. Nenalezeno = `udalosti: []` (HTTP 200).
+- Číselník soudů na webu má 96 položek (10 KS/MS/VS + 86 OS) — shodný s přibaleným `courts_infojednani_lov.json`.
+- Výchozí nastavení LexisLocal tedy odpovídá; stačí `LEXIS_INFOJEDNANI_VERIFIED=1`. URL, metodu ani šablonu těla měnit netřeba.
 
 ## Co udělat, až budou justiční weby zase funkční
 

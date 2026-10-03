@@ -21,8 +21,11 @@
 const fs = require('fs');
 const path = require('path');
 
-// Adresa odpovídá oficiálnímu frontendu InfoJednání (apiUrl "" + "api/v1" + "/jednani/vyhledej",
-// zachyceno 5/2026 v repu LexisEditor). Za běhu (po výpadku 10/2026) ověř probe skriptem.
+// Adresa odpovídá oficiálnímu frontendu InfoJednání (apiUrl "" + "api/v1" + "/jednani/vyhledej").
+// OVĚŘENO ZA BĚHU 3. 10. 2026 (Chrome, Network): POST JSON, u okresního soudu
+// druhOrganizace = nadřízený KS/MS + okresniSoud = OS (samotný OS → HTTP 400
+// JEDNANI_VALIDATION_0009), odpověď {organizace, udalosti:[{datum:"05.10.2026", cas:"12:45",
+// jednaciSin, jednaniZruseno, druhJednani, …}], platneK}; nenalezeno = udalosti: [].
 const DEFAULT_URL = 'https://infojednani.gov.cz/api/v1/jednani/vyhledej';
 const TIMEOUT_MS = parseInt(process.env.LEXIS_INFOJEDNANI_TIMEOUT_MS || '', 10) || 15000;
 
@@ -46,9 +49,11 @@ function _fill(tpl, vars, encode) {
 /** „12 C 45/2026“, „12C45/2026-58“, „23 Co 120/2025“ → části sp. zn. (č. j. za pomlčkou se zahodí). */
 function parseSpisZn(str) {
     const m = String(str || '').replace(/\s+/g, ' ').trim()
-        .match(/^(\d{1,4})\s*([A-Za-zÁ-žá-ž]{1,5})\s*(\d{1,7})\s*\/\s*(\d{4})/);
+        .match(/^(\d{1,4})\s*([A-Za-zÁ-žá-ž]{1,5}(?:\s+a\s+[A-Za-zÁ-žá-ž]{1,4})?)\s*(\d{1,7})\s*\/\s*(\d{4})/);
     if (!m) return null;
-    return { cisloSenatu: m[1], druhVeci: m[2], bcVec: m[3], rocnik: m[4] };
+    // Rejstřík „P a Nc“ (opatrovnické) má mezery; InfoJednání (ověřeno 3. 10. 2026) bere
+    // druhVeci bez ohledu na velikost písmen a vrací ho velkými („NC“, „P A NC“).
+    return { cisloSenatu: m[1], druhVeci: m[2].replace(/\s+/g, ' '), bcVec: m[3], rocnik: m[4] };
 }
 
 function formatSpisZn(p) {
