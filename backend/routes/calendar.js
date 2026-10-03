@@ -241,6 +241,105 @@ router.get('/hearings/status', (req, res) => {
     }
 });
 
+// ── Ruční vyhledání jednání v InfoJednání + porovnání se spisy kanceláře ─────
+// Primárně podle sp. zn. u soudu; druhá cesta = rozpis jednací síně v daný den.
+// Výsledky se porovnají se spisy, které uživatel smí vidět (firemní režim → ACL).
+function _visibleSpisy(req) {
+    const access = require('../lib/access');
+    let list = [];
+    try { list = require('../lib/spisy').listSpisy(); } catch (e) { list = db.get('spisy') || []; }
+    return list.filter(s => access.canAccess(s, req.principal, 'read'));
+}
+
+function _annotate(req, events, courtCode) {
+    const src = require('../lib/court_hearings_source');
+    const byKey = new Map();
+    for (const s of _visibleSpisy(req)) {
+        const k = src.spisZnKey(s.spisZn);
+        if (!k) continue;
+        if (!byKey.has(k)) byKey.set(k, []);
+        byKey.get(k).push(s);
+    }
+    const tracked = HearingsWatcher.loadMonitoredHearings(WATCH_DIR) || [];
+    return events.map(ev => {
+        const k = src.spisZnKey(ev.spisZn);
+        const cands = k ? (byKey.get(k) || []) : [];
+        // Shoda = stejná sp. zn. i soud. Stejná sp. zn. u spisu bez soudu / s jiným soudem
+        // se ukáže jako „možná shoda“ (sp. zn. se u různých soudů opakují).
+        const exact = cands.find(s => src.resolveCourtCode(s.soudKod, s.soud) === courtCode);
+        const loose = exact ? null : cands[0] || null;
+        const s = exact || loose;
+        const already = tracked.find(h => src.spisZnKey(h.spisovaZnacka || h.spisZn) === k && h.dueDate === ev.date);
+        return Object.assign({}, ev, {
+            match: s ? { spisId: s.id, nazev: s.nazev || '', klient: s.klient || '', odpovednyAdvokat: s.odpovednyAdvokat || '',
+                spisSoud: s.soud || '', exact: !!exact } : null,
+            tracked: already ? { id: already.id, status: already.status } : null
+        });
+    });
+}
+
+// GET /api/calendar/hearings/courts — číselník soudů InfoJednání (96 soudů).
+router.get('/hearings/courts', (req, res) => {
+    const src = require('../lib/court_hearings_source');
+    res.json({ courts: src.courtList().map(c => ({ kod: c.kod, nazev: c.nazev })) });
+});
+
+// GET /api/calendar/hearings/rooms?court=OSJIMJI — jednací síně soudu.
+router.get('/hearings/rooms', async (req, res) => {
+    const r = await require('../lib/court_hearings_source').fetchRooms(String(req.query.court || ''));
+    if (!r.ok) return res.status(r.kind === 'not_configured' ? 400 : 502).json({ error: r.reason, kind: r.kind });
+    res.json({ rooms: r.rooms });
+});
+
+// GET /api/calendar/hearings/search?mode=spzn&court=OSJIMJI&spisZn=6 Nc 9207/2026
+// GET /api/calendar/hearings/search?mode=room&court=OSJIMJI&room=č. 04 I. podlaží&date=2026-10-05
+router.get('/hearings/search', async (req, res) => {
+    const src = require('../lib/court_hearings_source');
+    const q = req.query || {};
+    const court = String(q.court || '').trim();
+    if (!src.courtList().some(c => c.kod === court)) return res.status(400).json({ error: 'Vyberte soud ze seznamu.' });
+    let r;
+    if ((q.mode || 'spzn') === 'room') {
+        r = await src.searchByRoom({ courtCode: court, room: String(q.room || ''), date: String(q.date || '') });
+    } else {
+        if (!src.parseSpisZn(q.spisZn)) return res.status(400).json({ error: 'Spisová značka ve tvaru „12 C 45/2026“.' });
+        r = await src.fetchHearings({ courtCode: court, spisZn: String(q.spisZn) });
+        // Odpověď podle sp. zn. nese značku v hlavičce; pro jistotu doplníme dotaz.
+        if (r.ok) r.events = r.events.map(e => Object.assign({}, e, { spisZn: e.spisZn || src.formatSpisZn(src.parseSpisZn(q.spisZn)) }));
+    }
+    if (!r.ok) return res.status(r.kind === 'not_configured' ? 400 : 502).json({ error: r.reason, kind: r.kind });
+    const events = _annotate(req, r.events || [], court);
+    res.json({
+        mode: q.mode === 'room' ? 'room' : 'spzn', court: r.court || court, courtCode: court, events,
+        matches: events.filter(e => e.match).length,
+        note: 'InfoJednání je informativní (asi 30 dní dopředu); závazné je předvolání doručené do datové schránky.'
+    });
+});
+
+// POST /api/calendar/hearings/track — advokát si nalezené jednání přidá ke sledování.
+// Tělo: { courtCode, spisZn, date, time?, room?, spisId? }. Ručně vybrané = potvrzené.
+router.post('/hearings/track', (req, res) => {
+    const src = require('../lib/court_hearings_source');
+    const b = req.body || {};
+    if (!src.courtList().some(c => c.kod === b.courtCode)) return res.status(400).json({ error: 'Neznámý soud.' });
+    if (!src.parseSpisZn(b.spisZn)) return res.status(400).json({ error: 'Neplatná spisová značka.' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.date || ''))) return res.status(400).json({ error: 'Neplatné datum.' });
+    let spis = null;
+    if (b.spisId) {
+        spis = _visibleSpisy(req).find(s => s.id === b.spisId);
+        if (!spis) return res.status(404).json({ error: 'Spis nenalezen.' });
+        if (!require('../lib/access').canAccess(spis, req.principal, 'write')) return res.status(403).json({ error: 'Ke spisu nemáte oprávnění k zápisu.' });
+    }
+    const court = (src.courtList().find(c => c.kod === b.courtCode) || {}).nazev || b.courtCode;
+    const reg = HearingsWatcher.registerHearing(WATCH_DIR, {
+        spisZn: b.spisZn, date: b.date, time: String(b.time || '').slice(0, 5), room: String(b.room || '').slice(0, 120),
+        court, courtCode: b.courtCode, spisId: spis ? spis.id : null, advokat: spis ? (spis.odpovednyAdvokat || null) : null,
+        source: 'infojednani-manual', needsReview: false
+    });
+    try { logEvent('Kalendář', 'Sledování jednání (ruční vyhledání)', b.spisZn, { hearingId: reg.hearing.id, date: b.date, courtCode: b.courtCode, spisId: spis ? spis.id : null }); } catch (e) {}
+    res.status(reg.created ? 201 : 200).json({ success: true, created: reg.created, hearing: reg.hearing });
+});
+
 // POST /api/calendar/hearings/:id/confirm — advokát potvrdí navržené jednání.
 router.post('/hearings/:id/confirm', (req, res) => {
     const h = HearingsWatcher.confirmHearing(WATCH_DIR, req.params.id);

@@ -187,7 +187,9 @@ function registerHearing(WATCH_DIR, data) {
     const hearings = loadMonitoredHearings(WATCH_DIR);
     const p = source.parseSpisZn(data.spisZn);
     const zn = p ? source.formatSpisZn(p) : (data.spisZn || '');
-    const dup = hearings.find(h => _spisZnOf(h).replace(/\s+/g, '') === zn.replace(/\s+/g, '') && h.dueDate === data.date);
+    // Porovnání bez ohledu na mezery a velikost písmen („6 Nc 9207/2026“ ≡ „6 NC 9207/2026“).
+    const key = source.spisZnKey(zn);
+    const dup = hearings.find(h => (key ? source.spisZnKey(_spisZnOf(h)) === key : _spisZnOf(h).replace(/\s+/g, '') === zn.replace(/\s+/g, '')) && h.dueDate === data.date);
     if (dup) return { hearing: dup, created: false };
     const h = {
         id: data.id || 'hear_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),

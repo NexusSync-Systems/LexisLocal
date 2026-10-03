@@ -238,6 +238,120 @@ Object.assign(LexisLocalApp.prototype, {
         } catch (e) { alert('❌ Síťová chyba: ' + e.message); }
     },
 
+    // ── Vyhledání jednání (InfoJednání) + porovnání se spisy ────────────────
+    async hearingSearchInit() {
+        if (this._hsCourtsLoaded) return;
+        const sel = document.getElementById('hs-court');
+        try {
+            const res = await fetch(`${this.apiBase}/calendar/hearings/courts`, { headers: this.getHeaders() });
+            const data = await res.json();
+            const courts = (data.courts || []).slice().sort((a, b) => a.nazev.localeCompare(b.nazev, 'cs'));
+            sel.innerHTML = '<option value="">— vyberte soud —</option>' +
+                courts.map(c => `<option value="${escapeHtml(c.kod)}">${escapeHtml(c.nazev)}</option>`).join('');
+            this._hsCourtsLoaded = true;
+        } catch (e) { sel.innerHTML = '<option value="">Seznam soudů se nepodařilo načíst</option>'; }
+        const d = document.getElementById('hs-date');
+        if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+    },
+
+    _hearingSearchModeValue() {
+        const r = document.querySelector('input[name="hs-mode"]:checked');
+        return r ? r.value : 'spzn';
+    },
+
+    hearingSearchMode() {
+        const room = this._hearingSearchModeValue() === 'room';
+        document.getElementById('hs-spzn-wrap').style.display = room ? 'none' : '';
+        document.getElementById('hs-room-wrap').style.display = room ? 'grid' : 'none';
+        if (room) this.hearingSearchLoadRooms();
+    },
+
+    async hearingSearchLoadRooms() {
+        if (this._hearingSearchModeValue() !== 'room') return;
+        const court = document.getElementById('hs-court').value;
+        const sel = document.getElementById('hs-room');
+        if (!court) { sel.innerHTML = '<option value="">Nejdřív vyberte soud</option>'; return; }
+        sel.innerHTML = '<option value="">Načítám síně…</option>';
+        try {
+            const res = await fetch(`${this.apiBase}/calendar/hearings/rooms?court=${encodeURIComponent(court)}`, { headers: this.getHeaders() });
+            const data = await res.json();
+            if (!res.ok) { sel.innerHTML = `<option value="">${escapeHtml(data.error || 'Síně se nepodařilo načíst')}</option>`; return; }
+            sel.innerHTML = '<option value="">— vyberte síň —</option>' + (data.rooms || []).map(r => `<option>${escapeHtml(r)}</option>`).join('');
+        } catch (e) { sel.innerHTML = '<option value="">InfoJednání nedostupné</option>'; }
+    },
+
+    async hearingSearchRun(ev) {
+        if (ev) ev.preventDefault();
+        const out = document.getElementById('hs-results');
+        const mode = this._hearingSearchModeValue();
+        const court = document.getElementById('hs-court').value;
+        const q = new URLSearchParams({ mode, court });
+        if (mode === 'room') {
+            const room = document.getElementById('hs-room').value, date = document.getElementById('hs-date').value;
+            if (!court || !room || !date) { out.innerHTML = '<div style="opacity:0.8;">Vyberte soud, jednací síň a datum.</div>'; return; }
+            q.set('room', room); q.set('date', date);
+        } else {
+            const zn = document.getElementById('hs-spzn').value.trim();
+            if (!court || !zn) { out.innerHTML = '<div style="opacity:0.8;">Vyberte soud a zadejte spisovou značku.</div>'; return; }
+            q.set('spisZn', zn);
+        }
+        const btn = document.getElementById('hs-submit');
+        btn.disabled = true; out.innerHTML = '<div style="opacity:0.7;">Hledám v InfoJednání…</div>';
+        try {
+            const res = await fetch(`${this.apiBase}/calendar/hearings/search?${q.toString()}`, { headers: this.getHeaders() });
+            const data = await res.json();
+            if (!res.ok) { out.innerHTML = `<div style="color: var(--danger, #e06c75);">⚠️ ${escapeHtml(data.error || 'Vyhledání selhalo.')}</div>`; return; }
+            this._hsLast = data;
+            this._renderHearingResults(data);
+        } catch (e) {
+            out.innerHTML = `<div style="color: var(--danger, #e06c75);">⚠️ Síťová chyba: ${escapeHtml(e.message)}</div>`;
+        } finally { btn.disabled = false; }
+    },
+
+    _renderHearingResults(data) {
+        const out = document.getElementById('hs-results');
+        const evs = data.events || [];
+        if (!evs.length) { out.innerHTML = `<div style="opacity:0.8;">Nebylo nalezeno žádné jednání (${escapeHtml(data.court || '')}).</div>`; return; }
+        const fmt = d => { const p = String(d || '').split('-'); return p.length === 3 ? `${+p[2]}. ${+p[1]}. ${p[0]}` : d; };
+        const head = `<div style="font-size:0.8rem;opacity:0.8;">${escapeHtml(data.court || '')} · nalezeno ${evs.length} jednání · ve vašich spisech: <strong>${data.matches || 0}</strong></div>`;
+        out.innerHTML = head + evs.map((e, i) => {
+            const m = e.match;
+            const badge = m ? (m.exact
+                ? `<span style="background:#1f6f43;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.72rem;">Váš spis: ${escapeHtml(m.nazev || m.spisId)}</span>`
+                : `<span style="background:#8a6d1d;color:#fff;border-radius:6px;padding:2px 8px;font-size:0.72rem;" title="Stejná sp. zn., ale spis má jiný nebo nevyplněný soud (${escapeHtml(m.spisSoud || '—')})">Možná shoda: ${escapeHtml(m.nazev || m.spisId)}</span>`)
+                : '';
+            const status = e.cancelled ? '<span style="color:#e06c75;font-weight:600;">ZRUŠENO</span>' : '';
+            const action = e.tracked
+                ? `<span style="font-size:0.75rem;opacity:0.8;">✓ Sledováno${e.tracked.status === 'needs_review' ? ' (k potvrzení)' : ''}</span>`
+                : (e.cancelled ? '' : `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;" onclick="window.appInstance.hearingSearchTrack(${i})">Sledovat${m && m.exact ? ' ve spisu' : ''}</button>`);
+            return `<div class="glass" style="padding:10px 12px;border-radius:10px;border:1px solid ${m && m.exact ? '#1f6f43' : 'var(--border-glass)'};display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+                <div style="display:flex;flex-direction:column;gap:3px;">
+                    <div><strong>${escapeHtml(e.spisZn || '—')}</strong> · ${escapeHtml(fmt(e.date))} ${escapeHtml(e.time || '')} ${status}</div>
+                    <div style="font-size:0.78rem;opacity:0.8;">${escapeHtml(e.room || '')}${e.kind ? ' · ' + escapeHtml(e.kind) : ''}${e.judge ? ' · ' + escapeHtml(e.judge) : ''}${e.nonPublic ? ' · neveřejné' : ''}</div>
+                    ${badge ? `<div>${badge}</div>` : ''}
+                </div>
+                <div>${action}</div>
+            </div>`;
+        }).join('');
+    },
+
+    async hearingSearchTrack(i) {
+        const data = this._hsLast; if (!data) return;
+        const e = (data.events || [])[i]; if (!e) return;
+        const body = { courtCode: data.courtCode, spisZn: e.spisZn, date: e.date, time: e.time, room: e.room,
+            spisId: e.match && e.match.exact ? e.match.spisId : undefined };
+        try {
+            const res = await fetch(`${this.apiBase}/calendar/hearings/track`, {
+                method: 'POST', headers: { ...this.getHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+            });
+            const r = await res.json();
+            if (!res.ok) { alert('❌ ' + (r.error || 'Přidání selhalo.')); return; }
+            e.tracked = { id: r.hearing.id, status: r.hearing.status };
+            this._renderHearingResults(data);
+            if (typeof this.loadWorkflowTab === 'function') this.loadWorkflowTab();
+        } catch (err) { alert('❌ Síťová chyba: ' + err.message); }
+    },
+
     async syncHearingsPortal() {
         try {
             console.log("⚖️ Synchronizuji jednání z portálu InfoJednání...");

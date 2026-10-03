@@ -44,7 +44,7 @@ describe('court_hearings_source', () => {
             cislo: 6, bcVec: 9207, druh: 'NC', rocnik: 2026, platneK: '2026-10-03T08:16:49+02:00',
             udalosti: [{ cislo: null, bcVec: null, druh: null, rocnik: null, datum: '05.10.2026', cas: '12:45', predmetJednani: null,
                 resitel: 'Mgr. X', jednaniZruseno: null, neverejneJednani: null, druhJednani: 'Jednání', vysledek: null, datumZapisuVysledku: null, jednaciSin: 'č. 04 I. podlaží' }] };
-        expect(src.normalizeResponse(real)).toEqual({ court: 'Okresní soud Jihlava',
+        expect(src.normalizeResponse(real)).toMatchObject({ court: 'Okresní soud Jihlava',
             events: [{ date: '2026-10-05', time: '12:45', room: 'č. 04 I. podlaží', cancelled: false, kind: 'Jednání', result: null }] });
         expect(src.normalizeResponse(Object.assign({}, real, { udalosti: [] })).events).toEqual([]);
     });

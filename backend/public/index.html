@@ -808,6 +808,36 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Vyhledání jednání v InfoJednání + porovnání se spisy (app-calendar.js: hearingSearch*) -->
+                            <details id="hs-panel" style="margin-top: 20px; border-top: 1px solid var(--border-glass); padding-top: 14px;" ontoggle="if(this.open) window.appInstance.hearingSearchInit()">
+                                <summary style="cursor: pointer; font-family: 'Outfit', sans-serif; font-weight: 600;">🔎 Vyhledat jednání (InfoJednání)</summary>
+                                <form id="hs-form" onsubmit="window.appInstance.hearingSearchRun(event)" style="display: grid; gap: 10px; margin-top: 12px;">
+                                    <div role="radiogroup" aria-label="Způsob hledání" style="display: flex; gap: 14px; font-size: 0.85rem;">
+                                        <label><input type="radio" name="hs-mode" value="spzn" checked onchange="window.appInstance.hearingSearchMode()"> Podle spisové značky</label>
+                                        <label><input type="radio" name="hs-mode" value="room" onchange="window.appInstance.hearingSearchMode()"> Podle jednací síně a data</label>
+                                    </div>
+                                    <label style="font-size: 0.8rem;">Soud
+                                        <select id="hs-court" required onchange="window.appInstance.hearingSearchLoadRooms()" style="width: 100%; padding: 8px; margin-top: 4px;"><option value="">Načítám soudy…</option></select>
+                                    </label>
+                                    <label id="hs-spzn-wrap" style="font-size: 0.8rem;">Spisová značka
+                                        <input id="hs-spzn" type="text" placeholder="např. 12 C 45/2026" autocomplete="off" style="width: 100%; padding: 8px; margin-top: 4px;" />
+                                    </label>
+                                    <div id="hs-room-wrap" style="display: none; gap: 10px; grid-template-columns: 1fr 160px;">
+                                        <label style="font-size: 0.8rem;">Jednací síň
+                                            <select id="hs-room" style="width: 100%; padding: 8px; margin-top: 4px;"><option value="">Nejdřív vyberte soud</option></select>
+                                        </label>
+                                        <label style="font-size: 0.8rem;">Datum
+                                            <input id="hs-date" type="date" style="width: 100%; padding: 8px; margin-top: 4px;" />
+                                        </label>
+                                    </div>
+                                    <div style="display: flex; gap: 10px; align-items: center;">
+                                        <button type="submit" class="btn btn-primary" id="hs-submit">Vyhledat</button>
+                                        <span style="font-size: 0.75rem; opacity: 0.7;">Informativní zdroj (cca 30 dní dopředu). Závazné je předvolání z datové schránky.</span>
+                                    </div>
+                                </form>
+                                <div id="hs-results" aria-live="polite" style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;"></div>
+                            </details>
                         </div>
 
                         <!-- Workflow Rules -->

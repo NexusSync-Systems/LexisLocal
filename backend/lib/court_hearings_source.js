@@ -49,7 +49,7 @@ function _fill(tpl, vars, encode) {
 /** „12 C 45/2026“, „12C45/2026-58“, „23 Co 120/2025“ → části sp. zn. (č. j. za pomlčkou se zahodí). */
 function parseSpisZn(str) {
     const m = String(str || '').replace(/\s+/g, ' ').trim()
-        .match(/^(\d{1,4})\s*([A-Za-zÁ-žá-ž]{1,5}(?:\s+a\s+[A-Za-zÁ-žá-ž]{1,4})?)\s*(\d{1,7})\s*\/\s*(\d{4})/);
+        .match(/^(\d{1,4})\s*([A-Za-zÁ-žá-ž]{1,5}(?:\s+[aA]\s+[A-Za-zÁ-žá-ž]{1,4})?)\s*(\d{1,7})\s*\/\s*(\d{4})/);
     if (!m) return null;
     // Rejstřík „P a Nc“ (opatrovnické) má mezery; InfoJednání (ověřeno 3. 10. 2026) bere
     // druhVeci bez ohledu na velikost písmen a vrací ho velkými („NC“, „P A NC“).
@@ -164,22 +164,36 @@ function _time(v) {
 }
 const _pick = (o, keys) => { for (const k of keys) if (o && o[k] != null && o[k] !== '') return o[k]; return null; };
 
+// Sp. zn. z polí odpovědi ({cislo, druh, bcVec, rocnik}) — při hledání podle síně je
+// má každá událost, při hledání podle sp. zn. je má hlavička odpovědi.
+function _spisZnFrom(o) {
+    if (!o || o.cislo == null || o.bcVec == null || !o.druh || o.rocnik == null) return null;
+    return `${o.cislo} ${String(o.druh).trim()} ${o.bcVec}/${o.rocnik}`;
+}
+
 function normalizeResponse(json) {
     if (!json || typeof json !== 'object') return null;
     const list = Array.isArray(json) ? json : _pick(json, ['udalosti', 'jednani', 'items', 'data', 'results', 'vysledky']);
     if (!Array.isArray(list)) return null;
+    // Hledání podle síně a data: datum a síň jsou v hlavičce, ne u událostí (ověřeno 3. 10. 2026).
+    const headDate = Array.isArray(json) ? null : _pick(json, ['datum']);
+    const headRoom = Array.isArray(json) ? null : _pick(json, ['jednaciSin']);
+    const headZn = Array.isArray(json) ? null : _spisZnFrom(json);
     const events = list.map(ev => {
-        const rawDate = _pick(ev, ['datum', 'datumJednani', 'date', 'datumCas', 'zacatek']);
+        const rawDate = _pick(ev, ['datum', 'datumJednani', 'date', 'datumCas', 'zacatek']) || headDate;
         // Oficiální pole je „jednaniZruseno“ (frontend InfoJednání 5/2026); „jednaciZruseno“
         // používal původní hlídač i LexisEditor — čteme obě.
         const cancelledRaw = _pick(ev, ['jednaniZruseno', 'jednaciZruseno', 'zruseno', 'cancelled', 'zrusene']);
         return {
             date: _isoDate(rawDate),
             time: _time(_pick(ev, ['cas', 'casJednani', 'time']) || rawDate),
-            room: String(_pick(ev, ['jednaciSin', 'sin', 'mistnost', 'room']) || ''),
+            room: String(_pick(ev, ['jednaciSin', 'sin', 'mistnost', 'room']) || headRoom || ''),
             cancelled: cancelledRaw === true || /^(ano|true|1)$/i.test(String(cancelledRaw || '')),
             kind: _pick(ev, ['druhJednani']) || null,
-            result: _pick(ev, ['vysledek']) || null
+            result: _pick(ev, ['vysledek']) || null,
+            spisZn: _spisZnFrom(ev) || headZn || null,
+            judge: _pick(ev, ['resitel']) || null,
+            nonPublic: ev.neverejneJednani === true || /^(ano|true|1)$/i.test(String(ev.neverejneJednani || ''))
         };
     }).filter(e => e.date);
     return { events, court: _pick(json, ['organizace', 'soud', 'court']) || null };
@@ -207,12 +221,16 @@ async function fetchHearings({ courtCode, spisZn }, opts = {}) {
         agenda: null, typHledani: 'SPZN'
     });
     const url = _fill(opts.url || cfg.url, vars, true);
+    return _request(url, cfg.method, body, opts);
+}
+
+async function _request(url, method, body, opts = {}) {
     const doFetch = opts.fetch || (typeof fetch === 'function' ? fetch : null);
     if (!doFetch) return { ok: false, kind: 'unavailable', reason: 'fetch není k dispozici.' };
     const ac = typeof AbortController === 'function' ? new AbortController() : null;
     const t = ac ? setTimeout(() => ac.abort(), opts.timeoutMs || TIMEOUT_MS) : null;
     try {
-        const res = await doFetch(url, cfg.method === 'GET'
+        const res = await doFetch(url, method === 'GET'
             ? { method: 'GET', headers: { 'Accept': 'application/json' }, signal: ac ? ac.signal : undefined }
             : { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body, signal: ac ? ac.signal : undefined });
         if (!res.ok) return { ok: false, kind: 'unavailable', reason: `InfoJednání odpovědělo HTTP ${res.status}.` };
@@ -236,7 +254,57 @@ async function fetchHearings({ courtCode, spisZn }, opts = {}) {
     }
 }
 
+// Kořen API odvozený od adresy vyhledávání (…/api/v1/jednani/vyhledej → …/api/v1).
+function _apiBase() {
+    const u = config().url;
+    const m = String(u).match(/^(https?:\/\/[^/]+\/(?:[^{]*?\/)?api\/v\d+)\//);
+    return m ? m[1] : 'https://infojednani.gov.cz/api/v1';
+}
+
+function _orgFields(courtCode) {
+    const isOs = /^OS/.test(courtCode);
+    const parent = isOs ? (parentCourtCode(courtCode) || null) : null;
+    return { druhOrganizace: isOs ? parent : courtCode, okresniSoud: isOs ? courtCode : null };
+}
+
+/**
+ * Rozpis jednání v jedné jednací síni v daný den (InfoJednání, typHledani JEDNANI —
+ * ověřeno 3. 10. 2026). Každá událost nese svou sp. zn. (ev.spisZn).
+ */
+async function searchByRoom({ courtCode, room, date }, opts = {}) {
+    const cfg = config();
+    if (!cfg.enabled) return { ok: false, kind: 'not_configured', reason: 'Hlídání InfoJednání je vypnuté (LEXIS_INFOJEDNANI_ENABLED=0).' };
+    if (!courtCode) return { ok: false, kind: 'not_configured', reason: 'Vyberte soud.' };
+    if (!room) return { ok: false, kind: 'not_configured', reason: 'Vyberte jednací síň.' };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return { ok: false, kind: 'not_configured', reason: 'Datum ve tvaru RRRR-MM-DD.' };
+    const body = JSON.stringify(Object.assign(_orgFields(courtCode), { jednaciSin: String(room), datumJednani: date, typHledani: 'JEDNANI' }));
+    return _request(_apiBase() + '/jednani/vyhledej', 'POST', body, opts);
+}
+
+/** Seznam jednacích síní soudu (číselník InfoJednání). → { ok, rooms:[názvy] } */
+async function fetchRooms(courtCode, opts = {}) {
+    if (!courtCode || !/^[A-Z0-9]{5,10}$/.test(courtCode)) return { ok: false, kind: 'not_configured', reason: 'Neplatný kód soudu.' };
+    const doFetch = opts.fetch || (typeof fetch === 'function' ? fetch : null);
+    if (!doFetch) return { ok: false, kind: 'unavailable', reason: 'fetch není k dispozici.' };
+    try {
+        const res = await doFetch(_apiBase() + '/organizace/lovkod/jednaci-sin?idOrganizace=' + encodeURIComponent(courtCode), { method: 'GET', headers: { 'Accept': 'application/json' } });
+        if (!res.ok) return { ok: false, kind: 'unavailable', reason: `InfoJednání odpovědělo HTTP ${res.status}.` };
+        const j = typeof res.json === 'function' ? await res.json() : JSON.parse(await res.text());
+        if (!Array.isArray(j)) return { ok: false, kind: 'invalid_response', reason: 'Neznámý formát číselníku síní.' };
+        return { ok: true, rooms: j.map(r => (r && (r.kod || r.nazev)) || (typeof r === 'string' ? r : null)).filter(Boolean) };
+    } catch (e) {
+        return { ok: false, kind: 'unavailable', reason: `InfoJednání nedostupné (${e.message}).` };
+    }
+}
+
+/** Porovnatelný klíč sp. zn.: „6 P a Nc 53/2026“ ≡ „6 P A NC 53/2026“ ≡ „6PANC53/2026“. */
+function spisZnKey(zn) {
+    const p = typeof zn === 'string' ? parseSpisZn(zn) : zn;
+    return p ? `${p.cisloSenatu}|${String(p.druhVeci).toUpperCase().replace(/\s+/g, '')}|${p.bcVec}|${p.rocnik}` : null;
+}
+
 module.exports = {
+    searchByRoom, fetchRooms, spisZnKey,
     fetchHearings, normalizeResponse, parseSpisZn, formatSpisZn,
     resolveCourtCode, parentCourtCode, courtList, detectCourtName, config, DEFAULT_URL, _resetCourtCodes
 };
