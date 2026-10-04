@@ -119,6 +119,14 @@ async function chat(params) {
     _guardLocalOnly('chat', p);
     if (p === 'openai') return _openaiChat(params.messages, params.options);
     if (p === 'anthropic') return _anthropicChat(params.messages, params.options);
+    // Strop délky odpovědi: bez num_predict může model „utéct“ a generovat minuty. Ollama
+    // (stream:false) pošle hlavičky až po dogenerování, takže po 300 s spadne spojení
+    // (serverový test 4. 10. 2026: souběh 8, jeden dotaz Sekretářky 313 s, „fetch failed“).
+    // AGENT_NUM_PREDICT (tokeny, výchozí 3072; 0 = bez stropu). Explicitní hodnota volajícího má přednost.
+    const cap = parseInt(process.env.AGENT_NUM_PREDICT == null ? '3072' : process.env.AGENT_NUM_PREDICT, 10);
+    if (cap > 0 && !params.stream && !(params.options && params.options.num_predict != null)) {
+        params = Object.assign({}, params, { options: Object.assign({}, params.options, { num_predict: cap }) });
+    }
     return ollama.chat(params); // ollama default (respektuje params.model i options)
 }
 async function embeddings(params) {
