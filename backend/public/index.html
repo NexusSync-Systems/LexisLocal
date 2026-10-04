@@ -77,8 +77,8 @@
                 </button>
             </nav>
             <div class="sidebar-footer">
-                <div class="status-indicator online">
-                    <span class="pulse"></span> Server aktivní (<span id="srv-addr"></span>)
+                <div class="status-indicator connecting" id="conn-status" role="status" aria-live="polite" title="Stav spojení se serverem LexisLocal">
+                    <span class="pulse"></span> <span id="conn-text">Připojuji…</span> <span style="opacity:0.75;">&middot; <span id="srv-addr"></span></span>
                     <script>document.getElementById('srv-addr').textContent = location.host || 'lokálně';</script>
                 </div>
             </div>

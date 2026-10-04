@@ -68,6 +68,41 @@
 
 // escapeHtml je vytažen do app-helpers.js (načítá se před app.js) — jeden zdroj pravdy.
 
+// Stav spojení v patičce: ověří /api/status s uloženým tokenem (každých 30 s a po návratu
+// do okna). Dřív svítilo „Server aktivní“ zeleně i bez tokenu a bez spojení.
+function _lexisConnState(state, text) {
+    const el = document.getElementById('conn-status');
+    const tx = document.getElementById('conn-text');
+    if (!el || !tx) return;
+    el.classList.remove('online', 'connecting', 'auth', 'offline');
+    el.classList.add(state);
+    tx.textContent = text;
+    el.title = state === 'auth' ? 'Klikněte a zadejte přístupový token v nastavení' : 'Stav spojení se serverem LexisLocal';
+    el.onclick = state === 'auth' ? () => { const i = document.getElementById('api-token-input'); if (i) { i.scrollIntoView({ block: 'center' }); i.focus(); } } : null;
+}
+async function lexisCheckConnection() {
+    let tok = ''; try { tok = localStorage.getItem('lexis_api_token') || ''; } catch (e) { /* bez úložiště */ }
+    tok = (tok.startsWith('llu_') ? tok : '') || window.LEXIS_API_TOKEN || tok;
+    const base = (location.origin.startsWith('file://') || location.origin.includes('null')) ? 'http://localhost:4000' : location.origin;
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => ctl && ctl.abort(), 8000);
+    try {
+        const r = await fetch(base + '/api/status', { headers: tok ? { 'X-API-Token': tok } : {}, signal: ctl ? ctl.signal : undefined });
+        if (r.status === 401) _lexisConnState('auth', tok ? 'Neplatný token' : 'Chybí token');
+        else if (r.ok) _lexisConnState('online', 'Připojeno');
+        else _lexisConnState('offline', `Server hlásí chybu ${r.status}`);
+    } catch (e) {
+        _lexisConnState('offline', 'Server nedostupný');
+    } finally { clearTimeout(timer); }
+}
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    const _startConn = () => { lexisCheckConnection(); setInterval(lexisCheckConnection, 30000); };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _startConn); else _startConn();
+    window.addEventListener('focus', () => lexisCheckConnection());
+    window.addEventListener('online', () => lexisCheckConnection());
+    window.addEventListener('offline', () => _lexisConnState('offline', 'Bez připojení k síti'));
+}
+
 class LexisLocalApp {
     constructor() {
         // Dynamically adjust API base to current location host (Tailscale / remote IP / VPN)
@@ -305,6 +340,7 @@ class LexisLocalApp {
                     const token = tokenInput.value.trim();
                     this.apiToken = token;
                     localStorage.setItem('lexis_api_token', token);
+                    _lexisConnState('connecting', 'Ověřuji token…'); lexisCheckConnection();
                     
                     const statusText = document.getElementById('token-status-text');
                     if (statusText) {

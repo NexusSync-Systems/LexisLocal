@@ -28,6 +28,8 @@
  *   P  pilotní tok      — datová zpráva .zfo → příloha v doručené poště s datem doručení z ISDS,
  *                         lhůtou, úkolem a stranami; import spisů z CSV (náhled, založení,
  *                         duplicity); pilotní profil; přístupy k datové schránce bez hesla v odpovědi
+ *   Z  pokrytí         — KAŽDÁ čtecí API cesta (GET bez parametrů, zjištěno ze zdrojáků routes/):
+ *                         s tokenem bez chyby 5xx a bez úniku stack trace, bez tokenu 401
  *   H  LLM-judge        — volitelné hodnocení odpovědí z E silnějším modelem
  *                         (JUDGE_API_KEY + JUDGE_MODEL v prostředí, Anthropic API)
  *
@@ -858,6 +860,48 @@ async function phaseP() {
         { severity: 'medium', detail: `${cfg.status} · příjem ${cfg.json && cfg.json.config && cfg.json.config.isds && JSON.stringify(cfg.json.config.isds.inbox && { configured: cfg.json.config.isds.inbox.configured, enabled: cfg.json.config.isds.inbox.enabled })}` });
 }
 
+// ─── Z: pokrytí všech čtecích cest ──────────────────────────────────────────
+// Seznam se čte ze zdrojáků (server.js + routes/), takže nová routa se otestuje sama.
+function _allGetRoutes() {
+    const root = path.join(__dirname, '..');
+    const srv = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+    const out = new Set();
+    for (const m of srv.matchAll(/app\.get\('(\/api\/[^']*)'/g)) out.add(m[1]);
+    for (const m of srv.matchAll(/app\.use\('(\/api\/[^']+)',\s*require\('\.\/routes\/([\w-]+)'\)(?:\.(\w+))?\)/g)) {
+        const [, mount, file, sub] = m;
+        let src = '';
+        try { src = fs.readFileSync(path.join(root, 'routes', file + '.js'), 'utf8'); } catch (e) { continue; }
+        for (const r of src.matchAll(/(\w+)\.get\(\s*'(\/[^']*)'/g)) {
+            if (sub ? r[1] !== sub : !/router$/i.test(r[1])) continue;
+            out.add((mount + (r[2] === '/' ? '' : r[2])).replace(/\/$/, ''));
+        }
+    }
+    return [...out].filter(p => !p.includes(':') && !p.includes('*')).sort();
+}
+// Čtecí cesty, které záměrně stahují soubor nebo trvají dlouho — volají se, ale bez čekání na tělo nad 2 min.
+const Z_SLOW = /\/(export|telemetry|rag-report|green-metrics|models\/sovereign|readiness)/;
+async function phaseZ() {
+    console.log('\nZ — pokrytí všech čtecích cest');
+    let routes = [];
+    try { routes = _allGetRoutes(); } catch (e) { record('Z', 'Z0', 'Seznam cest ze zdrojáků', false, { severity: 'medium', detail: e.message }); return; }
+    record('Z', 'Z0', 'Seznam čtecích cest ze zdrojáků', routes.length >= 40, { severity: 'low', detail: `${routes.length} cest` });
+    const err5 = [], leaks = [], open = [], slow = [];
+    for (const r of routes) {
+        const res = await get(r, { timeout: Z_SLOW.test(r) ? 180000 : 60000 });
+        if (res.status === 0 || res.status >= 500) err5.push(`${r} → ${res.status || res.error}${res.json && res.json.error ? ' (' + short(res.json.error, 80) + ')' : ''}`);
+        if (leaksStack(res.text)) leaks.push(r);
+        if (res.ms > 10000) slow.push(`${r} ${(res.ms / 1000).toFixed(1)} s`);
+        const anon = await request('GET', r, { token: '', timeout: 30000 });
+        if (r !== '/api/status' && anon.status !== 401) open.push(`${r} → ${anon.status}`);
+    }
+    record('Z', 'Z1', `Všechny čtecí cesty (${routes.length}) bez chyby serveru`, err5.length === 0, { severity: 'high', detail: err5.join('; '),
+        repro: 'GET <cesta> s platným tokenem', expected: 'stav < 500', actual: err5.join('; ') });
+    record('Z', 'Z2', 'Žádná odpověď neprozrazuje stack trace', leaks.length === 0, { severity: 'medium', detail: leaks.join(', ') });
+    record('Z', 'Z3', 'Bez tokenu všechny čtecí cesty → 401', open.length === 0, { severity: 'critical', detail: open.join('; '),
+        repro: 'GET <cesta> bez X-API-Token', expected: '401', actual: open.join('; ') });
+    record('Z', 'Z4', 'Čtecí cesty do 10 s', slow.length === 0, { severity: 'low', detail: slow.join('; ') });
+}
+
 // ─── úklid ───────────────────────────────────────────────────────────────────
 async function cleanup() {
     console.log('\nÚklid testovacích objektů');
@@ -936,6 +980,7 @@ function writeReport(meta) {
         if (phaseOn('U')) await phaseU();
         if (phaseOn('I')) await phaseI();
         if (phaseOn('P')) await phaseP();
+        if (phaseOn('Z')) await phaseZ();
         if (phaseOn('G')) meta.load = await phaseG();
         if (phaseOn('H')) meta.judge = await phaseH();
     } catch (e) {

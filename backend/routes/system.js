@@ -145,7 +145,9 @@ router.get('/models/sovereign', async (req, res) => {
             recommendedActive: matched[0] || 'llama3'
         });
     } catch (err) {
-        res.status(500).json({ error: `Chyba při zjišťování suverénních modelů: ${err.message}` });
+        // Nedostupná Ollama není chyba serveru — 503 s vysvětlením (nalezeno testem pokrytí 3. 10. 2026).
+        const down = /fetch failed|ECONNREFUSED|ENOTFOUND|connect/i.test(String(err && (err.message || err.code)));
+        res.status(down ? 503 : 500).json({ error: down ? 'Lokální AI (Ollama) neběží nebo není dostupná — seznam modelů nelze zjistit.' : `Chyba při zjišťování suverénních modelů: ${err.message}`, available: false });
     }
 });
 

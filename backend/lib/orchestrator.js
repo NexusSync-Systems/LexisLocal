@@ -333,6 +333,8 @@ class ChiefOrchestrator {
         }
 
         if (pseudoMap && typeof finalResponse === 'string') finalResponse = restorePseudonyms(finalResponse, pseudoMap);
+        // Tajné hodnoty serveru se do odpovědi nedostanou ani přes orchestraci (lib/leak_guard.js).
+        if (typeof finalResponse === 'string') { try { finalResponse = require('./leak_guard').guardLeaks(finalResponse, { instructions: [] }).text; } catch (e) { /* best-effort */ } }
 
         // Deterministické dorovnání: chybný název zákona u správného čísla + vynechané výpočty lhůt.
         if (typeof finalResponse === 'string') {

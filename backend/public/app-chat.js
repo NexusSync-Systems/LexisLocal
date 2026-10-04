@@ -669,6 +669,7 @@ Object.assign(LexisLocalApp.prototype, {
             const urlSel = document.getElementById('reg-cfg-isds-url');
             if (urlSel) urlSel.value = /czebox/.test(isds.url || '') ? 'https://ws1.czebox.cz/DS/dx' : 'https://ws1.mojedatovaschranka.cz/DS/dx';
             set('reg-cfg-isds-login', isds.login);
+            this._isdsSavedLogin = isds.login || '';
             const pw = document.getElementById('reg-cfg-isds-password');
             if (pw) pw.placeholder = isds.hasPassword ? 'Heslo uloženo — prázdné = beze změny' : 'Heslo';
             const cb = document.getElementById('reg-cfg-isds-inbox');
@@ -725,6 +726,14 @@ Object.assign(LexisLocalApp.prototype, {
         const el = document.getElementById('reg-cfg-isds-status');
         const btn = document.getElementById('btn-isds-poll');
         if (btn) btn.disabled = true;
+        // Vyplněné, ale neuložené údaje se nejdřív uloží — dřív „Stáhnout teď“ hlásilo
+        // „Chybí přihlašovací údaje“, i když byly ve formuláři (test 3. 10. 2026).
+        const pw = (document.getElementById('reg-cfg-isds-password') || {}).value || '';
+        const login = (document.getElementById('reg-cfg-isds-login') || {}).value || '';
+        if (pw || (login && login !== this._isdsSavedLogin)) {
+            if (el) { el.textContent = 'Ukládám přístup…'; el.style.color = ''; }
+            await this.saveRegistryConfig();
+        }
         if (el) { el.textContent = 'Stahuji z datové schránky…'; el.style.color = ''; }
         try {
             const res = await fetch(`${this.apiBase}/registries/isds/inbox/poll`, { method: 'POST', headers: this.getHeaders() });

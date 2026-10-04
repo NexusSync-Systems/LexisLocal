@@ -308,6 +308,13 @@ router.post('/:agentId', async (req, res) => {
         try {
             const sourceText = [prompt, context, ...ragContextChunks.map(c => c.text)].filter(Boolean).join('\n');
             let modelText = response.message.content;
+            // Únik interních pokynů nebo tajných hodnot → program odpověď opraví (lib/leak_guard.js).
+            const lg = require('../lib/leak_guard').guardLeaks(modelText, {
+                // Jen vlastní pokyny agenta — fakta od programu (lhůty, příslušnost, osnova) a podklady
+                // ze spisů/báze model citovat smí a má.
+                instructions: [systemPromptText]
+            });
+            modelText = lg.text;
             let oppRedacted = [];
             if (profile.kind === 'opponent_letter') {
                 const rr = redactForOpponent(modelText, sourceText);
@@ -331,7 +338,7 @@ router.post('/:agentId', async (req, res) => {
             draftBody = body; draftWarn = warn;
             outputGuard = { replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
                 clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx, proceduralAppended: !!procApx,
-                taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted,
+                taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted, promptLeakBlocked: lg.promptLeak, secretsRedacted: lg.redacted,
                 chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null };
         } catch (gErr) {
             console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);

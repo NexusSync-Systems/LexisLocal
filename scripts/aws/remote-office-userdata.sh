@@ -25,11 +25,17 @@ COMPARE_MODELS="qwen3.5:9b llama3.1:8b granite4.2:8b mistral-nemo:12b"
 KB="backend/eval/kb/zakony.tar.gz" # veřejné zákony (OZ, OSŘ, ZOK)
 REPO="https://github.com/NexusSync-Systems/LexisLocal.git"
 BRANCH="release-prep"
-# Profil (nastaví bootstrap user-data: export PROFILE=integrace):
+# Profil (nastaví bootstrap user-data, např. export PROFILE=kompletni):
 #   plny      — vše výše (výchozí, ~5 h)
 #   integrace — celý server_suite vč. fáze I (živě InfoJednání + ISIR ze serveru), bez srovnání
 #               modelů a bez měření vzdálené odezvy; ~2,5–3 h, nejpozději po 4 h se instance vypne
+#   kompletni — kontrola VŠEHO, co aplikace umí: měření odezvy, celý server_suite (A–Z vč. agentů,
+#               zátěže, InfoJednání + ISIR živě, pilotního toku a pokrytí všech čtecích cest)
+#               a záloha se zkouškou obnovy; bez srovnání modelů. ~3 h, vypne se nejpozději po 5,5 h.
 PROFILE="${PROFILE:-plny}"
+if [ "$PROFILE" = "kompletni" ]; then
+  MAX_MINUTES=330; COMPARE_MODELS=""
+fi
 if [ "$PROFILE" = "integrace" ]; then
   # 3. 10. 2026: samotné nahrání OZ trvalo 43 min → 150 min nestačilo na celý suite.
   MAX_MINUTES=240; COMPARE_MODELS=""; SKIP_PROBE=1

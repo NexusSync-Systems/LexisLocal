@@ -2356,3 +2356,14 @@ html:not([data-theme="dark"]) .badge-ai { color: #7e22ce; }
 /* Pilotní profil skrývá moduly (app-users.js applyProfile) */
 .nav-btn[hidden] { display: none !important; }
 [hidden] { display: none !important; }
+
+/* Stav spojení (app.js checkConnection): připojuji → připojeno / bez tokenu / nedostupný */
+.status-indicator.connecting { color: var(--text-secondary); }
+.status-indicator.connecting .pulse { background-color: var(--text-secondary); box-shadow: none; animation: conn-blink 1s ease-in-out infinite; }
+.status-indicator.auth { color: #d97706; cursor: pointer; }
+.status-indicator.auth .pulse { background-color: #d97706; box-shadow: 0 0 8px rgba(217, 119, 6, 0.5); }
+.status-indicator.offline { color: #dc2626; }
+.status-indicator.offline .pulse { background-color: #dc2626; box-shadow: 0 0 8px rgba(220, 38, 38, 0.5); }
+@keyframes conn-blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .status-indicator.connecting .pulse { animation: none; } }
+#conn-status { flex-wrap: wrap; gap: 4px 8px; }
