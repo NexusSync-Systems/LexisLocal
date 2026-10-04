@@ -640,6 +640,37 @@
                                     </div>
                                 </div>
 
+                                <!-- Vzorové výstupy (few-shot) asistenta — app-agent-examples.js -->
+                                <div class="form-group" id="agent-ex-panel" style="display: none;">
+                                    <label style="display: block; font-size: 0.85rem; margin-bottom: 8px; opacity: 0.9;">🧩 Vzorové výstupy (ukázky pro AI) <span id="agent-ex-count" style="opacity:0.6;font-size:0.76rem;"></span></label>
+                                    <div style="background: var(--sunken-1); padding: 12px 15px; border-radius: 8px; border: 1px solid var(--border-glass);">
+                                        <div style="font-size: 0.74rem; opacity: 0.7; line-height: 1.45; margin-bottom: 10px;">
+                                            Ukázka = zadání a výstup přesně ve formě a stylu, jaký chcete. Asistent dostane k dotazu nejvýše 2 nejpodobnější ukázky (a ty označené „vždy“).
+                                            Údaje z ukázek nepřebírá — program to hlídá. Používejte fiktivní jména nebo pole <code>[Doplnit – …]</code>.
+                                        </div>
+                                        <div id="agent-ex-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; max-height: 200px; overflow-y: auto;"></div>
+                                        <div id="agent-ex-editor" style="display: none; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-glass); padding-top: 10px;">
+                                            <input type="text" id="agent-ex-title" maxlength="120" placeholder="Název ukázky (např. Předžalobní výzva — náš styl)" style="width: 100%; padding: 8px 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.82rem;">
+                                            <textarea id="agent-ex-zadani" maxlength="2000" rows="3" placeholder="Zadání, jak by ho napsal advokát (např. Napiš předžalobní výzvu k zaplacení 54 300 Kč za dílo…)" style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.82rem; resize: vertical;"></textarea>
+                                            <textarea id="agent-ex-vystup" maxlength="8000" rows="9" placeholder="Vzorový výstup — celý text přesně tak, jak má vypadat." style="width: 100%; padding: 10px; background: var(--sunken-2); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.82rem; font-family: 'JetBrains Mono', monospace; resize: vertical;"></textarea>
+                                            <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem;">
+                                                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="agent-ex-enabled" checked style="accent-color: var(--accent-blue);"> Zapnuto</label>
+                                                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" title="Ukázka se přidá ke každému dotazu (např. obecný styl kanceláře). Zabírá místo v okně modelu."><input type="checkbox" id="agent-ex-always" style="accent-color: var(--accent-blue);"> Použít vždy</label>
+                                                <span id="agent-ex-len" style="opacity:0.55;font-size:0.74rem;"></span>
+                                            </div>
+                                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                                <button type="button" class="btn btn-primary btn-sm" onclick="window.appInstance.saveAgentExample()" style="padding: 6px 14px; font-size: 0.8rem;">💾 Uložit ukázku</button>
+                                                <button type="button" class="btn btn-secondary btn-sm" onclick="window.appInstance.closeAgentExampleEditor()" style="padding: 6px 12px; font-size: 0.8rem;">Zrušit</button>
+                                            </div>
+                                        </div>
+                                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px;">
+                                            <button type="button" class="btn btn-secondary btn-sm" id="agent-ex-add" onclick="window.appInstance.editAgentExample(-1)" style="padding: 6px 12px; font-size: 0.8rem;">➕ Nová ukázka</button>
+                                            <button type="button" class="btn btn-secondary btn-sm" id="agent-ex-reset" onclick="window.appInstance.resetAgentExamples()" style="display: none; padding: 6px 12px; font-size: 0.78rem;">↺ Výchozí ukázky</button>
+                                            <span id="agent-ex-status" role="status" style="font-size: 0.76rem; opacity: 0.85;"></span>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="form-group" style="flex: 1; display: flex; flex-direction: column; min-height: 200px;">
                                     <label style="display: block; font-size: 0.85rem; margin-bottom: 5px; opacity: 0.9;">Systémové instrukce chování (System Prompt)</label>
                                     <textarea id="agent-form-prompt" class="form-control code-editor-style" placeholder="Popište přesně chování, styl, odborný tón a pravidla, jakými se má asistent řídit..." required style="flex: 1; width: 100%; min-height: 180px; padding: 12px; background: var(--sunken-2); border: 1px solid var(--border-glass); border-radius: 6px; color: #a7f3d0; font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; line-height: 1.5; resize: vertical; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);"></textarea>
@@ -1369,6 +1400,7 @@
     <script src="app-alerts-audit.js"></script>
     <script src="app-agents.js"></script>
     <script src="app-agent-kb.js"></script>
+    <script src="app-agent-examples.js"></script>
     <script src="app-calendar.js"></script>
     <script src="app-managerial.js"></script>
     <script src="app-email.js"></script>

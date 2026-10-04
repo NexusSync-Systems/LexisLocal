@@ -263,7 +263,11 @@
       "meta": {
         "noInventedIds": true
       },
-      "severity": "high"
+      "severity": "high",
+      "mustNot": [
+        "Vážen[áa]\\s+(paní\\s+)?(Ing\\.|Tomáš|Horák)",
+        "(^|\\n)\\s*Oslovení:"
+      ]
     },
     {
       "id": "W2",

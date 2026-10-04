@@ -28,6 +28,12 @@ const czProofread = require('../lib/cz_proofread');
 const { reviewInChunks } = require('../lib/chunked_review');
 const { guardInventedIdentifiers, fixLawNames, buildWarnings } = require('../lib/output_guard');
 const { agentNumCtx, isEmbeddingModel, isModelMissingError } = require('../lib/agent_options');
+const demandLetter = require('../lib/demand_letter');
+const outputChecks = require('../lib/output_checks');
+const { selectExamples, examplesMessages } = require('../lib/agent_examples');
+
+// Spojení s modelem selhalo (ne „model neumí formát“) → nemá smysl zkoušet jiný režim.
+const _isConnError = e => /fetch failed|ECONN|ETIMEDOUT|EHOSTUNREACH|socket|timeout|aborted|terminated/i.test(String(e && (e.message || e.cause && e.cause.code) || ''));
 
 // POST /api/agent/:agentId - Volání agenta s modelem dle výběru
 router.post('/:agentId', async (req, res) => {
@@ -215,6 +221,24 @@ router.post('/:agentId', async (req, res) => {
             if (note) messages.push({ role: 'system', content: note });
         }
 
+        // Výzva k úhradě / dopis protistraně: model vrátí JSON a dopis sestaví program
+        // (lib/demand_letter.js). AGENT_STRUCTURED_LETTERS=0 vypne.
+        const demand = demandLetter.isDemandLetter(prompt) && !draftTarget && profile.kind !== 'proofread' &&
+            (agentId === 'spisovatel' || agent.structuredLetters === true) && process.env.AGENT_STRUCTURED_LETTERS !== '0';
+        // Vzorové výstupy kanceláře (few-shot, lib/agent_examples.js) — jen když se vejdou do okna.
+        let examples = selectExamples(agent, prompt);
+        if (examples.length) {
+            const used = messages.reduce((n, m) => n + String(m.content || '').length, 0) + String(prompt).length;
+            const exLen = examples.reduce((n, e) => n + e.zadani.length + e.vystup.length, 0);
+            if ((used + exLen) / 3 > agentNumCtx() * 0.7) {
+                console.warn(`⚠️ Agent [${agent.name}]: vzorové výstupy se nevejdou do okna modelu — vynechávám je.`);
+                examples = [];
+            }
+        }
+        messages.push(...examplesMessages(examples, { asNote: demand }));
+        let letterInstrIdx = -1;
+        if (demand) { messages.push({ role: 'system', content: demandLetter.INSTRUCTION }); letterInstrIdx = messages.length - 1; }
+
         messages.push({ role: 'user', content: prompt });
 
         // Okno kontextu: bez num_ctx Ollama použije výchozí malé okno (2–4k tokenů) a dlouhý
@@ -250,7 +274,33 @@ router.post('/:agentId', async (req, res) => {
         // get_document, check_registry) v mezích svých oprávnění. Za AGENT_TOOLS=1; jinak
         // beze změny. RAG kontext je už předvyplněný výše — tooly slouží ke zpřesnění.
         let response, toolsUsed = [];
-        if (agentTools.enabled() && agentTools.toolsForAgent(agent).length > 0) {
+        // Strukturovaný dopis: JSON → dopis poskládaný programem. Selže-li čtení JSON
+        // (starší Ollama bez formátu, jiný poskytovatel), pokračuje se volným textem.
+        let letter = null, letterRaw = null;
+        const callLetter = async (msgs) => {
+            const r = await llm.chat({ model: selectedModel, messages: msgs, options: chatOptions, format: demandLetter.SCHEMA });
+            letterRaw = r && r.message ? r.message.content : '';
+            let data = demandLetter.parseLetterJson(letterRaw);
+            if (!data) return null;
+            if (pseudoMap) data = demandLetter.mapStrings(data, (x) => restorePseudonyms(x, pseudoMap));
+            return demandLetter.renderLetter(data, { prompt });
+        };
+        if (demand) {
+            try {
+                letter = await callLetter(messages);
+                if (letter) {
+                    response = { message: { content: letter.text } };
+                    console.log(`✉️ Agent [${agent.name}]: dopis sestaven programem ze strukturovaných dat (chybí: ${letter.missing.length}).`);
+                } else console.warn(`⚠️ Agent [${agent.name}]: strukturovaný dopis — JSON nejde přečíst, pokračuji volným textem.`);
+            } catch (lErr) {
+                if (isModelMissingError(lErr) || _isConnError(lErr)) throw lErr;
+                console.warn(`⚠️ Agent [${agent.name}]: strukturovaný dopis selhal (${lErr.message}), pokračuji volným textem.`);
+            }
+            if (!letter && letterInstrIdx >= 0) messages.splice(letterInstrIdx, 1);
+        }
+        if (response) {
+            // hotovo (strukturovaný dopis)
+        } else if (agentTools.enabled() && agentTools.toolsForAgent(agent).length > 0) {
             const ctx = {
                 ragFilters: resolvedFilters, // search_rag respektuje scope/přístup agenta
                 principal: callerPrincipal, // koncepty: ACL spisu podle volajícího
@@ -272,10 +322,60 @@ router.post('/:agentId', async (req, res) => {
             response = await llm.chat({ model: selectedModel, messages: messages, options: chatOptions });
         }
 
-        if (pseudoMap && response && response.message) {
+        const restoreOpts = draftTarget ? { alwaysRestore: (v) => !!v && draftTarget.text.includes(v) } : {};
+        const rawFirst = letter ? letterRaw : (response && response.message ? response.message.content : '');
+        if (pseudoMap && response && response.message && !letter) {
             // Při revizi konceptu se vrací i údaje, které v konceptu už stály (např. RČ v plné moci).
-            response.message.content = restorePseudonyms(response.message.content, pseudoMap,
-                draftTarget ? { alwaysRestore: (v) => !!v && draftTarget.text.includes(v) } : {});
+            response.message.content = restorePseudonyms(response.message.content, pseudoMap, restoreOpts);
+        }
+
+        // Kontrola výstupu a jedna oprava modelem (lib/output_checks.js). Program sám opraví
+        // oslovení a pole [Doplnit – …]; co musí opravit model (chybí částka, lhůta, převzaté
+        // údaje z ukázky, jiný jazyk), dostane jako konkrétní výtku. AGENT_SELF_CHECK=0 vypne.
+        let selfCheck = null;
+        if (process.env.AGENT_SELF_CHECK !== '0' && response && response.message) {
+            try {
+                const checkSrc = [context, ...ragContextChunks.map(c => c.text)].filter(Boolean).join('\n');
+                const evaluate = (text, lt) => {
+                    const fx = outputChecks.applyFixes(text, { addressee: lt && lt.addressee, gender: lt && lt.data && lt.data.adresat && lt.data.adresat.pohlavi });
+                    const ck = outputChecks.checkOutput({ text: fx.text, prompt, sourceText: checkSrc, demand, bilingual: profile.bilingual, agentId, examples });
+                    return { text: fx.text, fixes: fx.fixes, issues: ck.issues, copied: ck.copied, letter: lt };
+                };
+                const first = evaluate(response.message.content, letter);
+                let final = first, retried = false;
+                const budget = Number(process.env.AGENT_RETRY_BUDGET_MS || 90000);
+                if (first.issues.length && Date.now() - startTime < budget) {
+                    retried = true;
+                    const fb = outputChecks.retryMessage(first.issues) + (letter ? '\nVrať opět POUZE JSON objekt.' : '');
+                    const msgs = messages.concat([{ role: 'assistant', content: rawFirst || '' }, { role: 'user', content: fb }]);
+                    try {
+                        let second = null;
+                        if (letter) {
+                            const lt2 = await callLetter(msgs);
+                            if (lt2) second = evaluate(lt2.text, lt2);
+                        } else {
+                            const r2 = await llm.chat({ model: selectedModel, messages: msgs, options: chatOptions });
+                            let t2 = r2 && r2.message ? r2.message.content : '';
+                            if (pseudoMap) t2 = restorePseudonyms(t2, pseudoMap, restoreOpts);
+                            if (t2 && t2.trim()) second = evaluate(t2, null);
+                        }
+                        if (second) final = outputChecks.better(first, second);
+                    } catch (rErr) { console.warn(`⚠️ Agent [${agent.name}]: oprava výstupu selhala (${rErr.message}) — ponechávám první verzi.`); }
+                }
+                // Údaje převzaté z ukázky, které zůstaly, nahradí program polem k doplnění.
+                let text = final.text; const fixes = final.fixes.slice();
+                if (final.copied && final.copied.length) {
+                    const fx = outputChecks.applyFixes(text, { copied: final.copied });
+                    text = fx.text; fixes.push(...fx.fixes.filter(f => /ukázky/.test(f)));
+                }
+                if (final.letter) letter = final.letter;
+                response.message.content = text;
+                const remaining = final.issues.filter(i => i.code !== 'copied_example' || !(final.copied || []).length);
+                selfCheck = { found: first.issues.map(i => i.code), retried, remaining: remaining.map(i => i.code),
+                    remainingText: remaining.map(i => i.msg), fixes, structuredLetter: !!letter, missing: letter ? letter.missing : [],
+                    examplesUsed: examples.map(e => e.title) };
+                if (first.issues.length) console.log(`🔎 Agent [${agent.name}]: kontrola výstupu — nalezeno ${first.issues.map(i => i.code).join(', ')}${retried ? `; po opravě zbývá: ${selfCheck.remaining.join(', ') || 'nic'}` : ''}.`);
+            } catch (scErr) { console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', scErr.message); }
         }
 
         // #2: Antihalucinační kontrola citací i v single-agent routě (dřív jen v
@@ -333,13 +433,17 @@ router.post('/:agentId', async (req, res) => {
             const mainText = profile.kind === 'proofread' ? czProofread.finalize(lf.text, proofTarget) : lf.text;
             const body = mainText + clauseApx.text + dateApx + procApx;
             const oppLine = oppRedacted.length ? `• Z dopisu protistraně odstraněno: ${oppRedacted.join(', ')} (protistrana je nepotřebuje).` : '';
-            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), oppLine] });
+            const scLines = selfCheck ? [
+                selfCheck.structuredLetter && selfCheck.missing.length ? `• Dopis sestavil program; doplňte: ${selfCheck.missing.join(', ')}.` : '',
+                ...selfCheck.remainingText.map(t => `• Kontrola: ${t.replace(/^V dopise /, 'v dopise ').replace(/ Uveď.*$| Oprav.*$/, '')}`)
+            ] : [];
+            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), oppLine, ...scLines] });
             response.message.content = body + warn;
             draftBody = body; draftWarn = warn;
             outputGuard = { replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
                 clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx, proceduralAppended: !!procApx,
                 taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted, promptLeakBlocked: lg.promptLeak, secretsRedacted: lg.redacted,
-                chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null };
+                chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null, selfCheck };
         } catch (gErr) {
             console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);
         }
@@ -405,6 +509,7 @@ router.post('/:agentId', async (req, res) => {
                 kind: 'promlceni', base: dateFacts.limitation.event, end: dateFacts.limitation.subjectiveEnd, objectiveEnd: dateFacts.limitation.objectiveEnd
             }] : []) : null,
             outputGuard: outputGuard,
+            examplesUsed: selfCheck ? selfCheck.examplesUsed : [],
             timestamp: new Date().toISOString()
         });
 

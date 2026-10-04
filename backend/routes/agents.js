@@ -6,7 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { loadAgents, saveAgent, deleteAgent, resetAgentToDefault } = require('../lib/agents');
+const { loadAgents, saveAgent, saveExamples, deleteAgent, resetAgentToDefault, DEFAULT_AGENTS } = require('../lib/agents');
 const { logEvent } = require('../lib/audit');
 
 // GET /api/agents - Seznam agentů
@@ -16,6 +16,28 @@ router.get('/', (req, res) => {
         res.json({ success: true, agents: Object.values(agents) });
     } catch (err) {
         res.status(500).json({ error: `Nelze načíst agenty: ${err.message}` });
+    }
+});
+
+// GET /api/agents/:agentId/examples — vzorové výstupy agenta (few-shot)
+router.get('/:agentId/examples', (req, res) => {
+    const a = loadAgents()[req.params.agentId];
+    if (!a) return res.status(404).json({ error: 'Agent nebyl nalezen.' });
+    const defs = require('../lib/agent_examples').DEFAULT_EXAMPLES[a.id] || [];
+    res.json({ success: true, examples: a.examples || [], hasDefaults: defs.length > 0, limits: require('../lib/agent_examples').LIMITS });
+});
+
+// POST /api/agents/:agentId/examples — uložit celý seznam ukázek { examples: [...] }
+// nebo { reset: true } = vrátit výchozí ukázky systémového agenta. (admin, viz authz)
+router.post('/:agentId/examples', (req, res) => {
+    const { agentId } = req.params;
+    try {
+        const list = req.body && req.body.reset ? (require('../lib/agent_examples').DEFAULT_EXAMPLES[agentId] || []) : (req.body || {}).examples;
+        const saved = saveExamples(agentId, list);
+        logEvent('LexisLocal Dashboard', 'Úprava vzorových výstupů agenta', 'AI Konfigurace', { agentId, count: saved.length });
+        res.json({ success: true, examples: saved });
+    } catch (err) {
+        res.status(err.status || 400).json({ error: err.message });
     }
 });
 

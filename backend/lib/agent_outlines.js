@@ -75,7 +75,7 @@ function taskProfile({ agentId, prompt, context, hasClauseFindings } = {}) {
         kind = 'proofread'; parts.push(OUTLINES.proofread); temperature = 0.1;
     } else if (hasClauseFindings || (RE.contractReview.test(p) && (RE.contract.test(p) || RE.contract.test(ctx)))) {
         kind = 'contract_review'; parts.push(OUTLINES.contract_review); temperature = 0.1;
-    } else if (RE.letterToOpponent.test(p)) {
+    } else if (RE.letterToOpponent.test(p) || require('./demand_letter').isDemandLetter(p)) {
         kind = 'opponent_letter'; parts.push(OUTLINES.opponent_letter);
     } else if (agentId === 'sekretarka') {
         kind = 'secretary'; parts.push(OUTLINES.secretary); temperature = 0.1;

@@ -159,6 +159,12 @@ function normalizeAgent(agent) {
     if (agent.isSystem && ROLE_MODEL[id]) {
         agent.preferredModel = ROLE_MODEL[id]();
     }
+    // Vzorové výstupy (few-shot, lib/agent_examples.js): systémoví agenti dostanou výchozí
+    // ukázky, dokud si je kancelář neupraví (pak se drží uložený seznam, i prázdný).
+    if (!Array.isArray(agent.examples)) {
+        const defs = agent.isSystem ? require('./agent_examples').DEFAULT_EXAMPLES[id] : null;
+        agent.examples = defs ? JSON.parse(JSON.stringify(defs)) : [];
+    }
     // Systémové agenty: systemPrompt/role/emoji/name jsou řízené KÓDEM (DEFAULT_AGENTS),
     // aby vylepšení promptů platila bez ruční úpravy .agents.json.
     return agent;
@@ -228,12 +234,24 @@ function saveAgent(agentId, agentData) {
         useJudikatura: typeof agentData.useJudikatura === 'boolean' ? agentData.useJudikatura : undefined,
         // Teplota per-agent (0..1); mimo rozsah / nezadáno → undefined (normalizeAgent doplní dle role).
         temperature: (typeof agentData.temperature === 'number' && agentData.temperature >= 0 && agentData.temperature <= 1)
-            ? agentData.temperature : undefined
+            ? agentData.temperature : undefined,
+        // Vzorové výstupy: běžná úprava agenta je nesmaže (mění se přes /examples).
+        examples: Array.isArray(agentData.examples) ? require('./agent_examples').validateExamples(agentData.examples)
+            : (agents[cleanId] && Array.isArray(agents[cleanId].examples) ? agents[cleanId].examples : undefined)
     };
 
     normalizeAgent(agents[cleanId]); // doplní/opraví spisAccess (když přišlo undefined)
     saveAllAgents(agents);
     return agents[cleanId];
+}
+
+/** Uloží jen vzorové výstupy agenta (validované). Vrací uložený seznam. */
+function saveExamples(agentId, list) {
+    const agents = loadAgents();
+    if (!agents[agentId]) throw Object.assign(new Error('Agent nebyl nalezen.'), { status: 404 });
+    agents[agentId].examples = require('./agent_examples').validateExamples(list);
+    saveAllAgents(agents);
+    return agents[agentId].examples;
 }
 
 /**
@@ -268,6 +286,7 @@ function resetAgentToDefault(agentId) {
 module.exports = {
     loadAgents,
     saveAgent,
+    saveExamples,
     agentTemperature,
     ROLE_TEMP,
     deleteAgent,
