@@ -9,8 +9,9 @@ mkdir -p "$OUT"
 if [ ! -d /opt/llama.cpp ]; then
   git clone --depth 1 https://github.com/ggml-org/llama.cpp /opt/llama.cpp
 fi
-pip install -q -e /opt/llama.cpp/gguf-py sentencepiece protobuf 2>/dev/null || pip install -q gguf sentencepiece protobuf
-python3 /opt/llama.cpp/convert_hf_to_gguf.py "$MODEL_DIR" --outfile "$OUT/$NAME.gguf" --outtype f16
+PY="${PY:-python3}"
+"$PY" -m pip install -q -e /opt/llama.cpp/gguf-py sentencepiece protobuf 2>/dev/null || "$PY" -m pip install -q gguf sentencepiece protobuf
+"$PY" /opt/llama.cpp/convert_hf_to_gguf.py "$MODEL_DIR" --outfile "$OUT/$NAME.gguf" --outtype f16
 printf 'FROM ./%s.gguf\n' "$NAME" > "$OUT/Modelfile"
 ( cd "$OUT" && ollama create "$NAME" -f Modelfile )
-python3 "$HERE/gguf_check.py" --hf "$MODEL_DIR" --ollama "$NAME" --out "$OUT/gguf_check.json"
+"$PY" "$HERE/gguf_check.py" --hf "$MODEL_DIR" --ollama "$NAME" --out "$OUT/gguf_check.json"

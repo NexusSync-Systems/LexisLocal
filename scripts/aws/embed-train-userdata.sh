@@ -61,11 +61,24 @@ ARCH=/opt/LexisLocal/backend/eval/kb/zakony.tar.gz
 T=/opt/LexisLocal/training/embed
 
 # 2) Python prostředí (torch s CUDA z PyPI)
-apt-get install -y -qq python3-venv python3-pip >/dev/null 2>&1 || true
-python3 -m venv /opt/venv && . /opt/venv/bin/activate
-pip install -q --upgrade pip
-pip install -q torch sentence-transformers datasets accelerate numpy || { echo "!! pip selhal"; exit 1; }
-python -c "import torch;print('torch', torch.__version__, 'cuda', torch.cuda.is_available())" | tee -a "$OUT/_gpu.txt"
+# 5. 10. 2026: na DLAMI chyběl python3.10-venv (ensurepip) → venv nevznikl a „python“ neexistoval.
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq python3-venv python3.10-venv python3-pip >/dev/null 2>&1 || true
+if python3 -m venv /opt/venv && [ -x /opt/venv/bin/python ]; then
+  . /opt/venv/bin/activate; PY=/opt/venv/bin/python
+else
+  echo "!! venv nejde vytvořit — použiju systémový python3"; PY=$(command -v python3)
+fi
+export PY
+"$PY" -m pip install -q --upgrade pip
+# Torch musí sedět na ovladač: nejnovější kola z PyPI chtějí CUDA 13 (ovladač ≥ 580), jinak kola cu126.
+DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1 | cut -d. -f1)
+echo "ovladač NVIDIA: $DRV" | tee -a "$OUT/_gpu.txt"
+if [ "${DRV:-0}" -ge 580 ]; then "$PY" -m pip install -q torch || { echo "!! pip torch selhal"; exit 1; }
+else "$PY" -m pip install -q torch --index-url https://download.pytorch.org/whl/cu126 || { echo "!! pip torch (cu126) selhal"; exit 1; }; fi
+"$PY" -m pip install -q sentence-transformers datasets accelerate numpy || { echo "!! pip selhal"; exit 1; }
+"$PY" -c "import torch;print('torch', torch.__version__, 'cuda', torch.cuda.is_available())" | tee -a "$OUT/_gpu.txt"
+"$PY" -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)" || { echo "!! torch nevidí GPU"; exit 1; }
 
 # 3) Ollama (generování dotazů + na konci kontrola GGUF)
 curl -fsSL https://ollama.com/install.sh | sh
@@ -82,7 +95,7 @@ if [ -s "$WORK/pairs/pairs_train.jsonl" ] && [ "${REGEN_PAIRS:-0}" != "1" ]; the
 else
   curl -sf http://127.0.0.1:11434/api/pull -d "{\"model\":\"$GEN_MODEL\",\"stream\":false}" >/dev/null && echo "model $GEN_MODEL stažen"
   echo "=== generování dotazů start $(date -Is)"
-  python "$T/build_pairs.py" --archive "$ARCH" --out "$WORK/pairs" --model "$GEN_MODEL" --per-par "$PER_PAR" --workers 4 \
+  "$PY" "$T/build_pairs.py" --archive "$ARCH" --out "$WORK/pairs" --model "$GEN_MODEL" --per-par "$PER_PAR" --workers 4 \
     || { echo "!! generování dotazů selhalo"; exit 1; }
   "$AWS" s3 cp "$WORK/pairs/" "$S3_PAIRS" --recursive --only-show-errors && echo "=== dotazy uloženy do S3"
   curl -sf http://127.0.0.1:11434/api/generate -d "{\"model\":\"$GEN_MODEL\",\"keep_alive\":0}" >/dev/null || true  # uvolnit GPU
@@ -91,14 +104,14 @@ cp "$WORK/pairs/stats.json" "$OUT/pairs_stats.json" 2>/dev/null; upload
 
 # 5) Trénink
 echo "=== trénink start $(date -Is)"
-python "$T/train.py" --archive "$ARCH" --pairs "$WORK/pairs" --out "$WORK/model" --epochs "$EPOCHS" \
+"$PY" "$T/train.py" --archive "$ARCH" --pairs "$WORK/pairs" --out "$WORK/model" --epochs "$EPOCHS" \
   2>&1 | grep -v -i "warn" || { echo "!! trénink selhal"; exit 1; }
 [ -f "$WORK/model/config.json" ] || { echo "!! model se neuložil"; exit 1; }
 cp "$WORK/model/train_info.json" "$OUT/" 2>/dev/null
 echo "=== trénink hotov $(date -Is)"; upload
 
 # 6) Srovnání: původní vs. doladěný
-python "$T/evaluate.py" --archive "$ARCH" --pairs "$WORK/pairs" --models BAAI/bge-m3 "$WORK/model" --report "$OUT" \
+"$PY" "$T/evaluate.py" --archive "$ARCH" --pairs "$WORK/pairs" --models BAAI/bge-m3 "$WORK/model" --report "$OUT" \
   2>&1 | grep -v -i "warn"
 echo "=== hodnocení hotovo $(date -Is)"; upload
 
