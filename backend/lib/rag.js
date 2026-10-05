@@ -377,12 +377,18 @@ function saveIndex(index) {
  * Fetch embeddings from local Ollama service.
  */
 async function getEmbedding(text) {
+    // Volitelná cache vektorů (jen když je nastavené EMBED_CACHE_FILE — testovací server).
+    const embedCache = require('./embed_cache');
+    const cached = embedCache.get(EMBEDDING_MODEL, text);
+    if (cached) return cached;
+
     const response = await ollama.embeddings({
         model: EMBEDDING_MODEL,
         prompt: text
     });
 
     if (response && response.embedding) {
+        embedCache.set(EMBEDDING_MODEL, text, response.embedding);
         return response.embedding;
     }
 

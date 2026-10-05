@@ -156,6 +156,16 @@ fi
 [ -z "$TOKEN" ] && TOKEN=$(openssl rand -hex 32)
 echo "=== token: $TOKEN_NOTE"
 
+# Cache vektorů báze zákonů z minulého běhu (S3). Plnění báze pak netrvá ~1,5 h, ale minuty:
+# vektory stejných textů se nepočítají znovu (lib/embed_cache.js; jen veřejné zákony/judikatura).
+EMB_DIR=/opt/lexis-embcache; EMB_FILE="$EMB_DIR/embeddings-bge-m3.jsonl"
+EMB_S3="s3://$RESULTS_BUCKET/_cache/embeddings-bge-m3.jsonl.gz"
+mkdir -p "$EMB_DIR"
+if [ -n "$AWS" ] && [ "${EMBED_CACHE:-1}" = "1" ] && "$AWS" s3 cp "$EMB_S3" "$EMB_FILE.gz" --only-show-errors 2>/dev/null; then
+  gunzip -f "$EMB_FILE.gz" && echo "=== cache vektorů: $(wc -l < "$EMB_FILE") záznamů z S3"
+else echo "=== cache vektorů: v S3 zatím není (první běh) — vektory se spočítají a po naplnění uloží"; fi
+EMB_BEFORE=$(wc -l < "$EMB_FILE" 2>/dev/null || echo 0)
+
 cat > /opt/LexisLocal/.env <<ENV
 BIND_HOST=0.0.0.0
 PORT=443
@@ -171,6 +181,7 @@ EMBEDDING_MODEL=bge-m3
 RAG_HYBRID=1
 RAG_HYBRID_ALPHA=0.8
 RAG_MIN_SCORE=0.14
+EMBED_CACHE_FILE=$EMB_FILE
 ENV
 
 cat > /etc/systemd/system/lexislocal.service <<UNIT
@@ -218,6 +229,13 @@ if [ -f "$JUD" ]; then
     --api https://127.0.0.1 --token "$TOKEN" --delay 0 2>&1 | tail -n 5
 fi
 echo "=== báze naplněna $(date -Is)"
+EMB_AFTER=$(wc -l < "$EMB_FILE" 2>/dev/null || echo 0)
+echo "=== cache vektorů: nově spočítáno $((EMB_AFTER - EMB_BEFORE)), celkem $EMB_AFTER"
+if [ -n "$AWS" ] && [ "${EMBED_CACHE:-1}" = "1" ] && [ "$EMB_AFTER" -gt "$EMB_BEFORE" ]; then
+  gzip -c "$EMB_FILE" > "$EMB_FILE.up.gz" && "$AWS" s3 cp "$EMB_FILE.up.gz" "$EMB_S3" --only-show-errors \
+    && echo "=== cache vektorů uložena do S3 ($(du -h "$EMB_FILE.up.gz" | cut -f1))" || echo "!! cache vektorů: upload selhal"
+  rm -f "$EMB_FILE.up.gz"
+fi
 echo "Báze zákonů naplněna: $(date -Is)" >> "$OUT/_connect.txt"
 upload
 
