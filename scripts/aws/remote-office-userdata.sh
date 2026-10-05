@@ -94,7 +94,17 @@ printf '[Service]\nEnvironment=OLLAMA_LOAD_TIMEOUT=15m\nEnvironment=OLLAMA_NUM_P
   > /etc/systemd/system/ollama.service.d/override.conf
 systemctl daemon-reload; systemctl enable --now ollama; systemctl restart ollama
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 2; done
-for m in bge-m3 "$CHAT_MODEL"; do
+# Volitelně doladěný model vyhledávání z S3 (training/embed, scripts/aws/embed-train-userdata.sh):
+#   export EMBED_MODEL_S3=s3://lexislocal-bench-results-485237569555/_models/lexis-bge-m3-ft/<běh>/
+EMBED_MODEL="bge-m3"
+if [ -n "${EMBED_MODEL_S3:-}" ] && [ -n "$AWS" ]; then
+  mkdir -p /opt/lexis-embmodel && "$AWS" s3 cp "$EMBED_MODEL_S3" /opt/lexis-embmodel/ --recursive --exclude "*.tar.gz" --only-show-errors \
+    && ( cd /opt/lexis-embmodel && ollama create lexis-bge-m3-ft -f Modelfile ) \
+    && EMBED_MODEL="lexis-bge-m3-ft" && EMBED_CACHE=0 && echo "=== model vyhledávání: doladěný z $EMBED_MODEL_S3 (cache vektorů vypnutá — jiné váhy pod stejným názvem)" \
+    || echo "!! doladěný model vyhledávání se nepodařilo načíst — používám bge-m3"
+fi
+for m in "$EMBED_MODEL" "$CHAT_MODEL"; do
+  [ "$m" = "lexis-bge-m3-ft" ] && continue
   for t in 1 2 3; do
     curl -sf http://127.0.0.1:11434/api/pull -d "{\"model\":\"$m\",\"stream\":false}" >/dev/null && { echo "model $m stažen"; break; }
     echo "!! stažení $m selhalo (pokus $t)"; sleep 15
@@ -158,8 +168,8 @@ echo "=== token: $TOKEN_NOTE"
 
 # Cache vektorů báze zákonů z minulého běhu (S3). Plnění báze pak netrvá ~1,5 h, ale minuty:
 # vektory stejných textů se nepočítají znovu (lib/embed_cache.js; jen veřejné zákony/judikatura).
-EMB_DIR=/opt/lexis-embcache; EMB_FILE="$EMB_DIR/embeddings-bge-m3.jsonl"
-EMB_S3="s3://$RESULTS_BUCKET/_cache/embeddings-bge-m3.jsonl.gz"
+EMB_DIR=/opt/lexis-embcache; EMB_FILE="$EMB_DIR/embeddings-$EMBED_MODEL.jsonl"
+EMB_S3="s3://$RESULTS_BUCKET/_cache/embeddings-$EMBED_MODEL.jsonl.gz"
 mkdir -p "$EMB_DIR"
 if [ -n "$AWS" ] && [ "${EMBED_CACHE:-1}" = "1" ] && "$AWS" s3 cp "$EMB_S3" "$EMB_FILE.gz" --only-show-errors 2>/dev/null; then
   gunzip -f "$EMB_FILE.gz" && echo "=== cache vektorů: $(wc -l < "$EMB_FILE") záznamů z S3"
@@ -177,7 +187,7 @@ LEXIS_PILOT_LOCAL_ONLY=1
 AI_CHAT_PROVIDER=ollama
 AI_EMBED_PROVIDER=ollama
 CHAT_MODEL=$CHAT_MODEL
-EMBEDDING_MODEL=bge-m3
+EMBEDDING_MODEL=$EMBED_MODEL
 RAG_HYBRID=1
 RAG_HYBRID_ALPHA=0.8
 RAG_MIN_SCORE=0.14
@@ -282,7 +292,7 @@ if [ -n "${COMPARE_MODELS:-}" ] && [ -f backend/scripts/model_compare.js ]; then
   # paměti, časový limit na model a nahrát po každém — zamrznutí jednoho modelu tak
   # nepřijde o výsledky ostatních (3. 10. 2026 instance zamrzla po 1. modelu).
   for m in $(echo "$OK_MODELS" | tr ',' ' '); do
-    for lm in $(ollama ps 2>/dev/null | awk 'NR>1 && $1!="" {print $1}' | grep -v '^bge-m3'); do ollama stop "$lm" 2>/dev/null; done
+    for lm in $(ollama ps 2>/dev/null | awk 'NR>1 && $1!="" {print $1}' | grep -v "^$EMBED_MODEL"); do ollama stop "$lm" 2>/dev/null; done
     sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
     { echo "== $(date -Is) před $m"; free -m; nvidia-smi --query-gpu=memory.used,memory.total --format=csv 2>/dev/null; } >> "$OUT/pamet.log"
     echo "=== model $m start $(date -Is)"

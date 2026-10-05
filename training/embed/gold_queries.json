@@ -1,0 +1,30 @@
+{
+  "_popis": "Ručně psané dotazy advokáta → paragraf, který je má najít. Slouží jen k hodnocení (do tréninku se nedostávají). Každá dvojice ověřena proti textu v zakony.tar.gz.",
+  "queries": [
+    {"q": "Jak dlouhá je obecná promlčecí lhůta?", "rel": ["OZ 89-2012 § 0629.txt"]},
+    {"q": "Odkdy začíná běžet promlčecí lhůta u práva vymahatelného u soudu?", "rel": ["OZ 89-2012 § 0619.txt"]},
+    {"q": "Kdo poruší povinnost stanovenou zákonem a způsobí jinému škodu, musí ji nahradit?", "rel": ["OZ 89-2012 § 2910.txt"]},
+    {"q": "Do kdy může spotřebitel odstoupit od smlouvy uzavřené přes e-shop?", "rel": ["OZ 89-2012 § 1829.txt"]},
+    {"q": "Co je smluvní pokuta a kdy ji dlužník platí?", "rel": ["OZ 89-2012 § 2048.txt"]},
+    {"q": "Může soud snížit nepřiměřeně vysokou smluvní pokutu?", "rel": ["OZ 89-2012 § 2051.txt"]},
+    {"q": "Na jaký úrok z prodlení má věřitel nárok, když dlužník nezaplatí včas?", "rel": ["OZ 89-2012 § 1970.txt"]},
+    {"q": "Jak vysokou kauci může pronajímatel bytu požadovat?", "rel": ["OZ 89-2012 § 2254.txt"]},
+    {"q": "Smí nájemce chovat v bytě psa nebo kočku?", "rel": ["OZ 89-2012 § 2258.txt"]},
+    {"q": "Musí nájemce pustit pronajímatele do bytu na prohlídku?", "rel": ["OZ 89-2012 § 2219.txt"]},
+    {"q": "Z jakých důvodů může pronajímatel vypovědět nájem bytu a v jaké výpovědní době?", "rel": ["OZ 89-2012 § 2288.txt"]},
+    {"q": "Kdo se na úkor jiného bez právního důvodu obohatí, musí to vrátit — bezdůvodné obohacení", "rel": ["OZ 89-2012 § 2991.txt"]},
+    {"q": "Kdy má dílo vadu podle smlouvy o dílo?", "rel": ["OZ 89-2012 § 2615.txt"]},
+    {"q": "Kupní smlouva — základní povinnosti prodávajícího a kupujícího", "rel": ["OZ 89-2012 § 2079.txt"]},
+    {"q": "Jak dlouho může spotřebitel reklamovat vadu zboží od převzetí?", "rel": ["OZ 89-2012 § 2165.txt"]},
+    {"q": "Která ujednání ve spotřebitelské smlouvě jsou zneužívající?", "rel": ["OZ 89-2012 § 1813.txt"]},
+    {"q": "Kdy je právní jednání neplatné pro rozpor se zákonem nebo dobrými mravy?", "rel": ["OZ 89-2012 § 0580.txt"]},
+    {"q": "V jaké lhůtě se podává odvolání proti rozsudku okresního soudu?", "rel": ["OSŘ 99-1963 § 0204.txt"]},
+    {"q": "Co musí obsahovat odvolání a jaké jsou odvolací důvody?", "rel": ["OSŘ 99-1963 § 0205.txt"]},
+    {"q": "Kdy žalobce nemá nárok na náhradu nákladů, protože žalovanému neposlal předžalobní výzvu?", "rel": ["OSŘ 99-1963 § 0142a.txt"]},
+    {"q": "Za jakých podmínek soud vydá platební rozkaz bez jednání?", "rel": ["OSŘ 99-1963 § 0172.txt"]},
+    {"q": "Který soud je místně příslušný k projednání žaloby?", "rel": ["OSŘ 99-1963 § 0084.txt"]},
+    {"q": "Co musí obsahovat žaloba, aby se řízení zahájilo?", "rel": ["OSŘ 99-1963 § 0079.txt"]},
+    {"q": "Kdy jednatel jedná s péčí řádného hospodáře — pravidlo podnikatelského úsudku", "rel": ["ZOK 90-2012 § 0051.txt"]},
+    {"q": "Jaký je minimální vklad společníka do s.r.o.?", "rel": ["ZOK 90-2012 § 0142.txt"]}
+  ]
+}
