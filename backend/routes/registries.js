@@ -108,7 +108,9 @@ router.post('/config', (req, res) => {
 // Datová schránka — příjem doručených zpráv (lib/isds_inbox.js).
 router.get('/isds/inbox', (req, res) => res.json(require('../lib/isds_inbox').status()));
 router.post('/isds/inbox/poll', async (req, res) => {
-    const r = await require('../lib/isds_inbox').pollOnce();
+    // Ruční „Stáhnout teď“ je výslovný pokyn — stáhne i při vypnutém automatickém stahování
+    // (test 5. 10. 2026: hlásilo „stahování je vypnuté“, i když uživatel klikl sám).
+    const r = await require('../lib/isds_inbox').pollOnce({ force: true });
     if (!r.ok) return res.status(r.kind === 'unavailable' ? 502 : 400).json({ error: r.reason, kind: r.kind });
     res.json(r);
 });

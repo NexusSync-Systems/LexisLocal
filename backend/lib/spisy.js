@@ -28,8 +28,15 @@ const STAVY = ['aktivni', 'archiv', 'skartace'];
 const DEFAULT_RETENTION_YEARS = 5;
 
 // --- Pomocné: normalizace sp. zn. pro párování ------------------------------
+// Spisová značka bez čísla listu: „12 C 45/2026-30“ → „12 C 45/2026“ (č. j. soudu nese za
+// pomlčkou číslo listu; spis je jeden pro všechny listy — test datové schránky 5. 10. 2026).
+function stripFolio(s) {
+    const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    const m = /^(\d+\s?[A-Za-zÁ-Žá-ž]{1,4}\s?\d+\/\d{4})\s?-\s?\d{1,5}$/.exec(t);
+    return m ? m[1] : t;
+}
 function _normCase(s) {
-    return String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return stripFolio(s);
 }
 function _caseKey(s) {
     return _normCase(s).toLowerCase();
@@ -502,6 +509,7 @@ function getSpisAccess(id) {
 }
 
 module.exports = {
+    stripFolio,
     STAVY,
     DEFAULT_RETENTION_YEARS,
     listSpisy,

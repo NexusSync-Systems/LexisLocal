@@ -294,7 +294,7 @@ async function processDocument(filePath, opts = {}) {
         filePath: filePath,
         relativePath: relativePath,
         status: "unread",
-        caseNumber: metadata.caseNumber || "Neznámá sp. zn.",
+        caseNumber: (metadata.caseNumber && require('./spisy').stripFolio(metadata.caseNumber)) || "Neznámá sp. zn.",
         plaintiff: metadata.plaintiff || "Nezjištěn",
         defendant: metadata.defendant || "Nezjištěn",
         deadlineDays: metadata.deadlineDays || 0,

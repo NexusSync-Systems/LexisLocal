@@ -27,6 +27,9 @@ router.post('/verify', async (req, res) => {
             referenceIndex: b.referenceIndex || undefined,
             strict: !!b.strict
         };
+        // Paragrafy z nahrané báze zákonů (stejně jako u odpovědí agentů). Dřív tahle cesta
+        // index nedostávala → „§ 629 OZ nelze ověřit“, i když OZ v bázi je (test 5. 10. 2026).
+        try { opts.kbIndex = require('../lib/kb_law_index').getKbLawIndex(); } catch (e) { /* bez báze */ }
         const useSources = b.useSources !== false; // výchozí: zkusit i externí zdroje
         const result = useSources
             ? await verifyCitationsWithSources(b.text, opts)
