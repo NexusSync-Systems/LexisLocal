@@ -13,13 +13,25 @@ const TTL_MS = parseInt(process.env.LEXIS_KB_LAW_INDEX_TTL_MS || '', 10) || 10 *
 const HEADER_RE = /Zákon\s+č\.\s*(\d{1,4}\/\d{4})\s*Sb\.\s*[—–-]\s*§\s*(\d+[a-z]?)/gi;
 let _cache = null, _at = 0;
 
+// Současný formát scripts/split-zakon.js (test 5. 10. 2026: OSŘ v bázi, a přesto
+// „§ 204 o. s. ř. nelze ověřit“ — index znal jen starou hlavičku „Zákon č. … Sb. — § N“):
+//   Zákon č. 99/1963 Sb., občanský soudní řád (znění ke dni …)
+//   § 204 — Lhůta k odvolání …
+//   Citace: § 204 zákona č. 99/1963 Sb.; § 205 zákona č. 99/1963 Sb.
+// RAG chunky (lib/rag.chunkText) slučují řádky a hlavičku zákona má jen první chunk,
+// proto se § berou z řádku „Citace:“ (každá položka nese číslo zákona).
+const CITE_RE = /§\s*(\d+[a-z]?)\s+zákona\s+č\.\s*(\d{1,4}\/\d{4})\s*Sb\./gi;
+
 function indexFromTexts(texts) {
     const laws = {};
-    for (const t of texts) {
-        HEADER_RE.lastIndex = 0; let m;
-        while ((m = HEADER_RE.exec(String(t || '')))) {
-            (laws[m[1]] = laws[m[1]] || new Set()).add(m[2].toLowerCase());
-        }
+    const add = (law, par) => (laws[law] = laws[law] || new Set()).add(String(par).toLowerCase());
+    for (const t0 of texts) {
+        const t = String(t0 || '');
+        let m;
+        HEADER_RE.lastIndex = 0;
+        while ((m = HEADER_RE.exec(t))) add(m[1], m[2]);
+        CITE_RE.lastIndex = 0;
+        while ((m = CITE_RE.exec(t))) add(m[2], m[1]);
     }
     return laws;
 }

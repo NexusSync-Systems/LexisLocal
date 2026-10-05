@@ -105,6 +105,17 @@ describe('4) ověřování citací: články, zkratky, báze zákonů', () => {
         expect(r.citations[0].status).toBe('verified');
         expect(r.unverifiedCount).toBe(0);
     });
+    test('index z dnešního formátu split-zakon.js po rozdělení na RAG chunky (test 5. 10. 2026: § 204 o. s. ř. „nelze ověřit“)', () => {
+        const doc = 'Zákon č. 99/1963 Sb., občanský soudní řád (znění ke dni 1. 1. 2026)\n§ 204 — Lhůta k odvolání\n\n' +
+            'Odvolání se podává do 15 dnů od doručení písemného vyhotovení rozhodnutí. '.repeat(40) +
+            '\n\n§ 205\n\nV odvolání musí být uvedeno …\n\nCitace: § 204 zákona č. 99/1963 Sb.; § 205 zákona č. 99/1963 Sb.\nZdroj: e-Sbírka (úřední znění).\n';
+        const chunks = require('../lib/rag').chunkText(doc);
+        expect(chunks.length).toBeGreaterThan(1);
+        const kb = indexFromTexts(chunks);
+        expect([...kb['99/1963']].sort()).toEqual(['204', '205']);
+        const r = v.verifyCitations('Lhůta k odvolání je 15 dnů (§ 204 odst. 1 o. s. ř.).', { kbIndex: kb });
+        expect(r.citations[0]).toMatchObject({ law: '99/1963', status: 'verified' });
+    });
     test('§, který v bázi není, zůstává neověřený', () => {
         const kb = indexFromTexts(['Zákon č. 99/1963 Sb. — § 57']);
         const r = v.verifyCitations('Podle § 999 OSŘ.', { kbIndex: kb });
