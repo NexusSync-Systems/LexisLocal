@@ -29,7 +29,7 @@
                     <span class="icon">🏠</span> Přehled
                 </button>
                 <button class="nav-btn" data-tab="inbox">
-                    <span class="icon">📥</span> Doručené Spisy
+                    <span class="icon">📥</span> Doručené spisy
                     <span class="badge" id="inbox-badge" style="display: none;">0</span>
                 </button>
                 <button class="nav-btn" data-tab="datovka">
@@ -44,22 +44,22 @@
                     <span class="icon">🔍</span> Lustrační centrum
                 </button>
                 <button class="nav-btn" data-tab="models">
-                    <span class="icon">🤖</span> Správce Modelů
+                    <span class="icon">🤖</span> Správce modelů
                 </button>
                 <button class="nav-btn" data-tab="agents">
-                    <span class="icon">🕵️‍♂️</span> AI Asistenti
+                    <span class="icon">🕵️‍♂️</span> AI asistenti
                 </button>
                 <button class="nav-btn" data-tab="chat">
                     <span class="icon">💬</span> Konzultace s AI
                 </button>
                 <button class="nav-btn" data-tab="workflow">
-                    <span class="icon">📅</span> Workflow & Lhůty
+                    <span class="icon">📅</span> Workflow & lhůty
                 </button>
                 <button class="nav-btn" data-tab="timetracking">
                     <span class="icon">🕒</span> Time-tracking
                 </button>
                 <button class="nav-btn" data-tab="risks">
-                    <span class="icon">🔍</span> Rizika & Judikatura
+                    <span class="icon">🔍</span> Rizika & judikatura
                 </button>
                 <button class="nav-btn" data-tab="spisova">
                     <span class="icon">🗂️</span> Spisová služba
@@ -68,7 +68,7 @@
                     <span class="icon">🪪</span> AML / Onboarding
                 </button>
                 <button class="nav-btn" data-tab="managerial">
-                    <span class="icon">📊</span> Manažerský Přehled
+                    <span class="icon">📊</span> Manažerský přehled
                 </button>
                 <button class="nav-btn" data-tab="audit">
                     <span class="icon">📜</span> Auditní logy
@@ -469,8 +469,8 @@
                             <ol>
                                 <li>Stáhněte a nainstalujte Ollamu pro Váš systém z oficiálního webu: <a href="https://ollama.com" target="_blank" style="color:var(--accent-blue); text-decoration:none;">ollama.com</a>.</li>
                                 <li>Spusťte Ollamu (ikonka lamy se zobrazí v systémové liště).</li>
-                                <li>Otevřete macOS Terminál a stáhněte si doporučený model Llama 3 příkazem:
-                                    <pre><code>ollama run llama3</code></pre>
+                                <li>Otevřete macOS Terminál a stáhněte si doporučený model příkazem:
+                                    <pre><code>ollama pull qwen2.5:7b</code></pre>
                                 </li>
                             </ol>
                         </div>
@@ -1004,8 +1004,7 @@
                                 <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
                                     <label style="font-size: 0.85rem; opacity: 0.8;">Použít model pro výkaz:</label>
                                     <select id="timesheet-model-select" style="padding: 8px 12px; background: #0f172a; border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none; flex-grow: 1;">
-                                        <option value="llama3">Llama-3 (Doporučeno)</option>
-                                        <option value="mistral">Mistral (Analytický)</option>
+                                        <option value="">Výchozí model kanceláře</option>
                                     </select>
                                 </div>
                             </div>
@@ -1427,6 +1426,7 @@
     <script src="app-inbox.js"></script>
     <script src="app-chat.js"></script>
     <script src="app-datovka.js"></script>
+    <script src="app-ux.js"></script>
     <script src="app-alerts-audit.js"></script>
     <script src="app-agents.js"></script>
     <script src="app-agent-kb.js"></script>

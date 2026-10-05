@@ -89,7 +89,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async generateTimesheet() {
-        const model = document.getElementById('timesheet-model-select').value || 'llama3';
+        const model = document.getElementById('timesheet-model-select').value || undefined; // prázdné = výchozí model serveru (dřív natvrdo llama3, který kancelář nemusí mít)
         
         try {
             console.log("🕒 Spouštím generování timesheetu přes Ollama...");

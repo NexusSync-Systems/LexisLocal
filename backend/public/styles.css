@@ -2367,3 +2367,28 @@ html:not([data-theme="dark"]) .badge-ai { color: #7e22ce; }
 @keyframes conn-blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .status-indicator.connecting .pulse { animation: none; } }
 #conn-status { flex-wrap: wrap; gap: 4px 8px; }
+
+/* ==========================================================================
+   UX kontrola 5. 10. 2026
+   ========================================================================== */
+/* Hlavička: nadpis se lámal po slovech („Řídicí / panel“, „Time- / tracking“) a popisek
+   byl stlačený do úzkého sloupce, protože tlačítka zabírala celý řádek. Nadpis má teď
+   vlastní šířku a tlačítka se při nedostatku místa zalomí pod něj. */
+.main-header { flex-wrap: wrap; align-items: flex-start; gap: 14px 24px; }
+.main-header > div:first-child { flex: 1 1 360px; min-width: 260px; }
+.header-title h2, #page-title { line-height: 1.1; overflow-wrap: normal; word-break: normal; }
+.header-title p, #page-subtitle { max-width: 64ch; margin-top: 6px; }
+.header-actions { flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.header-actions .me-chip { flex-shrink: 0; max-width: 320px; }
+
+/* Plovoucí tlačítko výkazu zakrývalo „Odeslat“ v Konzultaci s AI a poslední řádky stránek. */
+.main-content { padding-bottom: 110px; }
+body:has(#tab-chat.active) .floating-timelog-btn { bottom: 120px; }
+
+/* AI asistenti: vnitřní seznam přetékal přes pravý okraj rámečku. */
+.agents-container { box-sizing: border-box; max-width: 100%; overflow: hidden; }
+.agents-container > * { max-width: 100%; box-sizing: border-box; }
+
+/* Tmavý motiv: modré odkazy (např. spis v záložce Datová schránka) byly na tmavém
+   pozadí skoro nečitelné. */
+html[data-theme="dark"] .tab-pane a { color: #93c5fd; }

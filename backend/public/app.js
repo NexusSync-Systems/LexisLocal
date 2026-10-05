@@ -545,7 +545,7 @@ class LexisLocalApp {
                 sub: "Rychlý přehled lokálního AI ekosystému a stavu služeb."
             },
             inbox: {
-                title: "Doručená pošta spisy",
+                title: "Doručené spisy",
                 sub: "Seznam naskenovaných a zindexovaných spisů ze složky LexisSpisy."
             },
             models: {
