@@ -276,7 +276,7 @@ router.post('/:agentId', async (req, res) => {
         let response, toolsUsed = [];
         // Strukturovaný dopis: JSON → dopis poskládaný programem. Selže-li čtení JSON
         // (starší Ollama bez formátu, jiný poskytovatel), pokračuje se volným textem.
-        let letter = null, letterRaw = null;
+        let letter = null, letterRaw = null, letterMsgs = messages;
         const callLetter = async (msgs) => {
             const r = await llm.chat({ model: selectedModel, messages: msgs, options: chatOptions, format: demandLetter.SCHEMA });
             letterRaw = r && r.message ? r.message.content : '';
@@ -286,8 +286,12 @@ router.post('/:agentId', async (req, res) => {
             return demandLetter.renderLetter(data, { prompt });
         };
         if (demand) {
+            // Výpočty lhůt a procesní fakta jsou pro advokáta, ne pro dopis protistraně — model
+            // je pak psal do skutkového stavu (server test 5. 10. 2026). Pro JSON dopis je vynecháme.
+            const internal = new Set([dateFacts && dateFacts.text, procFacts && procFacts.text].filter(Boolean));
+            letterMsgs = messages.filter(m => !(m.role === 'system' && internal.has(m.content)));
             try {
-                letter = await callLetter(messages);
+                letter = await callLetter(letterMsgs);
                 if (letter) {
                     response = { message: { content: letter.text } };
                     console.log(`✉️ Agent [${agent.name}]: dopis sestaven programem ze strukturovaných dat (chybí: ${letter.missing.length}).`);
@@ -347,7 +351,7 @@ router.post('/:agentId', async (req, res) => {
                 if (first.issues.length && Date.now() - startTime < budget) {
                     retried = true;
                     const fb = outputChecks.retryMessage(first.issues) + (letter ? '\nVrať opět POUZE JSON objekt.' : '');
-                    const msgs = messages.concat([{ role: 'assistant', content: rawFirst || '' }, { role: 'user', content: fb }]);
+                    const msgs = (letter ? letterMsgs : messages).concat([{ role: 'assistant', content: rawFirst || '' }, { role: 'user', content: fb }]);
                     try {
                         let second = null;
                         if (letter) {
@@ -434,7 +438,10 @@ router.post('/:agentId', async (req, res) => {
             const dateApx = dateFactsAppendix(lf.text, dateFacts);
             const procApx = proceduralAppendix(lf.text, procFacts);
             const mainText = profile.kind === 'proofread' ? czProofread.finalize(lf.text, proofTarget) : lf.text;
-            const body = mainText + clauseApx.text + dateApx + procApx;
+            // U dopisu protistraně je výpočet lhůt jen pro advokáta — ať ho nikdo nezkopíruje do dopisu.
+            const dateApxOut = letter && dateApx ? dateApx.replace('📅 Doplněno programem (výpočet lhůt):', '📅 Jen pro advokáta — do dopisu nevkládat (výpočet lhůt programem):') : dateApx;
+            const procApxOut = letter && procApx ? procApx.replace('⚖️ Doplněno programem (procesní lhůty a příslušnost podle zákona):', '⚖️ Jen pro advokáta — do dopisu nevkládat (procesní lhůty a příslušnost):') : procApx;
+            const body = mainText + clauseApx.text + dateApxOut + procApxOut;
             const dwLine = dw.fixed ? `• Opraveno ${dw.fixed}× „lhůta běží od <konec lhůty>“ → „do“ (datum je konec lhůty, spočítal ho program).` : '';
             const oppLine = oppRedacted.length ? `• Z dopisu protistraně odstraněno: ${oppRedacted.join(', ')} (protistrana je nepotřebuje).` : '';
             const scLines = selfCheck ? [
@@ -492,7 +499,7 @@ router.post('/:agentId', async (req, res) => {
             draft = Drafts.saveAgentOutput({
                 text: draftBody != null ? draftBody : response.message.content, warnings: draftWarn,
                 agentId, agentName: agent.name, model: selectedModel, transparencyId: transparencyRecord.id,
-                spisId: draftSpisId, title: req.body.draftTitle, draftId: draftTarget && draftTarget.id,
+                spisId: draftSpisId, title: req.body.draftTitle || (letter && letter.title) || undefined, draftId: draftTarget && draftTarget.id,
                 baseVersion: draftTarget && draftTarget.baseVersion
             });
             if (draft && draft.id) logEvent('Koncepty', draft.created ? 'Koncept od AI agenta' : 'Revize konceptu AI agentem', agent.name, { draftId: draft.id, version: draft.version, spisId: draftSpisId });

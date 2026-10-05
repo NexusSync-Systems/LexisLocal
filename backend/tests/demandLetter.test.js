@@ -119,3 +119,14 @@ describe('route /api/agent/spisovatel', () => {
         } finally { delete process.env.AGENT_STRUCTURED_LETTERS; }
     });
 });
+
+describe('dopis protistraně bez interních výpočtů (server test 5. 10. 2026)', () => {
+    test('věty o promlčení a lhůtách se ze skutkového stavu vypustí, název konceptu z „Věc“', () => {
+        const r = D.renderLetter({ odesilatel: { jmeno: 'Eva Novotná' }, adresat: { jmeno: 'Ing. Tomáš Horák' }, vec: 'Výzva k úhradě náhrady škody',
+            skutkovy_stav: 'Dne 12. 3. 2025 došlo z Vašeho bytu k vytopení bytu naší klientky. Subjektivní lhůta podle § 629 končí 13. 3. 2028, do té doby bylo třeba uplatnit nárok u soudu. Škoda činí 86 000 Kč.', castka: '86 000 Kč' });
+        expect(r.text).toMatch(/vytopení bytu naší klientky\. Škoda činí 86 000 Kč\./);
+        expect(r.text).not.toMatch(/629|uplatnit nárok u soudu/);
+        expect(r.strippedInternal).toBe(1);
+        expect(r.title).toBe('Výzva k úhradě náhrady škody');
+    });
+});
