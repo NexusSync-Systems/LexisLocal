@@ -924,7 +924,7 @@ function writeReport(meta) {
     if (O.baseline && fs.existsSync(O.baseline)) { try { base0 = JSON.parse(fs.readFileSync(O.baseline, 'utf8')); } catch (e) { /* ignore */ } }
     const regressions = base0 ? results.filter(r => !r.ok && (base0.results || []).some(b => b.phase === r.phase && b.id === r.id && b.ok)) : [];
     const fixed = base0 ? results.filter(r => r.ok && (base0.results || []).some(b => b.phase === r.phase && b.id === r.id && !b.ok)) : [];
-    const json = { meta, results, findings, agentRuns, byPhase, byCat, regressions: regressions.map(r => r.id), fixed: fixed.map(r => r.id) };
+    const json = { meta, results, findings, agentRuns, byPhase, byCat, repeat: O.repeat, regressions: regressions.map(r => r.id), fixed: fixed.map(r => r.id) };
     // token nikdy do reportu
     const safe = JSON.stringify(json, null, 2).split(O.token || '\u0000').join('<TOKEN>');
     fs.writeFileSync(base + '.json', safe);
@@ -942,6 +942,21 @@ function writeReport(meta) {
     if (Object.keys(byCat).length) {
         L.push('', '## Agenti po kategoriích', '', '| Kategorie | Prošlo | Průměrné skóre |', '|---|---|---|');
         for (const [c, v] of Object.entries(byCat)) L.push(`| ${c} | ${v.pass}/${v.n} | ${Math.round(v.score / v.n * 100)} % |`);
+    }
+    // Spolehlivost: při --repeat N je vidět, jak často agent projde (1 běh = loterie).
+    const perCase = {};
+    for (const r of agentRuns) { const c = perCase[r.id] = perCase[r.id] || { agent: r.agent, pass: 0, n: 0 }; c.n++; if (r.pass) c.pass++; }
+    const multi = Object.values(perCase).some(c => c.n > 1);
+    if (multi) {
+        const runsOk = agentRuns.filter(r => r.pass).length;
+        const flaky = Object.entries(perCase).filter(([, c]) => c.pass > 0 && c.pass < c.n);
+        const never = Object.entries(perCase).filter(([, c]) => c.pass === 0);
+        L.push('', '## Spolehlivost agentů (opakované běhy)', '',
+            `- Úspěšnost všech běhů: **${runsOk}/${agentRuns.length} (${Math.round(runsOk / agentRuns.length * 100)} %)**`,
+            `- Kolísá (někdy projde, někdy ne): ${flaky.length ? flaky.map(([id, c]) => `${id} ${c.pass}/${c.n}`).join(', ') : 'nic'}`,
+            `- Neprošlo ani jednou: ${never.length ? never.map(([id, c]) => `${id} 0/${c.n}`).join(', ') : 'nic'}`, '',
+            '| Případ | Agent | Prošlo |', '|---|---|---|');
+        for (const [id, c] of Object.entries(perCase)) L.push(`| ${id} | ${c.agent} | ${c.pass}/${c.n} |`);
     }
     if (meta.load) {
         L.push('', '## Zátěž', '', '| Souběh | p50 | p95 | chyby |', '|---|---|---|---|');

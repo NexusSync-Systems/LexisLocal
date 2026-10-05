@@ -193,6 +193,44 @@ function debtLimitationFacts(src) {
     return { event: due, subjectiveEnd: end, objectiveEnd: null, kind: 'debt', lines };
 }
 
+function _dateRe(key) {
+    const [y, m, d] = String(key).split('-').map(Number);
+    return new RegExp(`(?<!\\d)${d}\\.\\s?${m}\\.\\s?${y}(?!\\d)`, 'g');
+}
+
+/**
+ * Konec lhůty popsaný jako její začátek („lhůta 3 let, která běží od 13. 3. 2028“ —
+ * server test 4. 10. 2026, R1) → program opraví „od“ na „do“. Jen u dat, která program
+ * sám spočítal jako KONEC lhůty, a jen v kontextu lhůty/promlčení.
+ * Vrací { text, fixed: počet }.
+ */
+function fixDeadlineWording(response, df) {
+    let t = String(response || '');
+    if (!df) return { text: t, fixed: 0 };
+    const ends = new Set();
+    if (df.limitation) { ends.add(df.limitation.subjectiveEnd); if (df.limitation.objectiveEnd) ends.add(df.limitation.objectiveEnd); }
+    if (df.conflictEnd) ends.add(df.conflictEnd);
+    for (const f of df.facts || []) if (f && f.end) ends.add(f.end);
+    let fixed = 0;
+    for (const key of ends) {
+        if (!key) continue;
+        const [y, m, d] = String(key).split('-').map(Number);
+        const date = `${d}\\.\\s?${m}\\.\\s?${y}(?!\\d)`;
+        const re = new RegExp(`(běží|plyne|počíná(?:\\s+běžet)?|začíná(?:\\s+běžet)?|počítá\\s+se|lh[uů]t\\S*)\\s+(od|ode)(\\s+(?:dne|data))?\\s+(${date})`, 'giu');
+        t = t.replace(re, (all, verb, od, dne, dt, idx, whole) => {
+            // jen ve větě, která mluví o lhůtě / promlčení
+            let before = whole.slice(Math.max(0, idx - 90), idx + verb.length);
+            let cut = 0; const reB = /[.!?]\s+(?=\p{Lu})|\n/gu; let b;
+            while ((b = reB.exec(before))) cut = b.index + b[0].length;
+            if (!/lh[uů]t|promlč/i.test(before.slice(cut))) return all;
+            fixed++;
+            if (/^(počíná|začíná)/i.test(verb)) return `končí${dne || ''} ${dt}`;
+            return `${verb} do${dne || ''} ${dt}`;
+        });
+    }
+    return { text: t, fixed };
+}
+
 /**
  * Co model z vypočtených dat vynechal, doplní program pod odpověď:
  * rozpor dat doručení (bez zmínky o rozporu) a konec promlčecí lhůty (bez data).
@@ -207,11 +245,16 @@ function dateFactsAppendix(response, df) {
             'Ověřte skutečné datum doručení (datová schránka / doručenka).');
     }
     if (df.limitation) {
-        const [y, m, d] = df.limitation.subjectiveEnd.split('-').map(Number);
-        const re = new RegExp(`(?<!\\d)${d}\\.\\s?${m}\\.\\s?${y}`);
-        if (!re.test(r)) out.push(...df.limitation.lines.map(l => l.replace(/^• /, '• ')));
+        // Celý výpočet se doplní, když v odpovědi chybí KTERÝKOLI z klíčových údajů: konec
+        // subjektivní lhůty, u škody i objektivní 10letá lhůta, a § 629 (server test 4. 10. 2026,
+        // R1: datum tam bylo, ale chyběla 10letá lhůta a § — advokát by dostal neúplný rozbor).
+        const L = df.limitation;
+        const hasSubj = _dateRe(L.subjectiveEnd).test(r);
+        const hasObj = !L.objectiveEnd || _dateRe(L.objectiveEnd).test(r) || /(10|deset)\s+let/i.test(r);
+        const hasPar = /§\s?629|629\s+odst/.test(r);
+        if (!hasSubj || !hasObj || !hasPar) out.push(...L.lines);
     }
     return out.length ? '\n\n---\n📅 Doplněno programem (výpočet lhůt):\n' + out.join('\n') : '';
 }
 
-module.exports = { buildDateFacts, findDates, limitationFacts, debtLimitationFacts, dateFactsAppendix };
+module.exports = { buildDateFacts, findDates, limitationFacts, debtLimitationFacts, dateFactsAppendix, fixDeadlineWording };

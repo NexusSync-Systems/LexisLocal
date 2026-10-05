@@ -31,10 +31,12 @@ BRANCH="release-prep"
 #               modelů a bez měření vzdálené odezvy; ~2,5–3 h, nejpozději po 4 h se instance vypne
 #   kompletni — kontrola VŠEHO, co aplikace umí: měření odezvy, celý server_suite (A–Z vč. agentů,
 #               zátěže, InfoJednání + ISIR živě, pilotního toku a pokrytí všech čtecích cest)
-#               a záloha se zkouškou obnovy; bez srovnání modelů. ~3 h, vypne se nejpozději po 5,5 h.
+#               a záloha se zkouškou obnovy; bez srovnání modelů. Agenti 3× (SUITE_REPEAT) kvůli
+#               spolehlivosti; po dohrání výsledků se instance SAMA VYPNE (nečeká na limit).
+#               ~3,5 h, vypne se nejpozději po 5,5 h.
 PROFILE="${PROFILE:-plny}"
 if [ "$PROFILE" = "kompletni" ]; then
-  MAX_MINUTES=330; COMPARE_MODELS=""
+  MAX_MINUTES=330; COMPARE_MODELS=""; SUITE_REPEAT="${SUITE_REPEAT:-3}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
 fi
 if [ "$PROFILE" = "integrace" ]; then
   # 3. 10. 2026: samotné nahrání OZ trvalo 43 min → 150 min nestačilo na celý suite.
@@ -211,7 +213,7 @@ fi
 if [ "${RUN_SUITE:-1}" = "1" ] && [ -f backend/scripts/server_suite.js ]; then
   echo "=== server_suite start $(date -Is)"
   node backend/scripts/server_suite.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
-    --label server-loopback --out "$OUT/suite" 2>&1 | tail -n 60 || echo "!! server_suite skončil s chybou"
+    --label server-loopback --out "$OUT/suite" --repeat "${SUITE_REPEAT:-1}" 2>&1 | tail -n 60 || echo "!! server_suite skončil s chybou"
   echo "=== server_suite hotovo $(date -Is)"
   upload
 fi
@@ -247,5 +249,12 @@ if [ -n "${COMPARE_MODELS:-}" ] && [ -f backend/scripts/model_compare.js ]; then
   echo "=== srovnání modelů hotovo $(date -Is) (souhrn: suite/*_cmp-*.md)"
   upload
 fi
-echo "=== připraveno pro vzdálený test, server běží do vypnutí $(date -Is)"
+if [ "${STOP_AFTER_TESTS:-0}" = "1" ]; then
+  # 4. 10. 2026: profil kompletni pak 2,5 h jen čekal na limit (bez tokenu ho nikdo nepoužil).
+  echo "=== testy hotové, výsledky nahrány — instance se vypne a smaže $(date -Is)"
+  upload
+  shutdown -h +3 "LexisLocal remote test: testy hotové"
+else
+  echo "=== připraveno pro vzdálený test, server běží do vypnutí $(date -Is)"
+fi
 wait "$SYNC_PID"

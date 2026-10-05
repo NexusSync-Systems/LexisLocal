@@ -20,7 +20,7 @@ const ollama = require('../lib/ai_provider'); // Ollama | OpenAI | Anthropic (st
 const { generateAgentFallback } = require('../lib/agent_fallback');
 const { buildRagScope } = require('../lib/rag_request');
 const agentTools = require('../lib/agent_tools'); // interní tool-registry (Fáze 1, za AGENT_TOOLS=1)
-const { buildDateFacts, dateFactsAppendix } = require('../lib/date_facts');
+const { buildDateFacts, dateFactsAppendix, fixDeadlineWording } = require('../lib/date_facts');
 const clauseScan = require('../lib/clause_scan');
 const { taskProfile, redactForOpponent } = require('../lib/agent_outlines');
 const { proceduralFacts, proceduralAppendix } = require('../lib/procedural_facts');
@@ -426,23 +426,27 @@ router.post('/:agentId', async (req, res) => {
             try { kbIdx = require('../lib/kb_law_index').getKbLawIndex(); } catch (e) { kbIdx = null; }
             const lf = fixLawNames(g.text, kbIdx);
             const lawIssues = lf.issues;
+            // Konec lhůty popsaný jako začátek („běží od 13. 3. 2028“) → „běží do“ (lib/date_facts).
+            const dw = fixDeadlineWording(lf.text, dateFacts);
+            lf.text = dw.text;
             // Co model z kontrolního seznamu doložek / výpočtů lhůt vynechal, doplní program.
             const clauseApx = clauseFindings.length ? clauseScan.missingAppendix(lf.text, clauseFindings) : { text: '', missing: [] };
             const dateApx = dateFactsAppendix(lf.text, dateFacts);
             const procApx = proceduralAppendix(lf.text, procFacts);
             const mainText = profile.kind === 'proofread' ? czProofread.finalize(lf.text, proofTarget) : lf.text;
             const body = mainText + clauseApx.text + dateApx + procApx;
+            const dwLine = dw.fixed ? `• Opraveno ${dw.fixed}× „lhůta běží od <konec lhůty>“ → „do“ (datum je konec lhůty, spočítal ho program).` : '';
             const oppLine = oppRedacted.length ? `• Z dopisu protistraně odstraněno: ${oppRedacted.join(', ')} (protistrana je nepotřebuje).` : '';
             const scLines = selfCheck ? [
                 selfCheck.structuredLetter && selfCheck.missing.length ? `• Dopis sestavil program; doplňte: ${selfCheck.missing.join(', ')}.` : '',
                 ...selfCheck.remainingText.map(t => `• Kontrola: ${t.replace(/^V dopise /, 'v dopise ').replace(/ Uveď.*$| Oprav.*$/, '')}`)
             ] : [];
-            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), oppLine, ...scLines] });
+            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), oppLine, dwLine, ...scLines] });
             response.message.content = body + warn;
             draftBody = body; draftWarn = warn;
             outputGuard = { replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
                 clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx, proceduralAppended: !!procApx,
-                taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted, promptLeakBlocked: lg.promptLeak, secretsRedacted: lg.redacted,
+                taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted, promptLeakBlocked: lg.promptLeak, secretsRedacted: lg.redacted, deadlineWordingFixed: dw.fixed,
                 chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null, selfCheck };
         } catch (gErr) {
             console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);
