@@ -45,11 +45,11 @@ const SCHEMA = {
 const INSTRUCTION =
     'FORMÁT ODPOVĚDI: Tento dopis sestaví program. Vrať POUZE JSON objekt (žádný jiný text) s poli:\n' +
     '{"typ": "předžalobní výzva" | "výzva k úhradě" | "dopis protistraně",\n' +
-    ' "odesilatel": {"jmeno": klient (za koho píšeme) nebo null, "adresa": adresa klienta nebo null},\n' +
-    ' "adresat": {"jmeno": jméno adresáta PŘESNĚ jak je v podkladech (i symbol jako [OSOBA_1]) nebo null, "adresa": adresa nebo null, "pohlavi": "M" | "F" | null},\n' +
+    ' "odesilatel": {"jmeno": klient, za kterého píšeme — je-li jmenován v zadání nebo podkladech, uveď ho (např. „naší klientky Jany Vzorové“ → „Jana Vzorová“), jinak null, "adresa": adresa klienta nebo null},\n' +
+    ' "adresat": {"jmeno": jméno adresáta i s titulem v 1. pádě (např. „Ing. Petr Ukázka“, ne „Ing. Petru Ukázkovi“; symbol jako [OSOBA_1] opiš přesně) nebo null, "adresa": adresa nebo null, "pohlavi": "M" | "F" | null},\n' +
     ' "misto": město odesílatele nebo null,\n' +
     ' "vec": krátké označení věci („Výzva k úhradě náhrady škody“),\n' +
-    ' "skutkovy_stav": 1–3 odstavce: co se stalo, kdy, jak vznikl dluh/škoda a jeho výše (rozpis položek, pokud je v podkladech). Piš ve 2. osobě k adresátovi („Dne … jste …“), v 1. osobě množného čísla za kancelář („naše klientka“).\n' +
+    ' "skutkovy_stav": 1–3 odstavce: co se stalo, kdy, jak vznikl dluh/škoda a jeho výše (rozpis položek, pokud je v podkladech). Piš ve 2. osobě k adresátovi („Dne … jste …“), v 1. osobě množného čísla za kancelář („naše klientka“), spisovnou češtinou. NEPIŠ sem promlčecí lhůty, výpočty lhůt ani právní rozbor — dopis jde protistraně.\n' +
     ' "pravni_duvod": právní důvod jednou větou (předpis obecně, § jen když si jsi jistý) nebo null,\n' +
     ' "castka": celková požadovaná částka přesně podle podkladů („86 000 Kč“) nebo null,\n' +
     ' "lhuta": lhůta k plnění, jen pokud ji zadání nebo podklady uvádějí („do 15 dnů od doručení této výzvy“), jinak null,\n' +
@@ -97,6 +97,18 @@ function placeLine(misto, today) {
 
 const D = (what) => `[Doplnit – ${what}]`;
 
+/**
+ * Věty, které do dopisu protistraně nepatří (promlčení, výpočty lhůt pro advokáta) —
+ * serverový test 5. 10. 2026: model do skutkového stavu napsal „bylo třeba uplatnit nárok
+ * u soudu … do 13. 3. 2028“. Vrací { text, removed }.
+ */
+function stripInternal(text) {
+    const parts = String(text || '').split(/(?<=[.!?])\s+(?=[\p{Lu}„"])/u);
+    const bad = /promlč|subjektivní\s+lhůt|objektivní\s+lhůt|uplatnit\s+nárok\s+u\s+soudu|dozvěděl[a]?\s+o\s+škodě|§\s?6(19|20|29|36)\b/i;
+    const keep = parts.filter(p => !bad.test(p));
+    return { text: keep.join(' ').trim(), removed: parts.length - keep.length };
+}
+
 /** „naší klientky“ / „našeho klienta“ podle jména klienta (společnost = klientka). */
 function clientForms(klient) {
     if (!klient) return { gen: 'naší klientky / našeho klienta', nom: 'naše klientka / náš klient' };
@@ -143,7 +155,8 @@ function renderLetter(data, opts = {}) {
     lines.push('');
     lines.push(`obracíme se na Vás jako právní zástupce ${cf.gen} (${klient || D('jméno klienta')}) v následující věci.`);
     lines.push('');
-    lines.push(need(_str(o.skutkovy_stav), 'popis skutkového stavu'));
+    const st = stripInternal(_str(o.skutkovy_stav) || '');
+    lines.push(need(st.text || null, 'popis skutkového stavu'));
     if (_str(o.pravni_duvod)) { lines.push(''); lines.push(_str(o.pravni_duvod)); }
     lines.push('');
     const isPre = /předžalob/i.test(typ) || /předžalob/i.test(String(opts.prompt || ''));
@@ -164,7 +177,7 @@ function renderLetter(data, opts = {}) {
     const extra = (Array.isArray(o.chybejici) ? o.chybejici : []).map(_str).filter(Boolean)
         .filter(x => !missing.some(m => m.toLowerCase().includes(x.toLowerCase().slice(0, 12))));
     const allMissing = [...new Set(missing.concat(extra))].slice(0, 12);
-    return { text: lines.join('\n'), missing: allMissing, addressee: adrName, data: o };
+    return { text: lines.join('\n'), missing: allMissing, addressee: adrName, data: o, title: (_str(o.vec) || 'Výzva k úhradě').slice(0, 120), strippedInternal: st.removed };
 }
 
-module.exports = { clientForms, isDemandLetter, SCHEMA, INSTRUCTION, parseLetterJson, renderLetter, mapStrings, placeLine };
+module.exports = { stripInternal, clientForms, isDemandLetter, SCHEMA, INSTRUCTION, parseLetterJson, renderLetter, mapStrings, placeLine };
