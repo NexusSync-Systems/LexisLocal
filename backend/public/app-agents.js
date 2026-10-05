@@ -447,7 +447,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async deleteWorkflowRule(id) {
-        if (!confirm("Opravdu chcete smazat toto pravidlo?")) return;
+        if (!await LexisUI.confirm("Opravdu chcete smazat toto pravidlo?")) return;
         try {
             const res = await fetch(`${this.apiBase}/workflows/rules/${id}`, {
                 method: 'DELETE',

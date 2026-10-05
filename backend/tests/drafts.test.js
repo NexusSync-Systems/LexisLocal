@@ -19,7 +19,7 @@ let mockReply = 'ŽALOBA\n\nOkresní soud v Testově\n\nŽalobce [OSOBA_1] se do
 jest.mock('../lib/ai_provider', () => {
     const actual = jest.requireActual('../lib/ai_provider');
     return Object.assign({}, actual, {
-        chat: jest.fn(async ({ messages }) => { mockSeen.push(messages); return { message: { content: mockReply } }; })
+        chat: jest.fn(async ({ messages }) => { mockSeen.push(messages); return { message: { content: Array.isArray(mockReply) ? (mockReply.length > 1 ? mockReply.shift() : mockReply[0]) : mockReply } }; })
     });
 });
 jest.mock('../lib/rag', () => Object.assign({}, jest.requireActual('../lib/rag'), {
@@ -198,6 +198,34 @@ describe('agenti a koncepty', () => {
         expect(text).toMatch(/nar\. 800101\/1234/);
         expect(text).toMatch(/odvolacího řízení/);
         expect(d.versions[1]).toMatchObject({ kind: 'ai' });
+    });
+
+    test('U7: připomínka s § — model ji vynechá → jedna oprava modelem; zapracuje ji → v nové verzi je', async () => {
+        const c = await H(request(app).post('/api/drafts')).send({ title: 'Odvolání', text: 'ODVOLÁNÍ\nŽalobce podává odvolání proti rozsudku Okresního soudu v Testově.\nOdvolací důvody: nesprávně zjištěný skutkový stav.' });
+        await H(request(app).post(`/api/drafts/${c.body.id}/comments`)).send({ text: 'Doplň odvolací důvod nesprávného právního posouzení (§ 205 odst. 2 písm. g) o. s. ř.).' });
+        const n0 = mockSeen.length;
+        process.env.AGENT_SELF_CHECK = '0'; // jen kontrola připomínek (jinak by druhou odpověď spotřebovala oprava délky)
+        mockReply = ['ODVOLÁNÍ\nŽalobce podává odvolání proti rozsudku Okresního soudu v Testově.\nOdvolací důvody: nesprávně zjištěný skutkový stav a nesprávné právní posouzení.',
+            'ODVOLÁNÍ\nŽalobce podává odvolání proti rozsudku Okresního soudu v Testově.\nOdvolací důvody: nesprávně zjištěný skutkový stav (§ 205 odst. 2 písm. e) o. s. ř.) a nesprávné právní posouzení věci (§ 205 odst. 2 písm. g) o. s. ř.).'];
+        const r = await H(request(app).post('/api/agent/spisovatel')).send({ prompt: 'Zapracuj připomínku advokáta.', draftId: c.body.id });
+        expect(r.status).toBe(200);
+        expect(r.body.draft).toMatchObject({ version: 2 });
+        expect(JSON.stringify(mockSeen.slice(n0))).toMatch(/chybí zapracování těchto připomínek/);
+        const text = D.specToText((await H(request(app).get('/api/drafts/' + c.body.id))).body.spec);
+        expect(text).toMatch(/§ 205 odst\. 2 písm\. g\)/);
+        expect(text).not.toMatch(/\[Doplnit – zapracovat připomínku/);
+        mockReply = 'ŽALOBA'; delete process.env.AGENT_SELF_CHECK;
+    });
+
+    test('U7: model připomínku s § nezapracuje ani po opravě → pole [Doplnit – …] v nové verzi', async () => {
+        const c = await H(request(app).post('/api/drafts')).send({ title: 'Odvolání 2', text: 'ODVOLÁNÍ\nŽalobce podává odvolání proti rozsudku Okresního soudu v Testově.' });
+        await H(request(app).post(`/api/drafts/${c.body.id}/comments`)).send({ text: 'Doplň důvod podle § 205 odst. 2 písm. g) o. s. ř.' });
+        mockReply = 'ODVOLÁNÍ\nŽalobce podává odvolání proti rozsudku Okresního soudu v Testově pro nesprávné posouzení.';
+        const r = await H(request(app).post('/api/agent/spisovatel')).send({ prompt: 'Zapracuj připomínku advokáta.', draftId: c.body.id });
+        expect(r.body.draft).toMatchObject({ version: 2 });
+        const text = D.specToText((await H(request(app).get('/api/drafts/' + c.body.id))).body.spec);
+        expect(text).toMatch(/\[Doplnit – zapracovat připomínku advokáta: Doplň důvod podle § 205/);
+        mockReply = 'ŽALOBA';
     });
 
     test('revize schváleného konceptu agentem je odmítnuta', async () => {

@@ -368,8 +368,8 @@ class LexisLocalApp {
         // Clear Audit Log Action
         const clearAuditBtn = document.getElementById('btn-clear-audit');
         if (clearAuditBtn) {
-            clearAuditBtn.addEventListener('click', () => {
-                const t = prompt('Auditní log se archivuje (zůstane uložený v archivu serveru) a vyprázdní. Smí to jen správce.\n\nPro potvrzení napište SMAZAT:');
+            clearAuditBtn.addEventListener('click', async () => {
+                const t = await LexisUI.prompt('Auditní log se archivuje (zůstane uložený v archivu serveru) a vyprázdní. Smí to jen správce.\n\nPro potvrzení napište SMAZAT:');
                 if (t && t.trim().toUpperCase() === 'SMAZAT') this.clearAuditLogs();
             });
         }
@@ -402,9 +402,9 @@ class LexisLocalApp {
 
         const btnResetAgent = document.getElementById('btn-reset-agent');
         if (btnResetAgent) {
-            btnResetAgent.addEventListener('click', () => {
+            btnResetAgent.addEventListener('click', async () => {
                 const agentId = document.getElementById('agent-form-id').value;
-                if (confirm("Opravdu chcete tohoto systémového agenta vrátit do výchozího stavu? Vaše úpravy promptu budou smazány.")) {
+                if (await LexisUI.confirm("Opravdu chcete tohoto systémového agenta vrátit do výchozího stavu? Vaše úpravy promptu budou smazány.")) {
                     this.resetAgent(agentId);
                 }
             });
@@ -412,9 +412,9 @@ class LexisLocalApp {
 
         const btnDeleteAgent = document.getElementById('btn-delete-agent');
         if (btnDeleteAgent) {
-            btnDeleteAgent.addEventListener('click', () => {
+            btnDeleteAgent.addEventListener('click', async () => {
                 const agentId = document.getElementById('agent-form-id').value;
-                if (confirm("Opravdu chcete tohoto vlastního agenta trvale smazat?")) {
+                if (await LexisUI.confirm("Opravdu chcete tohoto vlastního agenta trvale smazat?")) {
                     this.deleteAgent(agentId);
                 }
             });

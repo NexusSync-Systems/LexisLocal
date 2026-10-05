@@ -109,7 +109,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async addUserDevice(uid) {
-        const label = prompt('Název zařízení (např. „LexisEditor – notebook“, „Telefon“):', 'LexisEditor');
+        const label = await LexisUI.prompt('Název zařízení (např. „LexisEditor – notebook“, „Telefon“):', 'LexisEditor');
         if (label === null) return;
         try {
             const r = await this._usersCall('POST', `/${encodeURIComponent(uid)}/devices`, { label });
@@ -119,7 +119,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async revokeUserDevice(uid, did, label) {
-        if (!confirm(`Zrušit zařízení „${label}“? Přestane okamžitě fungovat.`)) return;
+        if (!await LexisUI.confirm(`Zrušit zařízení „${label}“? Přestane okamžitě fungovat.`)) return;
         try { await this._usersCall('DELETE', `/${encodeURIComponent(uid)}/devices/${encodeURIComponent(did)}`); await this.loadUsersTab(); }
         catch (err) { alert('❌ ' + err.message); }
     },
@@ -131,7 +131,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async setUserDisabled(uid, disabled) {
-        if (disabled && !confirm('Deaktivovat uživatele? Všechna jeho zařízení se okamžitě odhlásí. Jméno zůstane v historii a auditu.')) return;
+        if (disabled && !await LexisUI.confirm('Deaktivovat uživatele? Všechna jeho zařízení se okamžitě odhlásí. Jméno zůstane v historii a auditu.')) return;
         try { await this._usersCall('PATCH', `/${encodeURIComponent(uid)}`, { disabled }); }
         catch (err) { alert('❌ ' + err.message); }
         await this.loadUsersTab();
@@ -256,7 +256,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async setFirmMode(enabled) {
-        if (enabled && !confirm('Zapnout firemní režim? Uživatelé pak uvidí jen své a nasdílené spisy.')) return;
+        if (enabled && !await LexisUI.confirm('Zapnout firemní režim? Uživatelé pak uvidí jen své a nasdílené spisy.')) return;
         try {
             const r = await fetch(`${this.apiBase}/settings/firm-mode`, { method: 'POST', headers: this.getHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ enabled }) });
             const d = await r.json().catch(() => ({}));
@@ -308,15 +308,15 @@ Object.assign(LexisLocalApp.prototype, {
                 this.renderSpisAccess(sid);
             };
             const own = document.getElementById('acc-owner');
-            if (own) own.addEventListener('change', () => { if (own.value && confirm('Změnit vlastníka spisu?')) post('owner', { userId: own.value }); });
+            if (own) own.addEventListener('change', async () => { if (own.value && await LexisUI.confirm('Změnit vlastníka spisu?')) post('owner', { userId: own.value }); });
             const sb = document.getElementById('acc-share-btn');
             if (sb) sb.addEventListener('click', () => {
                 const u = document.getElementById('acc-share-user').value;
                 if (u) post('share', { userId: u, level: document.getElementById('acc-share-level').value });
             });
-            el.querySelectorAll('[data-revoke]').forEach(a => a.addEventListener('click', (ev) => {
+            el.querySelectorAll('[data-revoke]').forEach(a => a.addEventListener('click', async (ev) => {
                 ev.preventDefault();
-                if (confirm('Odebrat přístup ke spisu?')) post('revoke', { userId: a.dataset.revoke });
+                if (await LexisUI.confirm('Odebrat přístup ke spisu?')) post('revoke', { userId: a.dataset.revoke });
             }));
         } catch (e) { el.innerHTML = ''; }
     }

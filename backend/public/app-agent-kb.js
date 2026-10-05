@@ -162,7 +162,7 @@
         async deleteAgentKnowledge(fileName) {
             const agentId = this._kbAgentId;
             if (!agentId) return;
-            if (!confirm(`Smazat „${fileName}" ze znalostní báze asistenta?`)) return;
+            if (!await LexisUI.confirm(`Smazat „${fileName}" ze znalostní báze asistenta?`)) return;
             try {
                 const res = await fetch(`${this.apiBase}/agent-knowledge/${encodeURIComponent(agentId)}/${encodeURIComponent(fileName)}`, {
                     method: 'DELETE',

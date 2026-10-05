@@ -51,6 +51,25 @@ router.post('/:agentId', async (req, res) => {
         return res.status(400).json({ error: 'Zadání (prompt) je povinné.' });
     }
 
+    // Dotaz na konkrétní rozhodnutí, které nemáme (nebo s rokem v budoucnosti) → odpoví
+    // program, ne model (serverový test 5. 10. 2026, R3: model jednou ze tří „shrnul“
+    // neexistující rozsudek). Viz lib/unknown_decision.js.
+    let unknownDecision = null;
+    if (process.env.AGENT_DECISION_GUARD !== '0' && !req.body.draftId) {
+        try { unknownDecision = require('../lib/unknown_decision').check(prompt, { context }); } catch (e) { unknownDecision = null; }
+        if (unknownDecision && unknownDecision.direct) {
+            try { logEvent('AI Agent', 'Dotaz na neznámé rozhodnutí (bez modelu)', agent.name, { decisions: unknownDecision.future.concat(unknownDecision.unknown) }); } catch (e) { /* ignore */ }
+            return res.json({
+                agent: agent.name,
+                model: 'LexisLocal (kontrola programem, bez AI)',
+                response: unknownDecision.text,
+                unknownDecision: { future: unknownDecision.future, unknown: unknownDecision.unknown },
+                citationCheck: null,
+                timestamp: new Date().toISOString()
+            });
+        }
+    }
+
     // Koncepty (webový LexisEditor Lite): draftId = agent reviduje existující koncept
     // (dostane jeho znění + otevřené připomínky); saveDraft true/'auto' = výstup se uloží
     // jako koncept „ke kontrole“. Bez těchto polí (např. volání z LexisEditoru) beze změny.
@@ -64,7 +83,7 @@ router.post('/:agentId', async (req, res) => {
         if (denied) return res.status(denied.status).json({ error: denied.error });
         if (dd.status === 'schvaleno') return res.status(409).json({ error: 'Koncept je schválený — agent ho nemůže revidovat.' });
         if (dd.lock && Date.parse(dd.lock.until) > Date.now()) return res.status(423).json({ error: `Koncept právě upravuje ${dd.lock.name} — revizi AI spusťte po uložení.`, code: 'locked' });
-        draftTarget = { id: dd.id, baseVersion: dd.version, text: Drafts.specToText(dd.versions[dd.versions.length - 1].spec) };
+        draftTarget = { id: dd.id, baseVersion: dd.version, text: Drafts.specToText(dd.versions[dd.versions.length - 1].spec), comments: (dd.comments || []).filter(c => !c.resolved) };
         context = [context, Drafts.revisionContext(dd)].filter(Boolean).join('\n\n');
     }
     const draftSpisId = req.body.spisId ? String(req.body.spisId) : null;
@@ -382,6 +401,36 @@ router.post('/:agentId', async (req, res) => {
             } catch (scErr) { console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', scErr.message); }
         }
 
+        // Připomínky advokáta s § (revize konceptu): paragraf musí v novém znění být.
+        // Jinak jedna oprava modelem, potom pole [Doplnit – …] (serverový test U7).
+        let revisionCheck = null;
+        if (draftTarget && response && response.message && process.env.AGENT_REVISION_CHECK !== '0') {
+            try {
+                const rc = require('../lib/revision_check');
+                const items = rc.commentRefs(draftTarget.comments);
+                let miss = rc.missingComments(response.message.content, items);
+                if (miss.length) {
+                    let retried = false;
+                    if (!letter) {
+                        retried = true;
+                        try {
+                            const msgs = messages.concat([{ role: 'assistant', content: response.message.content }, { role: 'user', content: rc.retryMessage(miss) }]);
+                            const r3 = await llm.chat({ model: selectedModel, messages: msgs, options: chatOptions });
+                            let t3 = r3 && r3.message ? r3.message.content : '';
+                            if (pseudoMap) t3 = restorePseudonyms(t3, pseudoMap, restoreOpts);
+                            if (t3 && t3.trim().length > 40 && rc.missingComments(t3, items).length < miss.length) {
+                                response.message.content = outputChecks.applyFixes(t3, {}).text;
+                                miss = rc.missingComments(t3, items);
+                            }
+                        } catch (rErr) { console.warn(`⚠️ Agent [${agent.name}]: oprava kvůli připomínkám selhala (${rErr.message}).`); }
+                    }
+                    if (miss.length) response.message.content += rc.appendix(miss);
+                    revisionCheck = { retried, appended: miss.map(it => it.refs.join(',')) };
+                    console.log(`📝 Agent [${agent.name}]: připomínky s § ${retried ? 'po opravě ' : ''}${miss.length ? 'stále chybí → pole k doplnění' : 'zapracovány'}.`);
+                }
+            } catch (rcErr) { console.warn('⚠️ Agent: kontrola připomínek selhala (nekritické):', rcErr.message); }
+        }
+
         // #2: Antihalucinační kontrola citací i v single-agent routě (dřív jen v
         // orchestrátoru). Neověřené §/sp. zn. se advokátovi označí. Best-effort —
         // chyba ověření nesmí shodit odpověď agenta.
@@ -454,7 +503,7 @@ router.post('/:agentId', async (req, res) => {
             outputGuard = { replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
                 clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx, proceduralAppended: !!procApx,
                 taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted, promptLeakBlocked: lg.promptLeak, secretsRedacted: lg.redacted, deadlineWordingFixed: dw.fixed,
-                chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null, selfCheck };
+                chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null, selfCheck, revisionCheck };
         } catch (gErr) {
             console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);
         }
@@ -493,6 +542,10 @@ router.post('/:agentId', async (req, res) => {
                 co2Grams: greenMetrics.co2Grams
             }
         });
+
+        if (unknownDecision && unknownDecision.notice && response && response.message && typeof response.message.content === 'string') {
+            response.message.content = unknownDecision.notice + '\n\n' + response.message.content;
+        }
 
         let draft = null;
         if (wantDraft) {

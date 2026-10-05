@@ -181,7 +181,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async newDraft() {
-        const title = prompt('Název konceptu:', 'Nový koncept');
+        const title = await LexisUI.prompt('Název konceptu:', 'Nový koncept');
         if (title == null) return;
         try {
             const d = await this.dSend('/drafts', 'POST', { title: title || 'Nový koncept', text: title || 'Nový koncept' });
@@ -194,7 +194,7 @@ Object.assign(LexisLocalApp.prototype, {
         opts = opts || {};
         if (this.activeTab !== 'drafts') this.switchTab('drafts');
         if (this.draftEditing && this.currentDraft && this.currentDraft.id !== id) {
-            if (!confirm('Máte rozpracované neuložené změny. Zahodit je?')) return;
+            if (!await LexisUI.confirm('Máte rozpracované neuložené změny. Zahodit je?')) return;
             await this.stopDraftEdit(true);
         }
         try {
@@ -331,7 +331,7 @@ Object.assign(LexisLocalApp.prototype, {
         if (!d || !page) return;
         const spec = _draftSpecFromDom(page);
         if (!spec.blocks.length) { alert('Koncept nesmí být prázdný.'); return; }
-        const note = prompt('Poznámka k verzi (nepovinné):', '') || '';
+        const note = await LexisUI.prompt('Poznámka k verzi (nepovinné):', '') || '';
         try {
             const r = await this.dSend(`/drafts/${encodeURIComponent(d.id)}`, 'PUT', { spec, baseVersion: this.draftBaseVersion, note });
             this.currentDraft = r;
@@ -340,7 +340,7 @@ Object.assign(LexisLocalApp.prototype, {
         } catch (e) {
             if (e.status === 409 && e.data && e.data.code === 'conflict') {
                 // Nikdo nepřijde o práci: moje úprava se uloží jako samostatný koncept.
-                if (confirm(e.message + '\n\nUložit vaši úpravu jako samostatný koncept (nic se neztratí) a načíst aktuální verzi?')) {
+                if (await LexisUI.confirm(e.message + '\n\nUložit vaši úpravu jako samostatný koncept (nic se neztratí) a načíst aktuální verzi?')) {
                     try {
                         const copy = await this.dSend('/drafts', 'POST', { title: d.title + ' (souběžná úprava)', spisId: d.spisId, caseNumber: d.caseNumber, spec, note: `Souběžná úprava k v${this.draftBaseVersion}` });
                         await this.stopDraftEdit(true);
@@ -354,7 +354,7 @@ Object.assign(LexisLocalApp.prototype, {
 
     async setDraftStatus(status) {
         const d = this.currentDraft; if (!d) return;
-        if (status === 'schvaleno' && !confirm('Schválit koncept? Potvrzujete, že jste obsah zkontroloval(a) — včetně částí od AI. Schválený koncept je jen pro čtení.')) return;
+        if (status === 'schvaleno' && !await LexisUI.confirm('Schválit koncept? Potvrzujete, že jste obsah zkontroloval(a) — včetně částí od AI. Schválený koncept je jen pro čtení.')) return;
         try { this.currentDraft = await this.dSend(`/drafts/${encodeURIComponent(d.id)}/status`, 'POST', { status }); this.renderDraft(); this.loadDraftsTab(); }
         catch (e) { alert(e.message); }
     },
@@ -392,7 +392,7 @@ Object.assign(LexisLocalApp.prototype, {
 
     async restoreDraftVersion(v) {
         const d = this.currentDraft; if (!d) return;
-        if (!confirm(`Obnovit verzi v${v}? Vznikne nová verze se stejným obsahem (historie zůstane).`)) return;
+        if (!await LexisUI.confirm(`Obnovit verzi v${v}? Vznikne nová verze se stejným obsahem (historie zůstane).`)) return;
         try {
             const ver = await this.dGet(`/drafts/${encodeURIComponent(d.id)}/versions/${encodeURIComponent(v)}`);
             this.currentDraft = await this.dSend(`/drafts/${encodeURIComponent(d.id)}`, 'PUT', { spec: ver.spec, baseVersion: d.version, note: `Obnovena verze v${v}` });
@@ -403,7 +403,7 @@ Object.assign(LexisLocalApp.prototype, {
     async aiReviseDraft() {
         const d = this.currentDraft; if (!d) return;
         const open = d.comments.filter((c) => !c.resolved).length;
-        const instr = prompt(open ? `Spisovatel zapracuje ${open} otevřených připomínek. Doplňující pokyn (nepovinné):` : 'Co má Spisovatel v konceptu upravit?', '');
+        const instr = await LexisUI.prompt(open ? `Spisovatel zapracuje ${open} otevřených připomínek. Doplňující pokyn (nepovinné):` : 'Co má Spisovatel v konceptu upravit?', '');
         if (instr == null) return;
         if (!open && !instr.trim()) return;
         const box = document.getElementById('draft-detail');
@@ -442,7 +442,7 @@ Object.assign(LexisLocalApp.prototype, {
 
     async deleteDraftUi() {
         const d = this.currentDraft; if (!d) return;
-        if (!confirm(`Smazat koncept „${d.title}“?`)) return;
+        if (!await LexisUI.confirm(`Smazat koncept „${d.title}“?`)) return;
         try {
             await this.dSend(`/drafts/${encodeURIComponent(d.id)}`, 'DELETE');
             this.currentDraft = null;

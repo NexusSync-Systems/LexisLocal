@@ -527,7 +527,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async reindexAllRag() {
-        if (!confirm("Opravdu chcete kompletně přegenerovat všechny sémantické indexy spisů?\nTato operace rozseká texty a vygeneruje nové AI embeddingy.")) return;
+        if (!await LexisUI.confirm("Opravdu chcete kompletně přegenerovat všechny sémantické indexy spisů?\nTato operace rozseká texty a vygeneruje nové AI embeddingy.")) return;
         
         const reindexBtn = document.getElementById('btn-reindex-all');
         const badgeEl = document.getElementById('rag-status-badge');

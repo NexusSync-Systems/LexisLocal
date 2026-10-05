@@ -134,13 +134,13 @@
 
         async deleteAgentExample(idx) {
             const e = (this._exList || [])[idx];
-            if (!e || !confirm(`Smazat ukázku „${e.title}“?`)) return;
+            if (!e || !await LexisUI.confirm(`Smazat ukázku „${e.title}“?`)) return;
             const list = this._exList.filter((_, i) => i !== idx);
             await this._exPersist(list, 'Ukázka smazána.');
         },
 
         async resetAgentExamples() {
-            if (!confirm('Nahradit ukázky tohoto asistenta výchozími? Vlastní ukázky se smažou.')) return;
+            if (!await LexisUI.confirm('Nahradit ukázky tohoto asistenta výchozími? Vlastní ukázky se smažou.')) return;
             this.closeAgentExampleEditor();
             await this._exPersist('reset', 'Obnoveny výchozí ukázky.');
         }

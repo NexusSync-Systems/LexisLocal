@@ -543,7 +543,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async deleteFeeItem(id) {
-        if (!confirm("Opravdu chcete smazat tuto položku z ceníku?")) return;
+        if (!await LexisUI.confirm("Opravdu chcete smazat tuto položku z ceníku?")) return;
         try {
             const res = await fetch(`${this.apiBase}/managerial/fees/${id}`, {
                 method: 'DELETE',

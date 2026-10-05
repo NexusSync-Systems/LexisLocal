@@ -145,7 +145,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async deleteEmailTask(id) {
-        if (!confirm("Opravdu chcete tento e-mailový úkol smazat z historie?")) return;
+        if (!await LexisUI.confirm("Opravdu chcete tento e-mailový úkol smazat z historie?")) return;
         try {
             const res = await fetch(`${this.apiBase}/email/tasks/${id}`, {
                 method: 'DELETE',

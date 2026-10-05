@@ -388,7 +388,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async deleteSpis(fileName) {
-        if (!confirm(`Opravdu si přejete kompletně smazat spis „${fileName}“ ze seznamu i z disku?`)) return;
+        if (!await LexisUI.confirm(`Opravdu si přejete kompletně smazat spis „${fileName}“ ze seznamu i z disku?`)) return;
         
         try {
             const res = await fetch(`${this.apiBase}/inbox/delete`, {

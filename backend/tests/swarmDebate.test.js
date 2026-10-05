@@ -60,3 +60,27 @@ test('výpadek modelu → poctivý fallback, žádný smyšlený posudek', async
     expect(r.body.agent2.response).not.toMatch(/0[.,]05 %/);
     expect(r.body.agent2.response).toMatch(/NEBYLO ZPRACOVÁNO/);
 });
+
+test('F2: rozhodčí doložka ve spotřebitelské smlouvě — kontrola programem jde oběma agentům a do výsledku', async () => {
+    const smlouva = 'SMLOUVA O DÍLO\nObjednatel je spotřebitel.\nČl. I\n1. Zhotovitel provede rekonstrukci koupelny.\nČl. VII\n1. Veškeré spory z této smlouvy rozhodne s konečnou platností rozhodce jmenovaný zhotovitelem.\nČl. VIII\n1. Smlouva nabývá účinnosti podpisem obou stran a vyhotovuje se ve dvou stejnopisech.';
+    const n0 = mockSeen.length;
+    const r = await H(request(app).post('/api/agent-swarm/debate')).send({
+        prompt: 'Je rozhodčí doložka v této spotřebitelské smlouvě platná? Navrhni postup pro klienta.',
+        agentId1: 'resersnik', agentId2: 'kontrolor', context: smlouva
+    });
+    expect(r.status).toBe(200);
+    const sent = mockSeen.slice(n0);
+    expect(sent.length).toBe(2);
+    sent.forEach(m => expect(m).toMatch(/Automatická kontrola smlouvy[^"]*Rozhodčí doložka/));
+    expect(r.body.clauseCheck.findings.map(f => f.id)).toContain('rozhodci');
+    expect(r.body.agent2.response).toMatch(/Rozhodčí doložka — u spotřebitele neplatná/);
+});
+
+test('F2: když se doložka v debatě probere, program ji nepřipojuje znovu', async () => {
+    const ai = require('../lib/ai_provider');
+    ai.chat.mockImplementationOnce(async () => ({ message: { content: 'Rozhodčí doložka v čl. VII je u spotřebitele neplatná (§ 3 odst. 6 zák. č. 216/1994 Sb.).' } }));
+    const smlouva = 'SMLOUVA O DÍLO\nObjednatel je spotřebitel.\nČl. I\n1. Zhotovitel provede rekonstrukci koupelny.\nČl. VII\n1. Veškeré spory z této smlouvy rozhodne s konečnou platností rozhodce jmenovaný zhotovitelem.\nČl. VIII\n1. Smlouva nabývá účinnosti podpisem obou stran a vyhotovuje se ve dvou stejnopisech.';
+    const r = await H(request(app).post('/api/agent-swarm/debate')).send({ prompt: 'Posuď smlouvu.', agentId1: 'resersnik', agentId2: 'kontrolor', context: smlouva });
+    expect(r.body.clauseCheck.appended).toEqual([]);
+    expect(r.body.agent2.response).not.toMatch(/Automatická kontrola smlouvy našla/);
+});

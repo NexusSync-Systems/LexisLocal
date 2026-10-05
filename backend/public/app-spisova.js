@@ -300,10 +300,10 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async novySpis() {
-        const spisZn = prompt('Spisová značka (např. 23 C 120/2026):');
+        const spisZn = await LexisUI.prompt('Spisová značka (např. 23 C 120/2026):');
         if (spisZn === null) return;
-        const klient = prompt('Klient (nepovinné):') || '';
-        const soud = prompt('Soud (např. Okresní soud v Jihlavě) — nutné pro hlídání jednání na InfoJednání:') || '';
+        const klient = await LexisUI.prompt('Klient (nepovinné):') || '';
+        const soud = await LexisUI.prompt('Soud (např. Okresní soud v Jihlavě) — nutné pro hlídání jednání na InfoJednání:') || '';
         try {
             await this.ssSend('/spisy', 'POST', { spisZn: spisZn, klient: klient, soud: soud });
             this.loadSpisyList();
@@ -326,7 +326,7 @@ Object.assign(LexisLocalApp.prototype, {
         try {
             const d = await this.ssGet(`/spisy/${id}`);
             const s = d.spis || {};
-            const v = prompt('Spisová značka insolvenčního řízení ke sledování v ISIR (např. KSBR 56 INS 1000/2026; prázdné = nesledovat):', s.insZn || '');
+            const v = await LexisUI.prompt('Spisová značka insolvenčního řízení ke sledování v ISIR (např. KSBR 56 INS 1000/2026; prázdné = nesledovat):', s.insZn || '');
             if (v === null) return;
             if (v.trim() && !/\bINS\s*\d+\s*\/\s*\d{4}/i.test(v)) { alert('Zadejte sp. zn. ve tvaru „KSBR 56 INS 1000/2026“ nebo „INS 1000/2026“.'); return; }
             await this.ssSend(`/spisy/${id}`, 'PATCH', { insZn: v.trim() });
@@ -339,11 +339,11 @@ Object.assign(LexisLocalApp.prototype, {
         try {
             const d = await this.ssGet(`/spisy/${id}`);
             const s = d.spis || {};
-            const soud = prompt('Soud (např. Okresní soud v Jihlavě):', s.soud || '');
+            const soud = await LexisUI.prompt('Soud (např. Okresní soud v Jihlavě):', s.soud || '');
             if (soud === null) return;
-            const soudKod = prompt('Kód soudu pro InfoJednání (nepovinné — jen pokud ho znáte):', s.soudKod || '');
+            const soudKod = await LexisUI.prompt('Kód soudu pro InfoJednání (nepovinné — jen pokud ho znáte):', s.soudKod || '');
             if (soudKod === null) return;
-            const adv = prompt('Odpovědný advokát:', s.odpovednyAdvokat || '');
+            const adv = await LexisUI.prompt('Odpovědný advokát:', s.odpovednyAdvokat || '');
             if (adv === null) return;
             await this.ssSend(`/spisy/${id}`, 'PATCH', { soud, soudKod, odpovednyAdvokat: adv });
             this.openSpis ? this.openSpis(id) : this.loadSpisyList();
@@ -419,7 +419,7 @@ Object.assign(LexisLocalApp.prototype, {
         }
     },
     async vytvorProtokol(ids) {
-        if (!confirm(`Vytvořit skartační protokol pro ${ids.length} spisů? (nic se nesmaže, jen se zaeviduje návrh)`)) return;
+        if (!await LexisUI.confirm(`Vytvořit skartační protokol pro ${ids.length} spisů? (nic se nesmaže, jen se zaeviduje návrh)`)) return;
         try {
             const r = await this.ssSend('/skartace/protokol', 'POST', { spisIds: ids });
             alert(`Protokol vytvořen (${r.protokol.pocet} spisů). Skartaci proveďte vědomě podle předpisů ČAK.`);
@@ -442,8 +442,8 @@ Object.assign(LexisLocalApp.prototype, {
         }
     },
     async fakturaZeSpisu(spisId) {
-        const rateStr = prompt('Hodinová sazba (Kč, prázdné = výchozí z nastavení):', '');
-        const dphStr = prompt('Sazba DPH v % (0 pro neplátce):', '21');
+        const rateStr = await LexisUI.prompt('Hodinová sazba (Kč, prázdné = výchozí z nastavení):', '');
+        const dphStr = await LexisUI.prompt('Sazba DPH v % (0 pro neplátce):', '21');
         const body = { spisId, dphRate: parseFloat(dphStr) || 0 };
         if (rateStr && parseFloat(rateStr) > 0) body.rate = parseFloat(rateStr);
         try {

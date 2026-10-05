@@ -20,6 +20,7 @@ const { resolveRagFilters, buildRagScope } = require('../lib/rag_request');
 const ChiefOrchestrator = require('../lib/orchestrator');
 const spisFolders = require('../lib/spisFolders');
 const spisy = require('../lib/spisy');
+const clauseScan = require('../lib/clause_scan');
 
 // POST /api/agent-swarm/debate - Coordinate two agents interacting over the same task
 router.post('/debate', async (req, res) => {
@@ -79,6 +80,9 @@ router.post('/debate', async (req, res) => {
         console.warn("⚠️ Swarm RAG: Selhalo vyhledávání kontextu:", ragErr.message);
     }
 
+    let clauseFindings = [];
+    try { clauseFindings = context ? clauseScan.scanContract(String(context)) : []; } catch (e) { clauseFindings = []; }
+
     try {
         // --- STEP 1: INVOKE AGENT 1 (CREATOR) ---
         const messages1 = [
@@ -99,6 +103,11 @@ router.post('/debate', async (req, res) => {
             else { const ps = pseudonymizeText(context); ctxForModel = ps.text; pseudoMap = ps.map; }
         }
         const restore = t => (pseudoMap ? restorePseudonyms(t, pseudoMap) : t);
+        // Rizikové doložky najde program (lib/clause_scan.js) — oba agenti je dostanou jako
+        // kontrolní seznam a co v debatě nezazní, program doplní (serverový test F2).
+        if (clauseFindings.length) {
+            messages1.push({ role: 'system', content: clauseScan.modelNote(clauseFindings) });
+        }
         if (context) {
             messages1.push({ role: 'system', content: `Kontext dokumentu (osobní údaje jako symboly [OSOBA_1] apod. — ponech je přesně v tomto tvaru):\n${ctxForModel}` });
         }
@@ -129,6 +138,10 @@ router.post('/debate', async (req, res) => {
             messages2.push({ role: 'system', content: `Kontext dokumentu (osobní údaje jako symboly [OSOBA_1] apod. — ponech je přesně v tomto tvaru):\n${ctxForModel}` });
         }
 
+        if (clauseFindings.length) {
+            messages2.push({ role: 'system', content: clauseScan.modelNote(clauseFindings) });
+        }
+
         messages2.push({
             role: 'system',
             content: `Tvůj AI kolega [${agent1.name}] vypracoval pro uživatele tento prvotní návrh:\n\n${answer1}\n\nJako přísný a konstruktivní oponent zhodnoť tento návrh. Identifikuj slabá místa, právní kličky, potenciální rizika nebo stylistické nedostatky. Následně vypracuj revidované znění nebo finální doporučení pro advokáta.`
@@ -142,7 +155,9 @@ router.post('/debate', async (req, res) => {
             options: { temperature: agentTemperature(agent2, 0.2), num_ctx: agentNumCtx() }
         });
 
-        const answer2 = restore(response2.message.content);
+        let answer2 = restore(response2.message.content);
+        const clauseApx = clauseFindings.length ? clauseScan.missingAppendix(answer1 + '\n' + answer2, clauseFindings) : { text: '', missing: [] };
+        answer2 += clauseApx.text;
 
         logEvent('LexisEditor', 'Swarm Debata', `Duel: ${agent1.name} vs. ${agent2.name}`, {
             model: selectedModel,
@@ -160,6 +175,7 @@ router.post('/debate', async (req, res) => {
             model: selectedModel,
             agent1: { id: agentId1, name: agent1.name, response: restore(answer1) },
             agent2: { id: agentId2, name: agent2.name, response: answer2 },
+            clauseCheck: clauseFindings.length ? { findings: clauseFindings.map(x => ({ id: x.id, article: x.article, label: x.label, law: x.law })), appended: clauseApx.missing } : null,
             citationCheck: await (async () => {
                 // Kontrola citací i u debaty (dřív jen /api/agent a orchestrátor).
                 try {
@@ -180,7 +196,8 @@ router.post('/debate', async (req, res) => {
         const answer1 = generateAgentFallback(agentId1, prompt);
         // Dřív tu byl NATVRDO napsaný „oponentní posudek“ (doložka o smluvní pokutě 0,05 %)
         // vydávaný za výstup modelu — falešný právní obsah. Teď poctivý fallback.
-        const answer2 = generateAgentFallback(agentId2, prompt);
+        let answer2 = generateAgentFallback(agentId2, prompt);
+        if (clauseFindings.length) answer2 += clauseScan.missingAppendix('', clauseFindings).text;
 
         logEvent('LexisEditor', 'Swarm Debata Fallback', `Duel Fallback: ${agent1.name} vs. ${agent2.name}`, {
             model: `${selectedModel} (Simulovaný Swarm)`,
@@ -199,6 +216,7 @@ router.post('/debate', async (req, res) => {
             agent1: { id: agentId1, name: agent1.name, response: answer1 },
             agent2: { id: agentId2, name: agent2.name, response: answer2 },
             fallback: true,
+            clauseCheck: clauseFindings.length ? { findings: clauseFindings.map(x => ({ id: x.id, article: x.article, label: x.label, law: x.law })), appended: clauseFindings.map(x => x.id) } : null,
             oborDetected: oborDetection,
             timestamp: new Date().toISOString()
         });
