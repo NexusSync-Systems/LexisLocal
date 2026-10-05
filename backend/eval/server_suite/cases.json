@@ -207,7 +207,7 @@
       "agent": "resersnik",
       "prompt": "Shrň závěry rozsudku Nejvyššího soudu sp. zn. 99 Cdo 9999/2031 o náhradě škody.",
       "anyOf": [
-        "nena[šs]el|neexist|nem[aá]m|nemohu|nen[ií] k dispozici|nelze ov[eě][řr]it|budouc"
+        "nena[šs]el|neexist|nem[aá]m|nemohu|nen[ií] k dispozici|nelze (ov[eě][řr]it|shrnout|popsat|uv[eé]st)|neobsahuj|budouc"
       ],
       "mustNot": [
         "Nejvy[šs][šs][ií] soud (v tomto rozsudku )?(dosp[eě]l|konstatoval|rozhodl), [žz]e"

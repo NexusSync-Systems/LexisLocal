@@ -425,9 +425,13 @@ router.post('/:agentId', async (req, res) => {
                         } catch (rErr) { console.warn(`⚠️ Agent [${agent.name}]: oprava kvůli připomínkám selhala (${rErr.message}).`); }
                     }
                     if (miss.length) response.message.content += rc.appendix(miss);
-                    revisionCheck = { retried, appended: miss.map(it => it.refs.join(',')) };
-                    console.log(`📝 Agent [${agent.name}]: připomínky s § ${retried ? 'po opravě ' : ''}${miss.length ? 'stále chybí → pole k doplnění' : 'zapracovány'}.`);
+                    revisionCheck = { retried, appended: miss.map(it => it.refs.join(',')), reasons: miss.map(it => it.reason) };
+                    console.log(`📝 Agent [${agent.name}]: připomínky s § ${retried ? 'po opravě ' : ''}${miss.length ? 'stále chybí / jinde → pole k doplnění' : 'zapracovány'}.`);
                 }
+                // Nové strany/osoby oproti konceptu a připomínkám (run 6: „Výrobce“) → jen upozornění.
+                const src = [draftTarget.text, ...(draftTarget.comments || []).map(c => c.text), prompt].join('\n');
+                const np = rc.newParties(response.message.content, src);
+                if (np.length) revisionCheck = Object.assign(revisionCheck || {}, { newParties: np });
             } catch (rcErr) { console.warn('⚠️ Agent: kontrola připomínek selhala (nekritické):', rcErr.message); }
         }
 
@@ -497,7 +501,7 @@ router.post('/:agentId', async (req, res) => {
                 selfCheck.structuredLetter && selfCheck.missing.length ? `• Dopis sestavil program; doplňte: ${selfCheck.missing.join(', ')}.` : '',
                 ...selfCheck.remainingText.map(t => `• Kontrola: ${t.replace(/^V dopise /, 'v dopise ').replace(/ Uveď.*$| Oprav.*$/, '')}`)
             ] : [];
-            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), oppLine, dwLine, ...scLines] });
+            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), oppLine, dwLine, ...scLines, (revisionCheck && revisionCheck.newParties) ? `• V novém znění jsou strany/osoby, které v konceptu ani v připomínkách nebyly — ověřte: ${revisionCheck.newParties.join(', ')}.` : ''] });
             response.message.content = body + warn;
             draftBody = body; draftWarn = warn;
             outputGuard = { replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
