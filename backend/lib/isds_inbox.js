@@ -227,6 +227,16 @@ function _safeName(name, i) {
 }
 function _metaStore() { return require('./database'); }
 
+/**
+ * Zpráva od systémové schránky provozovatele ISDS (ID aaaaaaa, „Systémová schránka …“)
+ * — uvítání, oznámení o změnách. Informační, nikdy nezakládá procesní lhůtu.
+ */
+function isSystemMessage(record) {
+    if (!record) return false;
+    if (String(record.senderBoxId || '').toLowerCase() === 'aaaaaaa') return true;
+    return /syst[eé]mov[aá]\s+schr[aá]nka|provozovatel[e]?\s+ISDS/i.test(String(record.sender || ''));
+}
+
 /** Metadata doručení k souboru v spisovně (čte watcher.processDocument). */
 function metaForFile(relativePath) {
     try {
@@ -266,7 +276,8 @@ async function storeMessage({ record, files, zfo }, opts = {}) {
             annotation: record.annotation || null, senderRefNumber: record.senderRefNumber || null,
             recipientRefNumber: record.recipientRefNumber || null, toHands: record.toHands || null,
             deliveryDate: delivery.date, deliveryHow: delivery.how, deliveryExact: delivery.exact,
-            statusText: STATUS[delivery.status] || null, mainFile: f.metaType === 'main', receivedAt: new Date().toISOString()
+            statusText: STATUS[delivery.status] || null, mainFile: f.metaType === 'main', receivedAt: new Date().toISOString(),
+            systemMessage: isSystemMessage(record)
         };
         try { db.insert('isds_files', meta); } catch (e) { /* bez metadat se lhůta počítá z textu */ }
         fs.writeFileSync(path.join(dir, rel), Buffer.from(f.base64, 'base64'));
@@ -375,6 +386,7 @@ function setEnabled(on) {
 }
 
 module.exports = {
+    isSystemMessage,
     config, isConfigured, status, setEnabled, pollOnce, importZfo, storeMessage, metaForFile,
     buildListRequest, buildDownloadRequest, parseList, parseMessage, parseSigned, extractZfoXml, deliveryOf, pragueDate, STATUS
 };

@@ -4,11 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LexisLocal Hub — Právní AI pod kontrolou</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="icon" href="/favicon.ico" sizes="any">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <!-- Premium Fonts -->
     <!-- Žádné externí fonty: CSP povoluje jen 'self' a kancelářská data nemají opouštět síť (ani DNS/preconnect na Google). Písmo padá na systémové. -->
     <link rel="stylesheet" href="styles.css">
@@ -36,6 +31,10 @@
                 <button class="nav-btn" data-tab="inbox">
                     <span class="icon">📥</span> Doručené Spisy
                     <span class="badge" id="inbox-badge" style="display: none;">0</span>
+                </button>
+                <button class="nav-btn" data-tab="datovka">
+                    <span class="icon">📨</span> Datová schránka
+                    <span class="badge" id="datovka-badge" style="display: none;" title="Poslední pokus o stažení selhal">!</span>
                 </button>
                 <button class="nav-btn" data-tab="drafts">
                     <span class="icon">📝</span> Koncepty
@@ -238,6 +237,47 @@
                     </div>
                 </section>
 
+                <!-- TAB: DATOVÁ SCHRÁNKA (dřív schované v Lustračním centru → Přístupy) -->
+                <section class="tab-pane" id="tab-datovka">
+                    <div class="glass" style="padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <h2 style="margin: 0; font-size: 1.1rem;">📨 Datová schránka kanceláře</h2>
+                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                <button type="button" class="btn btn-primary btn-sm" id="btn-isds-poll" onclick="window.appInstance.isdsPollNow()">Stáhnout teď</button>
+                                <label class="btn btn-secondary btn-sm" style="cursor: pointer; margin: 0;">Nahrát .zfo<input type="file" id="dsx-zfo-input" accept=".zfo" multiple style="display: none;" onchange="window.appInstance.datovkaUploadZfo(this)"></label>
+                            </div>
+                        </div>
+                        <div id="reg-cfg-isds-status" role="status" style="font-size: 0.82rem; color: var(--text-muted);"></div>
+                        <div id="dsx-zfo-status" role="status" style="font-size: 0.8rem; color: var(--text-muted);"></div>
+                    </div>
+
+                    <div class="glass" style="padding: 18px; margin-top: 16px;">
+                        <h3 style="margin: 0 0 10px; font-size: 0.95rem;">Přijaté zprávy</h3>
+                        <div id="dsx-messages" style="display: flex; flex-direction: column; gap: 8px; font-size: 0.82rem;">
+                            <div style="opacity: 0.6;">Načítám…</div>
+                        </div>
+                        <p style="font-size: 0.74rem; color: var(--text-muted); margin: 10px 0 0;">Zprávy stažené jinde (Datovka, web ISDS) nahrajte tlačítkem „Nahrát .zfo“ — přílohy se rozbalí do spisovny a lhůta se spočítá od data doručení ze zprávy. Systémové zprávy provozovatele ISDS lhůty nezakládají.</p>
+                    </div>
+
+                    <div class="glass" style="padding: 18px; margin-top: 16px; display: flex; flex-direction: column; gap: 10px;">
+                                <h4 style="margin: 0; font-size: 0.9rem;">⚙️ Připojení schránky</h4>
+                                <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0; line-height: 1.5;">Server bude každých 15 minut stahovat doručené zprávy, uloží je do spisovny (složka <code>datova-schranka</code>) a lhůty spočítá od <b>skutečného doručení</b>. <b style="color: #f59e0b;">Pozor: přihlášení serveru účtem, který smí číst zprávy, je přihlášení oprávněné osoby — zprávy se tím doručí a začnou běžet lhůty.</b> Heslo se ukládá jen lokálně a šifrovaně a nikdy se nezobrazuje zpět.</p>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <select id="reg-cfg-isds-url" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                        <option value="https://ws1.mojedatovaschranka.cz/DS/dx">Ostrý provoz (mojedatovaschranka.cz)</option>
+                                        <option value="https://ws1.czebox.cz/DS/dx">Testovací prostředí (czebox.cz)</option>
+                                    </select>
+                                    <input type="text" id="reg-cfg-isds-login" autocomplete="off" placeholder="Přihlašovací jméno (ne ID schránky)" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                    <input type="password" id="reg-cfg-isds-password" autocomplete="new-password" placeholder="Heslo (prázdné = beze změny)" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                    <label style="font-size: 0.8rem; display: flex; gap: 8px; align-items: center;"><input type="checkbox" id="reg-cfg-isds-inbox"> Stahovat doručené zprávy automaticky</label>
+                                </div>
+                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="window.appInstance.saveRegistryConfig('dsx-cfg-status')">Uložit připojení</button>
+                            <span id="dsx-cfg-status" role="status" style="font-size: 0.78rem; color: var(--text-muted);"></span>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- TAB: REGISTRIES -->
                 <section class="tab-pane" id="tab-registries">
                     <div class="search-section glass">
@@ -250,25 +290,9 @@
                             <button class="btn btn-primary" id="btn-registry-search">Prověřit subjekt</button>
                         </div>
                         <details id="registry-config" style="margin-top: 14px;" ontoggle="if(this.open){ window.appInstance.loadRegistryConfig(); }">
-                            <summary style="cursor: pointer; font-size: 0.82rem; color: var(--text-muted); user-select: none;">⚙️ Přístupy: datová schránka, CEE, Katastr</summary>
+                            <summary style="cursor: pointer; font-size: 0.82rem; color: var(--text-muted); user-select: none;">⚙️ Přístupy: CEE, Katastr</summary>
                             <div style="margin-top: 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
-                                <h4 style="margin: 0; font-size: 0.85rem;">📨 Datová schránka kanceláře</h4>
-                                <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0; line-height: 1.5;">Server bude každých 15 minut stahovat doručené zprávy, uloží je do spisovny (složka <code>datova-schranka</code>) a lhůty spočítá od <b>skutečného doručení</b>. <b style="color: #f59e0b;">Pozor: přihlášení serveru účtem, který smí číst zprávy, je přihlášení oprávněné osoby — zprávy se tím doručí a začnou běžet lhůty.</b> Heslo se ukládá jen lokálně a šifrovaně a nikdy se nezobrazuje zpět.</p>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                                    <select id="reg-cfg-isds-url" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
-                                        <option value="https://ws1.mojedatovaschranka.cz/DS/dx">Ostrý provoz (mojedatovaschranka.cz)</option>
-                                        <option value="https://ws1.czebox.cz/DS/dx">Testovací prostředí (czebox.cz)</option>
-                                    </select>
-                                    <input type="text" id="reg-cfg-isds-login" autocomplete="off" placeholder="Přihlašovací jméno do schránky" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
-                                    <input type="password" id="reg-cfg-isds-password" autocomplete="new-password" placeholder="Heslo (prázdné = beze změny)" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
-                                    <label style="font-size: 0.8rem; display: flex; gap: 8px; align-items: center;"><input type="checkbox" id="reg-cfg-isds-inbox"> Stahovat doručené zprávy automaticky</label>
-                                </div>
-                                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-isds-poll" onclick="window.appInstance.isdsPollNow()" style="padding:6px 14px; font-size:0.8rem;">Stáhnout teď</button>
-                                    <span id="reg-cfg-isds-status" style="font-size: 0.78rem; color: var(--text-muted);"></span>
-                                </div>
-                                <p style="font-size: 0.74rem; color: var(--text-muted); margin: 0;">Zprávy stažené jinde (Datovka, web) nahrajte jako soubor <code>.zfo</code> do doručené pošty — přílohy se rozbalí a lhůta se spočítá od data doručení ze zprávy.</p>
-                                <hr style="border: 0; border-top: 1px solid var(--border-glass); margin: 4px 0;">
+                                <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0;">📨 Datová schránka kanceláře se nastavuje v záložce <a href="#" onclick="window.appInstance.switchTab('datovka'); return false;">Datová schránka</a>.</p>
                                 <h4 style="margin: 0; font-size: 0.85rem;">CEE a Katastr (volitelné)</h4>
                                 <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0; line-height: 1.5;">CEE (exekuce) a Katastr jsou <b>placené registrované služby</b>. Bez přístupu se nedotazují (žádná odhadovaná data). Klíč se ukládá <b>jen lokálně a šifrovaně</b> a nikdy se nezobrazuje zpět. URL musí obsahovat <code>{ico}</code>.</p>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
@@ -1402,6 +1426,7 @@
     <script src="app.js"></script>
     <script src="app-inbox.js"></script>
     <script src="app-chat.js"></script>
+    <script src="app-datovka.js"></script>
     <script src="app-alerts-audit.js"></script>
     <script src="app-agents.js"></script>
     <script src="app-agent-kb.js"></script>

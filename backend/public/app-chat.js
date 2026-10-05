@@ -681,8 +681,8 @@ Object.assign(LexisLocalApp.prototype, {
         }
     },
 
-    async saveRegistryConfig() {
-        const st = document.getElementById('reg-cfg-status');
+    async saveRegistryConfig(statusId) {
+        const st = document.getElementById(typeof statusId === 'string' ? statusId : 'reg-cfg-status');
         const val = (id) => (document.getElementById(id) || {}).value || '';
         const payload = {
             cee: { url: val('reg-cfg-cee-url'), key: val('reg-cfg-cee-key') },

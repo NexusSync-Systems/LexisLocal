@@ -113,6 +113,36 @@ router.post('/isds/inbox/poll', async (req, res) => {
     res.json(r);
 });
 
+// GET /api/registries/isds/messages — přehled zpráv přijatých z datové schránky (stažených
+// i nahraných jako .zfo) pro záložku „Datová schránka“: doručení, lhůta, spis.
+router.get('/isds/messages', async (req, res) => {
+    try {
+        const inbox = await require('../lib/watcher').loadInbox();
+        const byId = new Map();
+        Object.values(inbox.files || {}).forEach(f => {
+            if (!f || !f.isds || !f.isds.dmID) return;
+            const id = String(f.isds.dmID);
+            const m = byId.get(id) || { dmID: id, sender: f.isds.sender || null, annotation: f.isds.annotation || null,
+                senderRefNumber: f.isds.senderRefNumber || null, deliveryDate: f.isds.deliveryDate || null,
+                deliveryHow: f.isds.deliveryHow || null, deliveryExact: f.isds.deliveryExact !== false,
+                caseNumber: null, deadlineDate: null, deadlineDays: 0, files: [] };
+            m.files.push({ fileName: f.fileName, relativePath: f.relativePath });
+            if (f.caseNumber && f.caseNumber !== 'Neznámá sp. zn.' && !m.caseNumber) m.caseNumber = f.caseNumber;
+            if (f.deadlineDate && (!m.deadlineDate || f.deadlineDate < m.deadlineDate)) { m.deadlineDate = f.deadlineDate; m.deadlineDays = f.deadlineDays || 0; }
+            byId.set(id, m);
+        });
+        const messages = [...byId.values()].map(m => {
+            let spis = null;
+            try { spis = m.caseNumber ? require('../lib/spisy').findByCase(m.caseNumber) : null; } catch (e) { spis = null; }
+            return Object.assign(m, { spisId: spis ? spis.id : null, spisZn: spis ? spis.spisZn : null,
+                systemMessage: require('../lib/isds_inbox').isSystemMessage({ sender: m.sender }) });
+        }).sort((a, b) => String(b.deliveryDate || '').localeCompare(String(a.deliveryDate || '')));
+        res.json({ success: true, messages, status: require('../lib/isds_inbox').status() });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // POST /api/registries/save-report - Save structured registry audit to Desktop case directory
 router.post('/save-report', async (req, res) => {
     const { ico, name, reportText, caseNumber } = req.body;

@@ -121,6 +121,23 @@ echo "=== npm hotovo (exit $?) $(date -Is)"
 # 3) TLS certifikát (self-signed na veřejnou IP) + token
 IMDS_TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300')
 PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+AWS_REGION=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+# Pevná adresa: Elastic IP se štítkem Name=lexis-test (když existuje a role smí ec2:AssociateAddress).
+# Stejná adresa = stejný „origin“ v prohlížeči → token uložený v LexisLocal vydrží mezi běhy.
+ADDR_NOTE="dočasná veřejná IP (Elastic IP lexis-test nenalezena)"
+if [ -n "$AWS" ]; then
+  EIP_ALLOC=$("$AWS" ec2 describe-addresses --region "$AWS_REGION" --filters Name=tag:Name,Values=lexis-test \
+      --query 'Addresses[0].AllocationId' --output text 2>/dev/null || true)
+  if [ -n "$EIP_ALLOC" ] && [ "$EIP_ALLOC" != "None" ]; then
+    if "$AWS" ec2 associate-address --region "$AWS_REGION" --allocation-id "$EIP_ALLOC" --instance-id "$INSTANCE_ID" \
+         --allow-reassociation >/dev/null 2>&1; then
+      EIP=$("$AWS" ec2 describe-addresses --region "$AWS_REGION" --allocation-ids "$EIP_ALLOC" --query 'Addresses[0].PublicIp' --output text 2>/dev/null || true)
+      if [ -n "$EIP" ] && [ "$EIP" != "None" ]; then PUBLIC_IP="$EIP"; ADDR_NOTE="pevná Elastic IP (lexis-test)"; fi
+    else ADDR_NOTE="Elastic IP nalezena, ale přiřazení selhalo (oprávnění ec2:AssociateAddress?)"; fi
+  fi
+fi
+echo "=== adresa: $PUBLIC_IP — $ADDR_NOTE"
 mkdir -p /opt/lexis-tls
 openssl req -x509 -newkey rsa:2048 -nodes -days 7 -subj "/CN=$PUBLIC_IP" \
   -addext "subjectAltName=IP:$PUBLIC_IP,IP:127.0.0.1" \
@@ -128,7 +145,16 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 7 -subj "/CN=$PUBLIC_IP" \
 FP=$(openssl x509 -in /opt/lexis-tls/cert.pem -noout -fingerprint -sha256 | cut -d= -f2)
 # Otisk VEŘEJNÉHO KLÍČE (SPKI) pro spárování LexisEditoru (js/core/lexis-server-pin.js)
 PIN="sha256/$(openssl x509 -in /opt/lexis-tls/cert.pem -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '=')"
-TOKEN=$(openssl rand -hex 32)
+# Pevný token z SSM Parameter Store (/lexislocal/test-token, SecureString), jinak náhodný.
+# Hodnota se nikam nevypisuje; v _connect.txt je jen poznámka, odkud token je.
+TOKEN=""; TOKEN_NOTE="náhodný pro tento běh"
+if [ -n "$AWS" ]; then
+  TOKEN=$("$AWS" ssm get-parameter --region "$AWS_REGION" --name /lexislocal/test-token --with-decryption \
+      --query 'Parameter.Value' --output text 2>/dev/null | tr -d '[:space:]' || true)
+  if [ ${#TOKEN} -ge 32 ]; then TOKEN_NOTE="pevný z SSM /lexislocal/test-token (stejný jako minule)"; else TOKEN=""; fi
+fi
+[ -z "$TOKEN" ] && TOKEN=$(openssl rand -hex 32)
+echo "=== token: $TOKEN_NOTE"
 
 cat > /opt/LexisLocal/.env <<ENV
 BIND_HOST=0.0.0.0
@@ -166,13 +192,14 @@ else echo "!! backend nenaběhl — viz backend.log"; upload; fi
 # 4) Přístupové údaje do S3 (bucket je soukromý; server po testu zanikne i s tokenem)
 cat > "$OUT/_connect.txt" <<CONN
 Adresa:   https://$PUBLIC_IP/
-Token:    $TOKEN
+Adresa je: $ADDR_NOTE
+Token:    $( [ "$TOKEN_NOTE" = "náhodný pro tento běh" ] && echo "$TOKEN" || echo "$TOKEN_NOTE — v prohlížeči už je uložený, pokud jde i o stejnou adresu" )
 Otisk certifikátu (SHA-256): $FP
 Model:    $CHAT_MODEL   ·   server se sám vypne: $(date -d "+$MAX_MINUTES min" -Is)
 Prohlížeč ukáže varování (self-signed certifikát) → Pokročilé → Pokračovat. Ověř, že otisk sedí.
 Token vlož v aplikaci do nastavení připojení (pole API token).
 LexisEditor: Nastavení → 🔐 Spárovat → vlož tento odkaz (obsahuje token — nesdílet):
-lexis://$PUBLIC_IP/?fp=$PIN&token=$TOKEN
+lexis://$PUBLIC_IP/?fp=$PIN&token=$( [ "$TOKEN_NOTE" = "náhodný pro tento běh" ] && echo "$TOKEN" || echo "<token z SSM>" )
 CONN
 upload
 

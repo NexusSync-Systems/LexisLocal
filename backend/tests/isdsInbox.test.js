@@ -25,9 +25,9 @@ const ROZSUDEK = 'Okresní soud v Jihlavě\nSp. zn. 12 C 45/2026\nROZSUDEK\nŽal
     'Poučení: Proti tomuto rozsudku lze podat odvolání do 15 dnů ode dne doručení písemného vyhotovení.\n';
 const b64 = s => Buffer.from(s, 'utf8').toString('base64');
 
-function messageXml({ dmID = '1234567', files = [{ name: 'rozsudek.txt', meta: 'main', content: ROZSUDEK }], acceptance = '2026-10-01T06:15:00.000+02:00', status = 6 } = {}) {
+function messageXml({ dmID = '1234567', files = [{ name: 'rozsudek.txt', meta: 'main', content: ROZSUDEK }], acceptance = '2026-10-01T06:15:00.000+02:00', status = 6, senderBox = 'abc1234', sender = 'Okresní soud v Jihlavě' } = {}) {
     return '<?xml version="1.0" encoding="UTF-8"?><p:MessageDownloadResponse xmlns:p="http://isds.czechpoint.cz/v20"><p:dmReturnedMessage>' +
-        `<p:dmDm><p:dmID>${dmID}</p:dmID><p:dbIDSender>abc1234</p:dbIDSender><p:dmSender>Okresní soud v Jihlavě</p:dmSender>` +
+        `<p:dmDm><p:dmID>${dmID}</p:dmID><p:dbIDSender>${senderBox}</p:dbIDSender><p:dmSender>${sender}</p:dmSender>` +
         '<p:dmAnnotation>Rozsudek 12 C 45/2026</p:dmAnnotation><p:dmSenderRefNumber>12 C 45/2026-30</p:dmSenderRefNumber>' +
         '<p:dmFiles>' + files.map(f => `<p:dmFile dmMimeType="text/plain" dmFileMetaType="${f.meta}" dmFileDescr="${f.name}"><p:dmEncodedContent>${b64(f.content)}</p:dmEncodedContent></p:dmFile>`).join('') +
         `</p:dmFiles></p:dmDm><p:dmHash algorithm="SHA-256">AAAA</p:dmHash><p:dmDeliveryTime>2026-09-30T14:00:00.000+02:00</p:dmDeliveryTime>` +
@@ -125,6 +125,29 @@ describe('nahrání .zfo → doručená pošta, lhůta od doručení do schránk
         expect(item.defendant).toBe('Beta Test s.r.o.');
         expect(item.relativePath).toMatch(/^datova-schranka[\\/]2026-10-01_7001[\\/]rozsudek\.txt$/);
         expect(fs.existsSync(path.join(tmp, '.isds-zfo', '7001.zfo'))).toBe(true);
+    });
+    test('systémová zpráva ISDS (uvítání) nezaloží lhůtu (test 5. 10. 2026: falešných 90 dnů)', async () => {
+        const uvitani = 'Vážený uživateli, vítejte v datové schránce. Dodané zprávy jsou po 90 dnech od doručení ze schránky smazány. ' +
+            'Lhůta pro uložení do Datového trezoru je 90 dnů.\n';
+        const zfo = zfoOf(messageXml({ dmID: '7099', senderBox: 'aaaaaaa', sender: 'Systémová schránka provozovatele ISDS',
+            files: [{ name: 'zprava.txt', meta: 'main', content: uvitani }] }));
+        const r = await H(request(app).post('/api/inbox/upload')).send({ fileName: 'zprava_7099.zfo', base64: zfo.toString('base64') });
+        expect(r.body).toMatchObject({ success: true, dmID: '7099' });
+        const inbox = await require('../lib/watcher').loadInbox();
+        const item = Object.values(inbox.files).find(f => f.isds && f.isds.dmID === '7099');
+        expect(item).toBeTruthy();
+        expect(item.deadlineDays).toBe(0);
+        expect(item.deadlineDate).toBeNull();
+        expect(item.summary).toMatch(/Systémová zpráva/);
+        expect(ib.isSystemMessage({ sender: 'Okresní soud v Jihlavě', senderBoxId: 'abc1234' })).toBe(false);
+    });
+    test('záložka Datová schránka: přehled zpráv s doručením, lhůtou a označením systémové zprávy', async () => {
+        const r = await H(request(app).get('/api/registries/isds/messages'));
+        expect(r.status).toBe(200);
+        const rozsudek = r.body.messages.find(m => m.dmID === '7001');
+        expect(rozsudek).toMatchObject({ deliveryDate: '2026-10-01', deadlineDate: '2026-10-16', caseNumber: '12 C 45/2026', systemMessage: false });
+        expect(r.body.messages.find(m => m.dmID === '7099')).toMatchObject({ systemMessage: true, deadlineDate: null });
+        expect(r.body.status).toHaveProperty('configured');
     });
     test('stejná zpráva podruhé → duplicita, nic se nepřepíše', async () => {
         const zfo = zfoOf(messageXml({ dmID: '7001' }));

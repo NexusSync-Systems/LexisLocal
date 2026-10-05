@@ -576,6 +576,10 @@ class LexisLocalApp {
                 title: "Hlídač rizik & Legislativa",
                 sub: "Detektor střetu zájmů klienta a kontrola souladu doložek s judikaturou Nejvyššího soudu."
             },
+            datovka: {
+                title: "Datová schránka",
+                sub: "Příjem zpráv z datové schránky kanceláře — doručení, lhůty a přiřazení ke spisům."
+            },
             registries: {
                 title: "Lustrační centrum",
                 sub: "Prověření firem a podnikatelů podle IČO v ARES, insolvenčním rejstříku a dalších registrech."
@@ -616,6 +620,8 @@ class LexisLocalApp {
             if (typeof this.loadReadiness === 'function') this.loadReadiness();
         } else if (tabName === 'models') {
             this.loadModels();
+        } else if (tabName === 'datovka') {
+            if (typeof this.loadDatovka === 'function') this.loadDatovka();
         } else if (tabName === 'inbox') {
             this.loadInbox();
         } else if (tabName === 'audit') {

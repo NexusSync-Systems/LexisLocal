@@ -241,6 +241,14 @@ async function processDocument(filePath, opts = {}) {
             unitDeadlines.map(d => `${d.amount} ${lbl[d.unit] || d.unit} → ${d.deadlineDate}`).join(', ') + '.';
     }
 
+    // 2.75 Step: Systémová zpráva ISDS (uvítání, oznámení provozovatele) — žádné lhůty.
+    //     Test 5. 10. 2026: z věty o mazání zpráv po 90 dnech vznikla falešná lhůta 90 dnů.
+    if (isds && isds.systemMessage) {
+        metadata.deadlineDays = 0; metadata.deadlineDate = null; metadata.deadlineProcedural = null;
+        unitDeadlines = [];
+        metadata.summary = '📨 Systémová zpráva datové schránky (provozovatel ISDS) — informační, bez lhůt.';
+    }
+
     // 2.8 Step: Nařízené jednání v dokumentu (předvolání, vyrozumění) → návrh ke sledování.
     //     Hlídač pak termín ověřuje na InfoJednání; advokát ho musí potvrdit.
     let hearingsFound = [];
