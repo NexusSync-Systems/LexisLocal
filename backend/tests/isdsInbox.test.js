@@ -170,7 +170,7 @@ describe('vyzvednutí schránky (pollOnce)', () => {
         expect(r1.messages[0]).toMatchObject({ dmID: '8001', delivery: '2026-10-01', how: 'přihlášením' });
         expect(processed[0].o.isds).toMatchObject({ dmID: '8001', deliveryDate: '2026-10-01' });
         expect(fs.existsSync(path.join(dir, '.isds-zfo', '8001.zfo'))).toBe(true);
-        expect(soap.mock.calls.map(c => c[0])).toEqual(['dz', 'dx', 'dx']);
+        expect(soap.mock.calls.map(c => c[0])).toEqual(['dx', 'dz', 'dz']);
         const r2 = await ib.pollOnce(opts);
         expect(r2).toMatchObject({ ok: true, checked: 1, downloaded: 0, skipped: 1 });
     });

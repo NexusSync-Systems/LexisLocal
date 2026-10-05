@@ -12,8 +12,9 @@
  * nezapne (nastavení registry_isds_inbox = "1" nebo ISDS_INBOX=1).
  *
  * Rozhraní ISDS (provozní řád ISDS, WS v20, SOAP 1.1, basic auth jméno+heslo):
- *   <základ>/DS/dz  dm_info:        GetListOfReceivedMessages
- *   <základ>/DS/dx  dm_operations:  MessageDownload, SignedMessageDownload
+ *   <základ>/DS/dx  dm_info:        GetListOfReceivedMessages
+ *   <základ>/DS/dz  dm_operations:  MessageDownload, SignedMessageDownload
+ *   (Ověřeno na czebox.cz 5. 10. 2026: GetListOfReceivedMessages na /DS/dz → ISDS 2006 Unknown operation.)
  *   Produkce https://ws1.mojedatovaschranka.cz, test https://ws1.czebox.cz
  * ⚠ Ověřeno jen proti dokumentaci a syntetickým odpovědím — před pilotem ověřit na czebox.cz.
  *
@@ -333,7 +334,7 @@ async function _pollOnce(opts) {
     const done = _processedSet();
     const out = { ok: true, checked: 0, downloaded: 0, skipped: 0, errors: [], messages: [] };
     let list;
-    try { list = parseList(await soap('dz', buildListRequest({ from: fromD.toISOString(), to: now.toISOString() }))); }
+    try { list = parseList(await soap('dx', buildListRequest({ from: fromD.toISOString(), to: now.toISOString() }))); }
     catch (e) { list = { ok: false, reason: e.message }; }
     if (!list.ok) {
         _saveState({ lastRunAt: now.toISOString(), lastError: list.reason });
@@ -343,8 +344,8 @@ async function _pollOnce(opts) {
         out.checked++;
         if (done.has(String(rec.dmID))) { out.skipped++; continue; }
         try {
-            const signed = parseSigned(await soap('dx', buildDownloadRequest(rec.dmID, true)));
-            const msg = parseMessage(await soap('dx', buildDownloadRequest(rec.dmID, false)));
+            const signed = parseSigned(await soap('dz', buildDownloadRequest(rec.dmID, true)));
+            const msg = parseMessage(await soap('dz', buildDownloadRequest(rec.dmID, false)));
             if (!msg.ok) throw new Error(msg.reason);
             // Čas doručení se po stažení mohl změnit (přihlášení = doručení) → vezmi novější údaje.
             const record = Object.assign({}, rec, Object.fromEntries(Object.entries(msg.record).filter(([, v]) => v)));
