@@ -49,7 +49,7 @@ function segment(text) {
             const sub = t.match(/^(\d{1,3})\.(\d{1,2})\s+/);
             const point = !sub && t.match(/^(\d{1,3})\.\s+(?=\S)/);
             if (sub) out.push({ article: `čl. ${sub[1]}.${sub[2]}`, text: t.slice(sub[0].length) });
-            else if (point) out.push({ article: `bod ${point[1]}`, text: t.slice(point[0].length) });
+            else if (point) out.push({ article: current ? `${current} odst. ${point[1]}` : `bod ${point[1]}`, text: t.slice(point[0].length) }); // „Čl. VII / 1. …“ → čl. VII odst. 1 (run 6)
             else out.push({ article: current, text: t });
         }
     }
@@ -60,8 +60,10 @@ function segment(text) {
 const RULES = [
     {
         id: 'zaloha_100', label: 'Záloha — úhrada celé ceny předem', law: '§ 1813 OZ (nepřiměřené ujednání v neprospěch spotřebitele)',
-        re: /(100\s?%|celou\s+cenu|celé\s+ceny)[^.]{0,80}(předem|od podpisu|při podpisu|před zahájením)/i,
-        detail: (m) => /100/.test(m[1]) ? '100 % ceny' : 'celá cena',
+        re: /(100\s?%|celou\s+cenu|celé\s+ceny|v\s+plné\s+výši)[^.]{0,80}(předem|od podpisu|při podpisu|před zahájením)/i,
+        // i obrácené pořadí: „uhradí předem v plné výši (100 % ceny)“ (run 6)
+        alt: /(předem|před\s+zahájením)[^.]{0,80}(100\s?%|v\s+plné\s+výši|celou\s+cenu|celé\s+ceny)/i,
+        detail: (m) => /100/.test(m[0]) ? '100 % ceny' : 'celá cena',
         keys: /z[aá]loh|100\s?%|cel[éou] cen|předem/i, consumer: true
     },
     {
@@ -76,7 +78,10 @@ const RULES = [
     },
     {
         id: 'rozhodci', label: 'Rozhodčí doložka', law: 'u spotřebitele neplatná — § 3 odst. 6 zák. č. 216/1994 Sb.',
-        re: /rozhodčí\S*\s+řízení|rozhodce|rozhodčí doložk/i, keys: /rozhod[čc]/i
+        re: /rozhodčí\S*\s+řízení|rozhodce|rozhodčí doložk/i, keys: /rozhod[čc]/i,
+        // Nestačí doložku zmínit — odpověď musí říct, že je neplatná, a odkázat na zákon o rozhodčím
+        // řízení. Debata v run 6 radila „zjistit, zda byla spotřebitelka informována“ (chybně).
+        must: [/neplatn/i, /216\/1994/]
     },
     {
         id: 'zaruka_kratka', label: 'Zkrácená záruka / doba pro uplatnění vad', law: 'spotřebitel: § 2165 OZ (24 měsíců), § 1813 OZ',
@@ -187,7 +192,7 @@ function scanContract(text) {
                 id: rule.id, article: s.article, label: rule.label, law: rule.law,
                 detail: rule.detail ? rule.detail(m, s.text) : '',
                 quote: s.text.length > 180 ? s.text.slice(0, 177) + '…' : s.text,
-                keys: rule.keys
+                keys: rule.keys, must: rule.must
             });
             break; // stačí první výskyt pravidla
         }
@@ -225,6 +230,7 @@ function _mustTokens(f) {
 }
 function _covered(r, f) {
     if (!(f.keys && f.keys.test(r))) return false;
+    if (f.must && !f.must.every(t => t.test(r))) return false;
     return _mustTokens(f).every(t => t.test(r));
 }
 
@@ -234,7 +240,7 @@ function missingAppendix(response, findings) {
     const miss = findings.filter(f => !_covered(r, f));
     if (!miss.length) return { text: '', missing: [] };
     return {
-        text: '\n\n---\n🔎 Automatická kontrola smlouvy našla i tato ustanovení, která odpověď výše nezmiňuje (ověřte):\n' + miss.map(_line).join('\n'),
+        text: '\n\n---\n🔎 Automatická kontrola smlouvy našla i tato ustanovení, která odpověď výše nezmiňuje nebo u nich chybí správný závěr (ověřte):\n' + miss.map(_line).join('\n'),
         missing: miss.map(f => f.id)
     };
 }
