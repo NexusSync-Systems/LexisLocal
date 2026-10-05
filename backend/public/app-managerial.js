@@ -341,7 +341,7 @@ Object.assign(LexisLocalApp.prototype, {
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <div>
                             <strong style="color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif;">📄 ${escapeHtml(item.documentName)}</strong>
-                            <span style="opacity: 0.6; font-size: 0.75rem; display: block;">Typ: <code>${escapeHtml(item.budgetType)}</code> | Sazba: ${escapeHtml(String(item.hourlyRate))} Kč/hod</span>
+                            <span style="opacity: 0.6; font-size: 0.75rem; display: block;">Typ: ${escapeHtml(({ hourly_cap: 'Hodinový strop', flat: 'Paušál' })[item.budgetType] || item.budgetType)} | Sazba: ${escapeHtml(String(item.hourlyRate))} Kč/hod</span>
                         </div>
                         <div style="text-align: right;">
                             <span style="font-weight: bold; color: ${statusColor}; font-size: 0.95rem;">${item.actualHours.toFixed(1)} / ${escapeHtml(String(item.limitHours))} hod</span>
@@ -367,6 +367,10 @@ Object.assign(LexisLocalApp.prototype, {
         const listEl = document.getElementById('managerial-capacity-list');
         if (!listEl) return;
 
+        if (!allocation.staff || !allocation.staff.length) {
+            listEl.innerHTML = `<div style="opacity: 0.75; padding: 16px; font-size: 0.85rem; line-height: 1.5;">Tým kanceláře zatím není nastaven. Vytížení se počítá pro uživatele z&nbsp;záložky <a href="#" onclick="window.appInstance.switchTab('users'); return false;">Uživatelé</a> — založte advokáty a koncipienty a rozdělení úkolů se zobrazí tady.</div>`;
+            return;
+        }
         listEl.innerHTML = allocation.staff.map(member => {
             const isOverloaded = member.status === 'overloaded';
             const isUnderloaded = member.status === 'underloaded';

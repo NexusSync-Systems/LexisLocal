@@ -70,9 +70,13 @@ router.post('/clear', async (req, res) => {
     try {
         // Delegace do audit modulu — používá stejnou cestu jako zápis logu,
         // takže se nemůže smazat jiný soubor kvůli odlišnému výpočtu WATCH_DIR.
-        clearAuditLogs();
-        logEvent('LexisLocal Dashboard', 'Pročištění logů', 'Audit Trail', { cleared: true });
-        res.json({ success: true, message: "Auditní logy byly vyčištěny." });
+        // Výslovné potvrzení — jedno kliknutí na tlačítko vedle „Obnovit“ nesmí smazat audit.
+        if (!req.body || req.body.confirm !== 'SMAZAT') {
+            return res.status(400).json({ error: 'Pro vyprázdnění auditního logu pošlete potvrzení confirm: "SMAZAT".', code: 'confirm_required' });
+        }
+        const archived = clearAuditLogs();
+        logEvent('LexisLocal Dashboard', 'Pročištění logů', 'Audit Trail', { cleared: true, archive: typeof archived === 'string' ? archived : null });
+        res.json({ success: true, archive: typeof archived === 'string' ? archived : null, message: "Auditní log byl archivován a vyprázdněn." });
     } catch (err) {
         res.status(500).json({ error: `Nelze vyčistit logy: ${err.message}` });
     }

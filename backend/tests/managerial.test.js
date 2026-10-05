@@ -31,6 +31,20 @@ describe('Managerial Intelligence', () => {
     });
 
     describe('getCapacityAllocation', () => {
+        // Tým kanceláře (dřív ho nahrazovali vymyšlení „Partner (ukázka)“ apod.).
+        beforeEach(() => {
+            db.insert('staff', { id: 'partner', name: 'Partner', role: 'Partner' });
+            db.insert('staff', { id: 'koncipient_a', name: 'Koncipient A', role: 'Koncipient' });
+            db.insert('staff', { id: 'koncipient_b', name: 'Koncipient B', role: 'Koncipient' });
+        });
+
+        it('bez týmu a bez uživatelů: prázdný seznam, žádní vymyšlení lidé (UX 5. 10. 2026)', () => {
+            db.collections.staff = []; db.save();
+            const result = managerial.getCapacityAllocation();
+            expect(result.staff).toEqual([]);
+            expect(result.demo).toBe(true);
+        });
+
         it('should return default underloaded staff when there are no alerts', () => {
             const result = managerial.getCapacityAllocation();
 
@@ -48,7 +62,7 @@ describe('Managerial Intelligence', () => {
             db.insert('alerts', { title: 'Přišel rozsudek KS', status: 'pending' });
 
             const result = managerial.getCapacityAllocation();
-            expect(result.demo).toBe(true); // bez konfigurace týmu = neutrální ukázka
+            expect(result.demo).toBe(false); // nastavený tým
 
             const partner = result.staff.find(s => s.id === 'partner');
             expect(partner.load).toBe(3.0); // 1.5 + 1.5

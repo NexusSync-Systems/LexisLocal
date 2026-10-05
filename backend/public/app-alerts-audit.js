@@ -312,7 +312,8 @@ Object.assign(LexisLocalApp.prototype, {
         try {
             const res = await fetch(`${this.apiBase}/audit/clear`, {
                 method: 'POST',
-                headers: this.getHeaders()
+                headers: this.getHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ confirm: 'SMAZAT' })
             });
             const data = await res.json();
             
@@ -320,7 +321,7 @@ Object.assign(LexisLocalApp.prototype, {
                 this.auditLogs = [];
                 this.renderAuditLogs([]);
                 this.updateAuditStats([]);
-                alert("✓ Provozní auditní logy byly kompletně vymazány.");
+                alert("✓ Auditní log byl archivován" + (data.archive ? " (" + data.archive + ")" : "") + " a vyprázdněn.");
             } else {
                 alert("❌ Chyba při mazání logů: " + data.error);
             }

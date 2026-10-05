@@ -16,21 +16,21 @@ class ManagerialIntelligence {
      * Seeds initial budgets for demonstration and backward compatibility
      */
     initDefaultBudgets() {
-        const existing = db.get('budgets');
-        if (existing.length === 0) {
-            db.insert('budgets', {
-                documentName: "Nájemní smlouva.docx",
-                budgetType: "hourly_cap",
-                limitHours: 10,
-                hourlyRate: 2500
+        // Dřív se zakládaly dva ukázkové rozpočty („Nájemní smlouva.docx“, „Odvolání proti
+        // rozsudku.docx“), které se pak v kanceláři tvářily jako skutečné spisy (UX kontrola
+        // 5. 10. 2026). Nic se nezakládá a dřív založené ukázky (beze změny) se odstraní.
+        const DEMO = [
+            { documentName: "Nájemní smlouva.docx", budgetType: "hourly_cap", limitHours: 10, hourlyRate: 2500 },
+            { documentName: "Odvolání proti rozsudku.docx", budgetType: "flat", limitHours: 5, hourlyRate: 3000 }
+        ];
+        try {
+            (db.get('budgets') || []).forEach(b => {
+                if (DEMO.some(d => d.documentName === b.documentName && d.budgetType === b.budgetType &&
+                    Number(d.limitHours) === Number(b.limitHours) && Number(d.hourlyRate) === Number(b.hourlyRate))) {
+                    db.delete('budgets', b.id);
+                }
             });
-            db.insert('budgets', {
-                documentName: "Odvolání proti rozsudku.docx",
-                budgetType: "flat",
-                limitHours: 5,
-                hourlyRate: 3000
-            });
-        }
+        } catch (e) { /* nekritické */ }
     }
 
     /**
@@ -185,12 +185,17 @@ class ManagerialIntelligence {
                 status: 'optimal'
             }));
         } else {
-            isDemo = true;
-            staff = [
-                { id: "partner", name: "Partner (ukázka)", role: "Partner", load: 0, status: "optimal" },
-                { id: "koncipient_a", name: "Koncipient A (ukázka)", role: "Koncipient", load: 0, status: "optimal" },
-                { id: "koncipient_b", name: "Koncipient B (ukázka)", role: "Koncipient", load: 0, status: "optimal" }
-            ];
+            // Bez ručně nastaveného týmu se vezmou skuteční uživatelé kanceláře (záložka
+            // Uživatelé). Advokát/správce = „partner“. Žádní uživatelé → prázdný seznam a UI
+            // nabídne jejich založení (dřív se zobrazovali vymyšlení „Partner (ukázka)“ atd.).
+            let users = [];
+            try { users = require('./users').listUsers().filter(u => !u.disabled && u.role !== 'ctenar'); } catch (e) { users = []; }
+            staff = users.map(u => ({
+                id: u.id, name: u.name,
+                role: (u.role === 'advokat' || u.role === 'spravce') ? 'Partner' : (u.roleLabel || 'Koncipient'),
+                load: 0, status: 'optimal'
+            }));
+            isDemo = staff.length === 0;
         }
 
         // Rozdělení úkolů podle klíčových slov — cílíme podle role (robustní i pro

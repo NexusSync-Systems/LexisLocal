@@ -369,9 +369,8 @@ class LexisLocalApp {
         const clearAuditBtn = document.getElementById('btn-clear-audit');
         if (clearAuditBtn) {
             clearAuditBtn.addEventListener('click', () => {
-                if (confirm("Opravdu chcete vymazat celou historii auditních logů? Všechny provozní statistiky budou vynulovány.")) {
-                    this.clearAuditLogs();
-                }
+                const t = prompt('Auditní log se archivuje (zůstane uložený v archivu serveru) a vyprázdní. Smí to jen správce.\n\nPro potvrzení napište SMAZAT:');
+                if (t && t.trim().toUpperCase() === 'SMAZAT') this.clearAuditLogs();
             });
         }
 

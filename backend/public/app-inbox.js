@@ -234,7 +234,7 @@ Object.assign(LexisLocalApp.prototype, {
                             ${isUnread ? '<span style="width: 6px; height: 6px; background-color: var(--accent-red); border-radius: 50%; display: inline-block; flex-shrink: 0;"></span>' : ''}
                             ${doc.wasOcr ? '<span style="font-size: 0.65rem; background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.25); border-radius: 4px; padding: 1px 5px; flex-shrink: 0;">OCR</span>' : ''}
                             ${_lexSignatureBadge(doc.signatures)}
-                            ${doc.isds ? `<span title="${escapeHtml('Datová schránka · zpráva ' + (doc.isds.dmID || '') + (doc.isds.sender ? ' · od: ' + doc.isds.sender : '') + (doc.isds.annotation ? ' · ' + doc.isds.annotation : ''))}" style="font-size: 0.65rem; background: rgba(14,116,144,0.15); color: #67b7c9; border: 1px solid rgba(14,116,144,0.3); border-radius: 4px; padding: 1px 5px; flex-shrink: 0;">📨 DS · doručeno ${escapeHtml(doc.isds.deliveryDate ? new Date(doc.isds.deliveryDate).toLocaleDateString('cs-CZ') : '?')}${doc.isds.deliveryExact === false ? ' (odhad)' : ''}</span>` : ''}
+                            ${doc.isds ? `<span title="${escapeHtml('Datová schránka · zpráva ' + (doc.isds.dmID || '') + (doc.isds.sender ? ' · od: ' + doc.isds.sender : '') + (doc.isds.annotation ? ' · ' + doc.isds.annotation : ''))}" class="ds-badge" style="flex-shrink: 0;">📨 Datová schránka · doručeno ${escapeHtml(doc.isds.deliveryDate ? new Date(doc.isds.deliveryDate).toLocaleDateString('cs-CZ') : '?')}${doc.isds.deliveryExact === false ? ' (odhad)' : ''}</span>` : ''}
                         </div>
                         <div style="display: flex; gap: 6px;">
                             <button class="btn btn-secondary" onclick="window.appInstance.viewSpisContent('${_lexEscJsAttr(doc.relativePath || doc.fileName)}')" style="padding: 4px 8px; font-size: 0.7rem;">
@@ -245,8 +245,8 @@ Object.assign(LexisLocalApp.prototype, {
                                     ✓ Vyřídit
                                 </button>
                             ` : ''}
-                            <button class="btn btn-danger" onclick="window.appInstance.deleteSpis('${_lexEscJsAttr(doc.relativePath || doc.fileName)}')" style="padding: 4px 6px; font-size: 0.7rem;">
-                                🗑️
+                            <button class="btn btn-danger" title="Odstranit dokument z doručené pošty" aria-label="Odstranit dokument" onclick="window.appInstance.deleteSpis('${_lexEscJsAttr(doc.relativePath || doc.fileName)}')" style="padding: 4px 8px; font-size: 0.7rem;">
+                                🗑️ Odstranit
                             </button>
                         </div>
                     </div>

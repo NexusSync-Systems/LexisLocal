@@ -1,6 +1,8 @@
 // app-ux.js — drobnosti UX z kontroly 5. 10. 2026:
 //  • výběr modelu pro denní výkaz nabízí jen modely, které kancelář opravdu má
 //    (dřív natvrdo „Llama-3 (Doporučeno)“, i když byl stažený jen qwen2.5:7b).
+//  • „Generovat demo“ je jen pro prázdnou instalaci — jakmile má kancelář skutečné spisy,
+//    tlačítko z hlavičky zmizí (demo spis by se míchal mezi ostré).
 (function () {
     'use strict';
     if (typeof LexisLocalApp === 'undefined') return;
@@ -29,4 +31,23 @@
             return r;
         };
     }
+
+    P.updateDemoButton = async function () {
+        const btn = document.getElementById('btn-parse-test');
+        if (!btn) return;
+        try {
+            const res = await fetch(`${this.apiBase}/spisy`, { headers: this.getHeaders() });
+            if (!res.ok) return;
+            const data = await res.json();
+            const list = Array.isArray(data) ? data : (data.spisy || []);
+            btn.style.display = list.length ? 'none' : '';
+        } catch (e) { /* tlačítko zůstane */ }
+    };
+    function kick() {
+        const app = window.appInstance;
+        if (app && typeof app.updateDemoButton === 'function') app.updateDemoButton();
+        else setTimeout(kick, 500);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(kick, 800));
+    else setTimeout(kick, 800);
 })();

@@ -110,8 +110,17 @@ function logEvent(user, operation, target, details = {}) {
  */
 function clearAuditLogs() {
     try {
+        // Auditní log je compliance artefakt — před vyprázdněním se celý (šifrovaný)
+        // soubor odloží do archivu, nic se nemaže natrvalo (UX kontrola 5. 10. 2026).
+        let archive = null;
+        if (fs.existsSync(AUDIT_LOG_FILE)) {
+            const dir = dataPath('.audit_archiv');
+            fs.mkdirSync(dir, { recursive: true });
+            archive = path.join(dir, `audit_${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+            fs.copyFileSync(AUDIT_LOG_FILE, archive);
+        }
         saveAuditLogs([]); // zapíše prázdný (šifrovaný) log
-        return true;
+        return archive ? path.basename(archive) : true;
     } catch (e) {
         console.error("❌ Nepodařilo se vyčistit auditní log:", e.message);
         return false;

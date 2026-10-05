@@ -111,9 +111,6 @@
                     <button class="btn btn-secondary" id="btn-parse-test" title="Generuje náhodný demo spis pro vyzkoušení offline">
                         <span class="btn-ic"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 4v3M19.5 5.5h-3"/></svg></span>Generovat demo
                     </button>
-                    <button class="btn btn-secondary" id="btn-pair-phone" title="Zobrazí QR pro spárování telefonu/tabletu s mobilním editorem (/m)" onclick="window.open('/pair','lexislink','width=520,height=760')">
-                        <span class="btn-ic"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></span>Spárovat telefon
-                    </button>
                     <span id="me-chip" class="me-chip" style="display:none;"></span>
                     <span id="ai-mode-badge" title="" style="display:none;"></span>
                     <button class="btn btn-secondary" id="btn-theme-toggle" title="Přepnout světlý / tmavý motiv" style="min-width:auto;">🌗</button>
@@ -431,7 +428,12 @@
                 <section class="tab-pane" id="tab-users">
                     <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:22px;align-items:start;" class="users-grid">
                         <div class="glass" style="padding:22px;border-radius:16px;border:1px solid var(--border-glass);">
-                            <h3 style="margin:0 0 14px;">👥 Uživatelé kanceláře</h3>
+                            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px;">
+                                <h3 style="margin:0;">👥 Uživatelé kanceláře</h3>
+                                <button class="btn btn-secondary" id="btn-pair-phone" title="Zobrazí QR pro spárování telefonu/tabletu s mobilním editorem (/m)" onclick="window.open('/pair','lexislink','width=520,height=760')">
+                                    <span class="btn-ic"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></span>Spárovat telefon
+                                </button>
+                            </div>
                             <div id="users-list" style="display:flex;flex-direction:column;gap:10px;"></div>
                         </div>
                         <div class="glass" style="padding:22px;border-radius:16px;border:1px solid var(--border-glass);">
@@ -727,8 +729,8 @@
                                 <button class="btn btn-secondary" id="btn-refresh-audit" style="display: flex; align-items: center; gap: 8px;">
                                     <span>🔄</span> Obnovit logy
                                 </button>
-                                <button class="btn btn-danger" id="btn-clear-audit" style="display: flex; align-items: center; gap: 8px; background: rgba(220, 53, 69, 0.2); border-color: rgba(220, 53, 69, 0.4); color: #ff6b6b;">
-                                    <span>🗑️</span> Vymazat logy
+                                <button class="btn btn-secondary" id="btn-clear-audit" title="Jen správce: log se archivuje a vyprázdní (potvrzení slovem SMAZAT)" style="display: flex; align-items: center; gap: 8px; margin-left: 24px; opacity: 0.75; font-size: 0.8rem;">
+                                    <span>🗄️</span> Archivovat a vyprázdnit…
                                 </button>
                             </div>
                         </div>

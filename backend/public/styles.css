@@ -2392,3 +2392,16 @@ body:has(#tab-chat.active) .floating-timelog-btn { bottom: 120px; }
 /* Tmavý motiv: modré odkazy (např. spis v záložce Datová schránka) byly na tmavém
    pozadí skoro nečitelné. */
 html[data-theme="dark"] .tab-pane a { color: #93c5fd; }
+
+/* Doručené spisy: štítek „Datová schránka · doručeno“ byl drobný (0.65rem) a světle
+   tyrkysový na šedé — teď čitelný v obou motivech. */
+.ds-badge { font-size: 0.72rem; font-weight: 600; background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; border-radius: 4px; padding: 2px 7px; }
+html[data-theme="dark"] .ds-badge { background: rgba(14,116,144,0.25); color: #bae6fd; border-color: rgba(125,211,252,0.45); }
+
+/* AI asistenti a podobné seznamy: šedé karty na šedém panelu působily jako neaktivní.
+   Karty dostanou světlé pozadí a výraznější okraj. */
+#tab-agents .agents-container { background: var(--m-ground, #f4f4f2) !important; }
+#tab-agents .agents-list-item { background: #fff !important; border: 1px solid #d4d4d0 !important; }
+html[data-theme="dark"] #tab-agents .agents-container { background: transparent !important; }
+html[data-theme="dark"] #tab-agents .agents-list-item { background: rgba(255,255,255,0.04) !important; border-color: rgba(255,255,255,0.12) !important; }
+#tab-agents .agents-list-item.active { border: 2px solid var(--m-ink, #111) !important; }
