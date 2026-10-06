@@ -49,7 +49,7 @@ def ollama_generate(host, model, prompt, timeout=300):
     req = urllib.request.Request(
         host.rstrip("/") + "/api/generate",
         data=json.dumps({"model": model, "prompt": prompt, "stream": False, "format": "json",
-                         "options": {"temperature": 0.7, "num_ctx": 4096}}).encode(),
+                         "options": {"temperature": 0.7, "num_ctx": 3072, "num_predict": 256}}).encode(),
         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode())["response"]
@@ -107,7 +107,9 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--test-frac", type=float, default=0.08)
     ap.add_argument("--limit", type=int, default=0, help="jen prvních N paragrafů (zkouška)")
-    ap.add_argument("--max-body", type=int, default=3500, help="delší text se modelu zkrátí")
+    ap.add_argument("--max-body", type=int, default=2000, help="delší text se modelu zkrátí")
+    ap.add_argument("--deadline-min", type=float, default=0,
+                    help="po N minutách generování skončit a pokračovat s tím, co je hotové (další běh naváže)")
     ap.add_argument("--seed", type=int, default=13)
     a = ap.parse_args()
 
@@ -122,7 +124,8 @@ def main():
 
     # Pokračování po přerušení: už hotové paragrafy přeskočit.
     raw_path = os.path.join(a.out, "questions_raw.jsonl")
-    done = {r["pos"]: r for r in (read_jsonl(raw_path) if os.path.exists(raw_path) else [])}
+    # Paragrafy, u kterých se dotazy nepovedly, se při dalším běhu zkusí znovu.
+    done = {r["pos"]: r for r in (read_jsonl(raw_path) if os.path.exists(raw_path) else []) if r.get("questions")}
     todo = [d for d in corpus if d["id"] not in done]
     print(f"paragrafů: {len(corpus)} (test {n_test}), hotovo dříve: {len(done)}, zbývá: {len(todo)}", flush=True)
 
@@ -143,11 +146,20 @@ def main():
                 time.sleep(2 + attempt * 3)
         return {"pos": doc["id"], "questions": [], "error": err}
 
+    # Po dávkách, ať jde generování ukončit v termínu (--deadline-min); hotové je průběžně v souboru.
+    step = max(1, a.workers * 10)
+    i = 0
     with open(raw_path, "a", encoding="utf-8") as raw, cf.ThreadPoolExecutor(a.workers) as ex:
-        for i, r in enumerate(ex.map(work, todo), 1):
+      for start in range(0, len(todo), step):
+        if a.deadline_min and (time.time() - t0) / 60 >= a.deadline_min:
+            print(f"  ⏱ limit {a.deadline_min:.0f} min — končím generování, hotovo {i}/{len(todo)} (další běh naváže)", flush=True)
+            break
+        for r in ex.map(work, todo[start:start + step]):
+            i += 1
             raw.write(json.dumps(r, ensure_ascii=False) + "\n")
             raw.flush()
-            done[r["pos"]] = r
+            if r.get("questions"):
+                done[r["pos"]] = r
             if i % 50 == 0 or i == len(todo):
                 el = time.time() - t0
                 print(f"  {i}/{len(todo)} paragrafů · {el / 60:.1f} min · ~{el / i * (len(todo) - i) / 60:.0f} min zbývá", flush=True)

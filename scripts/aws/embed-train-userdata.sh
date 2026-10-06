@@ -26,7 +26,9 @@ BRANCH="release-prep"
 GEN_MODEL="${GEN_MODEL:-qwen2.5:7b}"      # píše tréninkové dotazy (Apache 2.0)
 PER_PAR="${PER_PAR:-3}"                     # dotazů na paragraf
 EPOCHS="${EPOCHS:-1}"
-MAX_MINUTES="${MAX_MINUTES:-300}"           # pojistka: pak se instance vypne v každém případě
+MAX_MINUTES="${MAX_MINUTES:-330}"           # pojistka: pak se instance vypne v každém případě
+GEN_MAX_MINUTES="${GEN_MAX_MINUTES:-120}"   # psaní dotazů max. N minut; další běh naváže (dotazy jsou v S3)
+TRAIN_MAX_LEN="${TRAIN_MAX_LEN:-384}"
 MODEL_NAME="lexis-bge-m3-ft"
 
 RUN_ID="$(date +%Y-%m-%d_%H%M)_embed_train"
@@ -47,6 +49,9 @@ upload() {
   [ -n "$AWS" ] || return 0
   cp /var/log/lexis-embed.log "$OUT/" 2>/dev/null
   "$AWS" s3 cp "$OUT" "$S3_DEST" --recursive --only-show-errors || echo "!! upload selhal $(date -Is)"
+  # Rozpracované dotazy průběžně do S3 — při vypnutí instance se nic neztratí a další běh naváže.
+  [ -s "$WORK/pairs/questions_raw.jsonl" ] && "$AWS" s3 cp "$WORK/pairs/questions_raw.jsonl" "$S3_PAIRS" --only-show-errors 2>/dev/null
+  return 0
 }
 ( while sleep 300; do upload; done ) & SYNC_PID=$!
 finish() { kill "$SYNC_PID" 2>/dev/null; nvidia-smi > "$OUT/nvidia-smi.txt" 2>&1; upload; shutdown -h +1 "LexisLocal embed-train: hotovo"; }
@@ -90,13 +95,17 @@ for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && 
 # 4) Dotazy: z S3 (minulý běh), jinak vygenerovat a uložit do S3
 mkdir -p "$WORK/pairs"
 "$AWS" s3 cp "$S3_PAIRS" "$WORK/pairs/" --recursive --only-show-errors 2>/dev/null || true
-if [ -s "$WORK/pairs/pairs_train.jsonl" ] && [ "${REGEN_PAIRS:-0}" != "1" ]; then
-  echo "=== dotazy z S3: $(wc -l < "$WORK/pairs/pairs_train.jsonl") trénovacích dvojic"
+# 5. 10. 2026 (2. běh): na T4 trvalo psaní dotazů ~8 s/paragraf → ~10 h pro všech 4 400 §.
+# Proto: max. GEN_MAX_MINUTES generování, pak trénink s tím, co je hotové; další běh naváže.
+[ "${REGEN_PAIRS:-0}" = "1" ] && rm -f "$WORK/pairs/questions_raw.jsonl"
+if [ "${SKIP_GEN:-0}" = "1" ] && [ -s "$WORK/pairs/pairs_train.jsonl" ]; then
+  echo "=== dotazy z S3 (SKIP_GEN): $(wc -l < "$WORK/pairs/pairs_train.jsonl") trénovacích dvojic"
 else
+  echo "=== dotazy z minulých běhů: $( [ -s "$WORK/pairs/questions_raw.jsonl" ] && wc -l < "$WORK/pairs/questions_raw.jsonl" || echo 0) paragrafů"
   curl -sf http://127.0.0.1:11434/api/pull -d "{\"model\":\"$GEN_MODEL\",\"stream\":false}" >/dev/null && echo "model $GEN_MODEL stažen"
-  echo "=== generování dotazů start $(date -Is)"
+  echo "=== generování dotazů start $(date -Is) (limit $GEN_MAX_MINUTES min)"
   "$PY" "$T/build_pairs.py" --archive "$ARCH" --out "$WORK/pairs" --model "$GEN_MODEL" --per-par "$PER_PAR" --workers 4 \
-    || { echo "!! generování dotazů selhalo"; exit 1; }
+    --deadline-min "$GEN_MAX_MINUTES" || { echo "!! generování dotazů selhalo"; exit 1; }
   "$AWS" s3 cp "$WORK/pairs/" "$S3_PAIRS" --recursive --only-show-errors && echo "=== dotazy uloženy do S3"
   curl -sf http://127.0.0.1:11434/api/generate -d "{\"model\":\"$GEN_MODEL\",\"keep_alive\":0}" >/dev/null || true  # uvolnit GPU
 fi
@@ -104,7 +113,7 @@ cp "$WORK/pairs/stats.json" "$OUT/pairs_stats.json" 2>/dev/null; upload
 
 # 5) Trénink
 echo "=== trénink start $(date -Is)"
-"$PY" "$T/train.py" --archive "$ARCH" --pairs "$WORK/pairs" --out "$WORK/model" --epochs "$EPOCHS" \
+"$PY" "$T/train.py" --archive "$ARCH" --pairs "$WORK/pairs" --out "$WORK/model" --epochs "$EPOCHS" --max-len "$TRAIN_MAX_LEN" \
   2>&1 | grep -v -i "warn" || { echo "!! trénink selhal"; exit 1; }
 [ -f "$WORK/model/config.json" ] || { echo "!! model se neuložil"; exit 1; }
 cp "$WORK/model/train_info.json" "$OUT/" 2>/dev/null
