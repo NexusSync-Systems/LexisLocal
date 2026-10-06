@@ -50,7 +50,7 @@ def main():
     ap.add_argument("--epochs", type=float, default=1.0)
     ap.add_argument("--lr", type=float, default=1e-5)
     ap.add_argument("--batch", type=int, default=64, help="velikost dávky pro ztrátu (počet negativů)")
-    ap.add_argument("--mini-batch", type=int, default=8, help="kolik se počítá najednou (paměť GPU)")
+    ap.add_argument("--mini-batch", type=int, default=4, help="kolik se počítá najednou (paměť GPU)")
     ap.add_argument("--max-len", type=int, default=512)
     ap.add_argument("--no-hard-neg", action="store_true")
     a = ap.parse_args()
@@ -69,6 +69,12 @@ def main():
 
     model = SentenceTransformer(a.base)
     model.max_seq_length = a.max_len
+    # 6. 10. 2026: na T4 (16 GB) došla paměť už v 1. kroku → gradient checkpointing + Adafactor
+    # (stavy optimalizátoru ~4× menší než AdamW).
+    try:
+        model[0].auto_model.gradient_checkpointing_enable()
+    except Exception as e:
+        print("gradient checkpointing nejde:", e, flush=True)
 
     if a.no_hard_neg:
         data = [{"anchor": q_text(r["query"]), "positive": p_text(next(d for d in corpus if d["id"] == r["pos"]))} for r in rows]
@@ -88,6 +94,7 @@ def main():
         fp16=torch.cuda.is_available() and not bf16,
         batch_sampler=BatchSamplers.NO_DUPLICATES,
         logging_steps=20,
+        optim="adafactor",
         save_strategy="no",
         report_to=[],
         seed=42,

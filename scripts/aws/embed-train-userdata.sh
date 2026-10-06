@@ -112,6 +112,9 @@ fi
 cp "$WORK/pairs/stats.json" "$OUT/pairs_stats.json" 2>/dev/null; upload
 
 # 5) Trénink
+# Ollama drží v GPU paměti qwen (≈5 GB) — na T4 by na trénink nezbylo (6. 10. 2026: OOM).
+systemctl stop ollama 2>/dev/null; sleep 3
+nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader | sed 's/^/GPU paměť před tréninkem: /'
 echo "=== trénink start $(date -Is)"
 "$PY" "$T/train.py" --archive "$ARCH" --pairs "$WORK/pairs" --out "$WORK/model" --epochs "$EPOCHS" --max-len "$TRAIN_MAX_LEN" \
   2>&1 | grep -v -i "warn" || { echo "!! trénink selhal"; exit 1; }
@@ -125,6 +128,7 @@ echo "=== trénink hotov $(date -Is)"; upload
 echo "=== hodnocení hotovo $(date -Is)"; upload
 
 # 7) GGUF + Ollama + kontrola shody vektorů
+systemctl start ollama; for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 2; done
 if bash "$T/export_gguf.sh" "$WORK/model" "$WORK/gguf" "$MODEL_NAME"; then
   cp "$WORK/gguf/gguf_check.json" "$OUT/" 2>/dev/null
   "$AWS" s3 cp "$WORK/gguf/" "$S3_MODEL" --recursive --only-show-errors \

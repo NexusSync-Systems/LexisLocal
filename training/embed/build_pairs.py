@@ -35,7 +35,7 @@ Pravidla:
 - NEUVÁDĚJ číslo paragrafu ani název nebo číslo zákona.
 - Otázka musí jít zodpovědět právě z tohoto textu.
 - Jedna otázka může být krátká (pár slov, jako do vyhledávání), ostatní celou větou.
-- Vrať POUZE JSON pole řetězců, nic jiného.
+- Vrať POUZE JSON objekt ve tvaru {{"otazky": ["…", "…", "…"]}}, nic jiného.
 
 Zákon: {law}
 Zařazení: {path}
@@ -45,10 +45,16 @@ Text:
 """
 
 
+# 6. 10. 2026: s "format": "json" vrací Ollama vždy OBJEKT — pole chtěné v promptu se ztratilo
+# (1398 z 1400 paragrafů „prázdný výstup“). Proto JSON schéma s polem „otazky“.
+FORMAT = {"type": "object", "properties": {"otazky": {"type": "array", "items": {"type": "string"}}},
+          "required": ["otazky"]}
+
+
 def ollama_generate(host, model, prompt, timeout=300):
     req = urllib.request.Request(
         host.rstrip("/") + "/api/generate",
-        data=json.dumps({"model": model, "prompt": prompt, "stream": False, "format": "json",
+        data=json.dumps({"model": model, "prompt": prompt, "stream": False, "format": FORMAT,
                          "options": {"temperature": 0.7, "num_ctx": 3072, "num_predict": 256}}).encode(),
         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -56,19 +62,31 @@ def ollama_generate(host, model, prompt, timeout=300):
 
 
 def parse_questions(raw):
+    """Dotazy z odpovědi modelu: {"otazky": [...]}, holé pole, objekt s texty, pole objektů…"""
     try:
         v = json.loads(raw)
     except Exception:
-        m = re.search(r"\[.*\]", raw, re.S)
+        m = re.search(r"[\[{].*[\]}]", raw or "", re.S)
         if not m:
             return []
         try:
             v = json.loads(m.group(0))
         except Exception:
             return []
-    if isinstance(v, dict):  # {"otazky": [...]} apod.
-        v = next((x for x in v.values() if isinstance(x, list)), [])
-    return [str(x).strip() for x in v if isinstance(x, (str, int, float))]
+    out = []
+
+    def walk(x):
+        if isinstance(x, str):
+            if len(x.strip()) >= 8:
+                out.append(x.strip())
+        elif isinstance(x, list):
+            for y in x:
+                walk(y)
+        elif isinstance(x, dict):
+            for y in x.values():
+                walk(y)
+    walk(v)
+    return out
 
 
 def clean(qs, doc):
@@ -138,9 +156,11 @@ def main():
         err = "prázdný výstup"
         for attempt in range(3):
             try:
-                qs = clean(parse_questions(ollama_generate(a.host, a.model, prompt)), doc)
+                raw_out = ollama_generate(a.host, a.model, prompt)
+                qs = clean(parse_questions(raw_out), doc)
                 if qs:
                     return {"pos": doc["id"], "questions": qs[: a.per_par + 1]}
+                err = "prázdný výstup: " + str(raw_out)[:160]
             except Exception as e:  # síť / timeout → zkusit znovu
                 err = str(e)
                 time.sleep(2 + attempt * 3)
