@@ -95,7 +95,11 @@ for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && 
 
 # 4) Dotazy: z S3 (minulý běh), jinak vygenerovat a uložit do S3
 mkdir -p "$WORK/pairs"
-"$AWS" s3 cp "$S3_PAIRS" "$WORK/pairs/" --recursive --only-show-errors 2>/dev/null || true
+# 7. 10. 2026: role nemá s3:ListBucket → --recursive stažení tiše selhalo („dotazy z minulých běhů: 0“).
+# Stahujeme proto konkrétní soubory (stačí s3:GetObject).
+for f in questions_raw.jsonl pairs_train.jsonl pairs_test.jsonl stats.json; do
+  "$AWS" s3 cp "$S3_PAIRS$f" "$WORK/pairs/$f" --only-show-errors 2>/dev/null || true
+done
 # 5. 10. 2026 (2. běh): na T4 trvalo psaní dotazů ~8 s/paragraf → ~10 h pro všech 4 400 §.
 # Proto: max. GEN_MAX_MINUTES generování, pak trénink s tím, co je hotové; další běh naváže.
 [ "${REGEN_PAIRS:-0}" = "1" ] && rm -f "$WORK/pairs/questions_raw.jsonl"

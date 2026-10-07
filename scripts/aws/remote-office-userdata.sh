@@ -98,7 +98,11 @@ for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && 
 #   export EMBED_MODEL_S3=s3://lexislocal-bench-results-485237569555/_models/lexis-bge-m3-ft/<běh>/
 EMBED_MODEL="bge-m3"
 if [ -n "${EMBED_MODEL_S3:-}" ] && [ -n "$AWS" ]; then
-  mkdir -p /opt/lexis-embmodel && "$AWS" s3 cp "$EMBED_MODEL_S3" /opt/lexis-embmodel/ --recursive --exclude "*.tar.gz" --only-show-errors \
+  # 7. 10. 2026 (run 7): role lexis-bench-ec2 nemá s3:ListBucket → --recursive padá na AccessDenied.
+  # Proto stahujeme konkrétní soubory (stačí s3:GetObject) a Modelfile si napíšeme sami.
+  EMS3="${EMBED_MODEL_S3%/}"
+  mkdir -p /opt/lexis-embmodel && "$AWS" s3 cp "$EMS3/lexis-bge-m3-ft.gguf" /opt/lexis-embmodel/ --only-show-errors \
+    && printf 'FROM ./lexis-bge-m3-ft.gguf\n' > /opt/lexis-embmodel/Modelfile \
     && ( cd /opt/lexis-embmodel && ollama create lexis-bge-m3-ft -f Modelfile ) \
     && EMBED_MODEL="lexis-bge-m3-ft" && EMBED_CACHE=0 && echo "=== model vyhledávání: doladěný z $EMBED_MODEL_S3 (cache vektorů vypnutá — jiné váhy pod stejným názvem)" \
     || echo "!! doladěný model vyhledávání se nepodařilo načíst — používám bge-m3"
