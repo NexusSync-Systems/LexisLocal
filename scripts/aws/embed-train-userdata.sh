@@ -42,6 +42,7 @@ echo "=== LexisLocal embed-train start $(date -Is)"
 if [ -f "$OUT/_run_id" ]; then echo "=== opakovaný start → vypínám"; shutdown -h +1; exit 0; fi
 echo "$RUN_ID" > "$OUT/_run_id"
 shutdown -h +"$MAX_MINUTES" "LexisLocal embed-train: časový limit"
+T_START=$(date +%s)
 
 AWS=$(command -v aws || true)
 if [ -z "$AWS" ]; then apt-get update -qq && apt-get install -y -qq awscli || snap install aws-cli --classic || true; AWS=$(command -v aws || true); fi
@@ -115,16 +116,19 @@ cp "$WORK/pairs/stats.json" "$OUT/pairs_stats.json" 2>/dev/null; upload
 # Ollama drží v GPU paměti qwen (≈5 GB) — na T4 by na trénink nezbylo (6. 10. 2026: OOM).
 systemctl stop ollama 2>/dev/null; sleep 3
 nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader | sed 's/^/GPU paměť před tréninkem: /'
-echo "=== trénink start $(date -Is)"
+# Na trénink jen tolik, aby po něm zbylo ~40 min na hodnocení, převod do GGUF a nahrání (6. 10. 2026: 4. běh).
+TRAIN_MIN=$(( MAX_MINUTES - ($(date +%s) - T_START) / 60 - 40 )); [ "$TRAIN_MIN" -lt 20 ] && TRAIN_MIN=20
+echo "=== trénink start $(date -Is) (limit $TRAIN_MIN min)"
 "$PY" "$T/train.py" --archive "$ARCH" --pairs "$WORK/pairs" --out "$WORK/model" --epochs "$EPOCHS" --max-len "$TRAIN_MAX_LEN" \
-  2>&1 | grep -v -i "warn" || { echo "!! trénink selhal"; exit 1; }
+  --max-train-min "$TRAIN_MIN" \
+  2>&1 | grep --line-buffered -v -i "warn" || { echo "!! trénink selhal"; exit 1; }
 [ -f "$WORK/model/config.json" ] || { echo "!! model se neuložil"; exit 1; }
 cp "$WORK/model/train_info.json" "$OUT/" 2>/dev/null
 echo "=== trénink hotov $(date -Is)"; upload
 
 # 6) Srovnání: původní vs. doladěný
 "$PY" "$T/evaluate.py" --archive "$ARCH" --pairs "$WORK/pairs" --models BAAI/bge-m3 "$WORK/model" --report "$OUT" \
-  2>&1 | grep -v -i "warn"
+  2>&1 | grep --line-buffered -v -i "warn"
 echo "=== hodnocení hotovo $(date -Is)"; upload
 
 # 7) GGUF + Ollama + kontrola shody vektorů

@@ -53,6 +53,8 @@ def main():
     ap.add_argument("--mini-batch", type=int, default=4, help="kolik se počítá najednou (paměť GPU)")
     ap.add_argument("--max-len", type=int, default=512)
     ap.add_argument("--no-hard-neg", action="store_true")
+    ap.add_argument("--max-train-min", type=float, default=0,
+                    help="po N minutách tréninku skončit a model uložit (pojistka před vypnutím instance)")
     a = ap.parse_args()
 
     import torch
@@ -60,6 +62,7 @@ def main():
     from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
     from sentence_transformers.losses import CachedMultipleNegativesRankingLoss
     from sentence_transformers.training_args import BatchSamplers
+    from transformers import TrainerCallback
 
     t0 = time.time()
     corpus = load_corpus(a.archive)
@@ -100,14 +103,32 @@ def main():
         seed=42,
     )
     loss = CachedMultipleNegativesRankingLoss(model, mini_batch_size=a.mini_batch)
-    trainer = SentenceTransformerTrainer(model=model, args=args, train_dataset=ds, loss=loss)
+    # 6. 10. 2026 (4. běh): trénink na T4 trval přes 2,5 h a hrozilo, že ho vypnutí instance utne
+    # dřív, než se model uloží. Proto časový limit: po něm se trénink zastaví a model se uloží.
+    class Deadline(TrainerCallback):
+        def __init__(self, minutes):
+            self.end = t0 + minutes * 60 if minutes else None  # od startu skriptu (vč. těžkých negativů)
+            self.stopped_at = None
+
+        def on_step_end(self, args, state, control, **kw):
+            if state.global_step % 10 == 0:
+                el = (time.time() - t0) / 60
+                print(f"  krok {state.global_step}/{state.max_steps} · {el:.1f} min", flush=True)
+            if self.end and time.time() >= self.end:
+                self.stopped_at = state.global_step
+                print(f"  ⏱ limit tréninku — končím po kroku {state.global_step}/{state.max_steps}", flush=True)
+                control.should_training_stop = True
+            return control
+
+    dl = Deadline(a.max_train_min)
+    trainer = SentenceTransformerTrainer(model=model, args=args, train_dataset=ds, loss=loss, callbacks=[dl])
     trainer.train()
 
     os.makedirs(a.out, exist_ok=True)
     model.save(a.out)
     info = {"base": a.base, "pairs": len(rows), "epochs": a.epochs, "lr": a.lr, "batch": a.batch,
             "hard_negatives": not a.no_hard_neg, "max_len": a.max_len, "precision": "bf16" if bf16 else "fp16",
-            "minutes": round((time.time() - t0) / 60, 1)}
+            "minutes": round((time.time() - t0) / 60, 1), "stopped_early_at_step": dl.stopped_at}
     with open(os.path.join(a.out, "train_info.json"), "w", encoding="utf-8") as f:
         json.dump(info, f, ensure_ascii=False, indent=1)
     print(json.dumps(info, ensure_ascii=False))

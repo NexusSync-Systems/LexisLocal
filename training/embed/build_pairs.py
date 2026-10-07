@@ -98,6 +98,9 @@ def clean(qs, doc):
         low = q.lower()
         if len(q) < 8 or len(q) > 300:
             continue
+        # 6. 10. 2026: qwen občas sklouzne do čínštiny (~0,5 % dotazů) → pryč.
+        if re.search(r"[　-鿿가-힯Ѐ-ӿ]", q):
+            continue
         if "§" in q or re.search(r"(?<!\d)" + re.escape(num) + r"(?!\d)", q):
             continue
         if re.search(r"\d+/\d{4}", q) or any(n in low for n in ("občanský zákoník", "občanského zákoníku",
