@@ -179,7 +179,7 @@
         "1[23]\\.\\s?3\\.\\s?2028",
         "3 roky|t[řr]i roky|t[řr][ií]let",
         "629|620",
-        "10 let|deset let"
+        "10 let|deset let|12\\.\\s?3\\.\\s?2035|§\\s?636"
       ],
       "mustNot": [
         "89/2012 Sb\\.?\\s*\\(?\\s*z[aá]kon o obchodn",

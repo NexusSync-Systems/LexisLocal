@@ -54,3 +54,18 @@ test('route rešeršníka: oprava „od“ → „do“ a doplněný výpočet s
     expect(r.body.response).toMatch(/10 let/);
     expect(r.body.outputGuard.deadlineWordingFixed).toBe(1);
 });
+
+describe('fixDeadlineWording – obrácená rada „po uplynutí lhůty podat žalobu“ (run 7, R1)', () => {
+    const df = { limitation: { subjectiveEnd: '2028-03-13', objectiveEnd: '2035-03-12', lines: [] }, facts: [] };
+    test('opraví na „nejpozději před uplynutím“', () => {
+        const r = D.fixDeadlineWording('Klientka by měla hned po uplynutí lhůty 3 let (13. 3. 2028) podat žalobu do soudu.', df);
+        expect(r.text).toBe('Klientka by měla nejpozději před uplynutím lhůty 3 let (13. 3. 2028) podat žalobu do soudu.');
+        expect(r.fixed).toBe(1);
+    });
+    test('bez lhůty nebo bez žaloby nechá být', () => {
+        const a = 'Po uplynutí tří dnů podat odvolání nelze.';
+        expect(D.fixDeadlineWording(a, df).text).toBe(a);
+        const b = 'Po uplynutí lhůty je nárok promlčený.';
+        expect(D.fixDeadlineWording(b, df).text).toBe(b);
+    });
+});

@@ -228,6 +228,14 @@ function fixDeadlineWording(response, df) {
             return `${verb} do${dne || ''} ${dt}`;
         });
     }
+    // Run 7 (7. 10. 2026), R1: „Klientka by měla hned po uplynutí lhůty 3 let (13. 3. 2028) podat žalobu“
+    // — obrácená rada: po uplynutí je nárok promlčený. Opravíme na „nejpozději před uplynutím“.
+    t = t.replace(/(?:\b(?:hned|ihned|až|teprve)\s+)?\bpo\s+uplynut[ií]((?:[^.!?\n]|\.(?=\s?\d)){0,60}?)(?=\s*(?:podat|uplatnit|zažalovat|vymáhat)\b)/giu,
+        (all, mid) => {
+            if (!/lh[uů]t|promlč/i.test(mid)) return all;
+            fixed++;
+            return `nejpozději před uplynutím${mid}`;
+        });
     return { text: t, fixed };
 }
 
