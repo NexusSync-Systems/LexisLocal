@@ -177,6 +177,7 @@ EMB_S3="s3://$RESULTS_BUCKET/_cache/embeddings-$EMBED_MODEL.jsonl.gz"
 mkdir -p "$EMB_DIR"
 if [ -n "$AWS" ] && [ "${EMBED_CACHE:-1}" = "1" ] && "$AWS" s3 cp "$EMB_S3" "$EMB_FILE.gz" --only-show-errors 2>/dev/null; then
   gunzip -f "$EMB_FILE.gz" && echo "=== cache vektorů: $(wc -l < "$EMB_FILE") záznamů z S3"
+elif [ "${EMBED_CACHE:-1}" != "1" ]; then echo "=== cache vektorů: vypnutá (doladěný model) — vektory se spočítají znovu a do S3 se neukládají"
 else echo "=== cache vektorů: v S3 zatím není (první běh) — vektory se spočítají a po naplnění uloží"; fi
 EMB_BEFORE=$( [ -f "$EMB_FILE" ] && wc -l < "$EMB_FILE" || echo 0)
 

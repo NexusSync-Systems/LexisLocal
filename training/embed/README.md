@@ -22,9 +22,19 @@ v `s3://…/<běh>_embed_train/`.
 ## Hodnocení
 
 - **test** — dotazy k paragrafům, které model při tréninku neviděl (poctivé měřítko).
-- **gold** — 25 ručně psaných dotazů (`gold_queries.json`), ověřených proti textu zákonů.
-- Měří se jen sémantické vyhledávání. LexisLocal k němu přidává lexikální složku (hybrid,
-  α = 0,8), takže skutečný dopad ukáže až serverový test.
+- **gold** — 124 ručně psaných dotazů (`gold_queries.json`), ověřených proti textu zákonů;
+  `styl` = `advokat` (odborně, hesly) nebo `klient` (běžnou řečí). Report je ukazuje i zvlášť.
+- Ke každé sadě sémantika samotná i **hybrid** 0,8 × sémantika + 0,2 × lexikální shoda —
+  stejné skóre jako server (`RAG_HYBRID=1`, `lexicalScore` z `backend/lib/rag.js`), jen nad
+  celými paragrafy (server je dělí na kousky ~700 znaků). Plus čistě lexikální základ.
+- Na konci reportu dotazy ze zlaté sady, kde se modely nejvíc liší — pro ruční rozbor.
+
+### Srovnání bez tréninku (`scripts/aws/embed-eval-userdata.sh`)
+
+Hotový doladěný model (GGUF z S3) proti `bge-m3`, oba v Ollamě jako na serveru. g4dn.xlarge
+~20 min, výsledek v `s3://…/<běh>_embed_eval/report.md`. Model vybírá `FT_MODEL_S3`
+(výchozí: běh `2026-10-06_1035_embed_train`).
+Lokálně: `python3 evaluate.py --archive … --models bge-m3 lexis-bge-m3-ft --ollama http://127.0.0.1:11434`.
 
 **Nasazovat jen když** doladěný model vyjde lépe na obou sadách a pak i v serverovém testu.
 

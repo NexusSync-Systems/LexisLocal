@@ -129,6 +129,10 @@ echo "=== trénink start $(date -Is) (limit $TRAIN_MIN min)"
 [ -f "$WORK/model/config.json" ] || { echo "!! model se neuložil"; exit 1; }
 cp "$WORK/model/train_info.json" "$OUT/" 2>/dev/null
 echo "=== trénink hotov $(date -Is)"; upload
+# 8. 10. 2026: HF podoba modelu hned po tréninku (dřív až na konci → po časovém limitu chyběla
+# a doladěný model šel hodnotit jen přes GGUF/Ollamu).
+tar -C "$WORK" -czf "$WORK/model-hf.tar.gz" model && "$AWS" s3 cp "$WORK/model-hf.tar.gz" "$S3_MODEL" --only-show-errors \
+  && echo "=== HF model nahrán ($(du -h "$WORK/model-hf.tar.gz" | cut -f1))" || echo "!! nahrání HF modelu selhalo"
 
 # 6) Srovnání: původní vs. doladěný
 "$PY" "$T/evaluate.py" --archive "$ARCH" --pairs "$WORK/pairs" --models BAAI/bge-m3 "$WORK/model" --report "$OUT" \
@@ -144,7 +148,6 @@ if bash "$T/export_gguf.sh" "$WORK/model" "$WORK/gguf" "$MODEL_NAME"; then
     && "$AWS" s3 cp "$WORK/gguf/" "$S3_MODEL" --recursive --only-show-errors \
     && echo "=== model uložen: $S3_MODEL"
 else
-  echo "!! převod do GGUF / kontrola v Ollamě selhaly — HF model nahrávám jako tar"
+  echo "!! převod do GGUF / kontrola v Ollamě selhaly — v S3 je jen HF model (model-hf.tar.gz)"
 fi
-tar -C "$WORK" -czf "$WORK/model-hf.tar.gz" model && "$AWS" s3 cp "$WORK/model-hf.tar.gz" "$S3_MODEL" --only-show-errors
 echo "=== hotovo $(date -Is)"
