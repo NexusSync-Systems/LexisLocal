@@ -23,7 +23,7 @@ const agentTools = require('../lib/agent_tools'); // interní tool-registry (Fá
 const { buildDateFacts, dateFactsAppendix, fixDeadlineWording } = require('../lib/date_facts');
 const clauseScan = require('../lib/clause_scan');
 const { taskProfile, redactForOpponent } = require('../lib/agent_outlines');
-const { proceduralFacts, proceduralAppendix } = require('../lib/procedural_facts');
+const { proceduralFacts, proceduralAppendix, fixFilingCourt } = require('../lib/procedural_facts');
 const czProofread = require('../lib/cz_proofread');
 const { reviewInChunks } = require('../lib/chunked_review');
 const { guardInventedIdentifiers, fixLawNames, buildWarnings } = require('../lib/output_guard');
@@ -486,6 +486,9 @@ router.post('/:agentId', async (req, res) => {
             // Konec lhůty popsaný jako začátek („běží od 13. 3. 2028“) → „běží do“ (lib/date_facts).
             const dw = fixDeadlineWording(lf.text, dateFacts);
             lf.text = dw.text;
+            // „Odvolání se podává u krajského soudu“ → u soudu, který rozhodnutí vydal (run 8, R4).
+            const fc = fixFilingCourt(lf.text, procFacts);
+            lf.text = fc.text;
             // Co model z kontrolního seznamu doložek / výpočtů lhůt vynechal, doplní program.
             const clauseApx = clauseFindings.length ? clauseScan.missingAppendix(lf.text, clauseFindings) : { text: '', missing: [] };
             const dateApx = dateFactsAppendix(lf.text, dateFacts);
@@ -506,7 +509,7 @@ router.post('/:agentId', async (req, res) => {
             draftBody = body; draftWarn = warn;
             outputGuard = { replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
                 clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx, proceduralAppended: !!procApx,
-                taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted, promptLeakBlocked: lg.promptLeak, secretsRedacted: lg.redacted, deadlineWordingFixed: dw.fixed,
+                taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted, promptLeakBlocked: lg.promptLeak, secretsRedacted: lg.redacted, deadlineWordingFixed: dw.fixed, filingCourtFixed: fc.fixed,
                 chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null, selfCheck, revisionCheck };
         } catch (gErr) {
             console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);

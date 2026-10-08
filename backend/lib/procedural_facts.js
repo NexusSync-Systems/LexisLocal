@@ -113,4 +113,27 @@ function proceduralAppendix(response, pf) {
     return '\n\n---\n⚖️ Doplněno programem (procesní lhůty a příslušnost podle zákona):\n' + missing.map(i => i.line).join('\n');
 }
 
-module.exports = { proceduralFacts, proceduralAppendix, jurisdictionFacts, _remedies };
+/**
+ * Serverový test 7. 10. 2026 (run 8, R4): „Odvolání se podává u krajského soudu“ — chybně,
+ * odvolání proti rozsudku okresního soudu se podává u soudu, který rozhodnutí vydal (§ 204
+ * odst. 1 o. s. ř.); krajský soud o něm jen rozhoduje. Model to měl správně ve faktech,
+ * ale ve stručné odpovědi i v postupu to otočil. Program větu opraví (jen u civilního
+ * odvolání a jen ve větě o odvolání — dovolání/správní řízení nechá být).
+ */
+function fixFilingCourt(response, pf) {
+    let t = String(response || '');
+    if (!pf || !pf.items || !pf.items.some(i => i.key === 'civil_appeal')) return { text: t, fixed: 0 };
+    let fixed = 0;
+    const re = /\b(pod[aá]v[aá]|podat|podejte|pod[aá]|pod[aá]te|pod[aá]v[aá]te|podávat|zaslat|poslat|doručit)([^.\n]{0,50}?)\b(?:u|k|ke)\s+krajsk(?:ého|ému)\s+soudu/giu;
+    t = t.replace(re, (all, verb, mid, idx, whole) => {
+        // Věta, ve které shoda leží: od posledního konce věty / řádku po shodu.
+        const start = Math.max(whole.lastIndexOf('\n', idx), whole.lastIndexOf('. ', idx)) + 1;
+        const sentence = whole.slice(start, idx + all.length);
+        if (!/odvol/i.test(sentence) || /dovol[aá]n|správn/i.test(sentence)) return all;
+        fixed++;
+        return `${verb}${mid}u soudu, který rozhodnutí vydal (okresního soudu; o odvolání pak rozhoduje krajský soud)`;
+    });
+    return { text: t, fixed };
+}
+
+module.exports = { proceduralFacts, proceduralAppendix, jurisdictionFacts, fixFilingCourt, _remedies };

@@ -46,3 +46,20 @@ test.each(Object.keys(AWS))('%s splní kritéria eval sady i se slabou odpověd�
     expect((c.mustNot || []).filter(p => p !== '__TOKEN__' && new RegExp(p, 'i').test(out))).toEqual([]);
     if ((c.anyOf || []).length) expect(c.anyOf.some(p => new RegExp(p, 'i').test(out))).toBe(true);
 });
+
+// Run 8 (7. 10. 2026), R4: skutečná odpověď — „odvolání se podává u krajského soudu“ (špatně)
+// a zmínka o dovolání „do dvou měsíců“ (správně, nesmí shodit test). Program soud opraví.
+test('R4 (run 8): odvolání „u krajského soudu“ program opraví, zmínka o dovolání projde', async () => {
+    const c = all.find(x => x.id === 'R4');
+    mockReply = '1. Stručná odpověď: Lhůta k podání odvolání proti rozhodnutí okresního soudu je 15 dnů od doručení písemného vyhotovení rozhodnutí. Odvolání se podává u krajského soudu.\n' +
+        '3. Právní úprava: § 204 odst. 1 o. s. ř.\n' +
+        '5. Doporučený postup:\n   - Podat odvolání u krajského soudu včas, než uplyne lhůta.\n' +
+        '6. Co ještě ověřit:\n   - Zkontrolovat, zda bylo podáno dovolání do dvou měsíců od doručení rozhodnutí odvolacího soudu (§ 240 o. s. ř.).';
+    const r = await request(app).post('/api/agent/' + c.agent).set('X-API-Token', 't').send({ prompt: c.prompt });
+    expect(r.status).toBe(200);
+    const out = r.body.response;
+    expect((c.must || []).filter(p => !new RegExp(p, 'i').test(out))).toEqual([]);
+    expect((c.mustNot || []).filter(p => new RegExp(p, 'i').test(out))).toEqual([]);
+    expect(out).toMatch(/u soudu, který rozhodnutí vydal \(okresního soudu/);
+    expect(r.body.outputGuard.filingCourtFixed).toBe(2);
+});

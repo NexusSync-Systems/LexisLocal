@@ -228,7 +228,8 @@
         "204"
       ],
       "mustNot": [
-        "dvou m[eě]s|2 m[eě]s|30 dn"
+        "(?<!dovol[^.\\n]{0,80})(dvou m[eě]s|2 m[eě]s)|30 dn",
+        "(pod[aá]v[aá]|podat|podejte)[^.\\n]{0,50}(u|k|ke) krajsk(ého|ému) soudu"
       ],
       "severity": "critical"
     },
