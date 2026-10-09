@@ -4,7 +4,9 @@
 - Ztráta: CachedMultipleNegativesRankingLoss — ostatní paragrafy v dávce jsou negativní
   příklady; „cached“ dovolí velkou dávku i na GPU s 16–24 GB.
 - Těžké negativy: pro každý dotaz paragraf, který původní model řadí vysoko, ale správný
-  není (pořadí 3–15, aby se nebraly téměř stejné sousední paragrafy).
+  není (pořadí 3–15). 8. 10. 2026 (po 4. běhu): vynechávají se i sousední paragrafy téhož
+  zákona (±3) a texty skoro shodné se správným paragrafem — často jsou také relevantní a
+  model se je učil odsouvat (na ručních dotazech pak přehazoval 1. a 2. místo).
 - Dotazy k testovacím paragrafům se do tréninku nedostanou (build_pairs.py je odloží).
 
   python3 train.py --archive …/zakony.tar.gz --pairs out/ --out out/model [--epochs 1]
@@ -13,6 +15,7 @@ import argparse
 import json
 import os
 import random
+import re
 import sys
 import time
 
@@ -22,22 +25,54 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import load_corpus, read_jsonl, p_text, q_text  # noqa: E402
 
 
-def mine_hard_negatives(model, corpus, rows, lo=2, hi=15, batch=16, seed=7):
+def _par_num(d):
+    m = re.match(r"(\d+)", str(d.get("par", "")))
+    return int(m.group(1)) if m else None
+
+
+def is_neighbor(a, b, span=3):
+    """Sousední paragraf téhož zákona (±span), např. § 1829 a § 1832."""
+    na, nb = _par_num(a), _par_num(b)
+    return a["law"] == b["law"] and na is not None and nb is not None and abs(na - nb) <= span
+
+
+def mine_hard_negatives(model, corpus, rows, lo=2, hi=15, batch=16, seed=7, neighbor_span=3, max_pos_sim=0.92):
     rnd = random.Random(seed)
     C = model.encode([p_text(d) for d in corpus], batch_size=batch, normalize_embeddings=True,
                      convert_to_numpy=True, show_progress_bar=False)
+    skipped = {"soused": 0, "shodný": 0, "náhodný": 0}
     idx = {d["id"]: i for i, d in enumerate(corpus)}
     Q = model.encode([q_text(r["query"]) for r in rows], batch_size=batch * 4, normalize_embeddings=True,
                      convert_to_numpy=True, show_progress_bar=False)
     out = []
     for start in range(0, len(rows), 2048):
         S = Q[start:start + 2048] @ C.T
-        top = np.argsort(-S, axis=1)[:, :hi]
+        top = np.argsort(-S, axis=1)[:, :hi + 35]
         for k, r in enumerate(rows[start:start + 2048]):
             pos = idx[r["pos"]]
-            cands = [j for j in top[k][lo:] if j != pos and corpus[j]["id"] != r["pos"]]
+            cands = []
+            # Nejdřív pořadí lo..hi; když tam po filtrech nic nezbude, ještě dalších 35 (pořád „těžké“).
+            ranked = list(top[k][lo:hi])
+            for j in ranked + [None] + list(top[k][hi:]):
+                if j is None:
+                    if cands:
+                        break
+                    continue
+                if j == pos or corpus[j]["id"] == r["pos"]:
+                    continue
+                if neighbor_span and is_neighbor(corpus[j], corpus[pos], neighbor_span):
+                    skipped["soused"] += 1
+                    continue
+                if max_pos_sim and float(C[j] @ C[pos]) >= max_pos_sim:
+                    skipped["shodný"] += 1
+                    continue
+                cands.append(j)
+            if not cands:
+                skipped["náhodný"] += 1
             neg = corpus[rnd.choice(cands)] if cands else corpus[rnd.randrange(len(corpus))]
             out.append({"anchor": q_text(r["query"]), "positive": p_text(corpus[pos]), "negative": p_text(neg)})
+    print(f"  těžké negativy: vynecháno sousedních {skipped['soused']}, skoro shodných {skipped['shodný']}; "
+          f"náhodný negativ u {skipped['náhodný']} dotazů", flush=True)
     return out
 
 
@@ -53,6 +88,8 @@ def main():
     ap.add_argument("--mini-batch", type=int, default=4, help="kolik se počítá najednou (paměť GPU)")
     ap.add_argument("--max-len", type=int, default=512)
     ap.add_argument("--no-hard-neg", action="store_true")
+    ap.add_argument("--neg-neighbor-span", type=int, default=3, help="nebrat za negativ paragraf ±N téhož zákona (0 = vypnout)")
+    ap.add_argument("--neg-max-pos-sim", type=float, default=0.92, help="nebrat za negativ text s kosinem ke správnému ≥ X (0 = vypnout)")
     ap.add_argument("--max-train-min", type=float, default=0,
                     help="po N minutách tréninku skončit a model uložit (pojistka před vypnutím instance)")
     a = ap.parse_args()
@@ -68,7 +105,8 @@ def main():
     corpus = load_corpus(a.archive)
     ids = {d["id"] for d in corpus}
     rows = [r for r in read_jsonl(os.path.join(a.pairs, "pairs_train.jsonl")) if r["pos"] in ids]
-    print(f"trénovacích dvojic: {len(rows)}", flush=True)
+    n_kl = sum(1 for r in rows if r.get("styl") == "klient")
+    print(f"trénovacích dvojic: {len(rows)} (z toho klientský styl {n_kl})", flush=True)
 
     model = SentenceTransformer(a.base)
     model.max_seq_length = a.max_len
@@ -83,7 +121,7 @@ def main():
         data = [{"anchor": q_text(r["query"]), "positive": p_text(next(d for d in corpus if d["id"] == r["pos"]))} for r in rows]
     else:
         print("těžké negativy (původní model) …", flush=True)
-        data = mine_hard_negatives(model, corpus, rows)
+        data = mine_hard_negatives(model, corpus, rows, neighbor_span=a.neg_neighbor_span, max_pos_sim=a.neg_max_pos_sim)
     ds = Dataset.from_list(data).shuffle(seed=42)
 
     bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
@@ -127,7 +165,8 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     model.save(a.out)
     info = {"base": a.base, "pairs": len(rows), "epochs": a.epochs, "lr": a.lr, "batch": a.batch,
-            "hard_negatives": not a.no_hard_neg, "max_len": a.max_len, "precision": "bf16" if bf16 else "fp16",
+            "hard_negatives": not a.no_hard_neg, "neg_neighbor_span": a.neg_neighbor_span,
+            "neg_max_pos_sim": a.neg_max_pos_sim, "pairs_klient": n_kl, "max_len": a.max_len, "precision": "bf16" if bf16 else "fp16",
             "minutes": round((time.time() - t0) / 60, 1), "stopped_early_at_step": dl.stopped_at}
     with open(os.path.join(a.out, "train_info.json"), "w", encoding="utf-8") as f:
         json.dump(info, f, ensure_ascii=False, indent=1)

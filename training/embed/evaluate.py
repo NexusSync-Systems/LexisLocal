@@ -161,6 +161,9 @@ def load_sets(pairs_dir, gold_path):
     tp = os.path.join(pairs_dir, "pairs_test.jsonl") if pairs_dir else None
     if tp and os.path.exists(tp):
         sets["test"] = [{"q": r["query"], "rel": [r["pos"]]} for r in read_jsonl(tp)]
+    tk = os.path.join(pairs_dir, "pairs_test_klient.jsonl") if pairs_dir else None
+    if tk and os.path.exists(tk):
+        sets["test_klient"] = [{"q": r["query"], "rel": [r["pos"]]} for r in read_jsonl(tk)]
     if gold_path and os.path.exists(gold_path):
         gold = [{"q": g["q"], "rel": g["rel"], "styl": g.get("styl", "")}
                 for g in json.load(open(gold_path, encoding="utf-8"))["queries"]]
@@ -204,7 +207,11 @@ def main():
         with open(os.path.join(a.report, "metrics.json"), "w", encoding="utf-8") as f:
             json.dump(results, f, ensure_ascii=False, indent=1)
         lines = ["# Model vyhledávání — srovnání", "",
-                 f"Korpus: {len(corpus)} paragrafů (OZ, OSŘ, ZOK). Jen sémantické vyhledávání (bez lexikální složky).", ""]
+                 f"Korpus: {len(corpus)} paragrafů (OZ, OSŘ, ZOK). Sémantika samotná i hybrid α={a.alpha} jako na serveru "
+                 "(paragrafy celé, server je dělí na kousky ~700 znaků).", "",
+                 "Sady: `test` / `test_klient` = dotazy vygenerované qwenem k paragrafům mimo trénink "
+                 "(stejný generátor jako tréninková data → zisk tu bývá nadsazený); `gold*` = ruční dotazy — "
+                 "**rozhodující pro nasazení**.", ""]
         for sname in sets:
             lines += [f"## Sada `{sname}`", "", "| Model | Způsob | R@1 | R@5 | R@10 | MRR@10 | dotazů |",
                       "|---|---|---|---|---|---|---|"]
