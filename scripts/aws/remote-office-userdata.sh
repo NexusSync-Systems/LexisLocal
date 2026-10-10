@@ -94,17 +94,22 @@ printf '[Service]\nEnvironment=OLLAMA_LOAD_TIMEOUT=15m\nEnvironment=OLLAMA_NUM_P
   > /etc/systemd/system/ollama.service.d/override.conf
 systemctl daemon-reload; systemctl enable --now ollama; systemctl restart ollama
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 2; done
-# Volitelně doladěný model vyhledávání z S3 (training/embed, scripts/aws/embed-train-userdata.sh):
-#   export EMBED_MODEL_S3=s3://lexislocal-bench-results-485237569555/_models/lexis-bge-m3-ft/<běh>/
-EMBED_MODEL="bge-m3"
-if [ -n "${EMBED_MODEL_S3:-}" ] && [ -n "$AWS" ]; then
+# Model vyhledávání: výchozí je doladěný bge-m3 z embed tréninku 5 (mix-0.3, 10. 10. 2026:
+# zlatá sada R@1 66 → 71 %, serverový test 174/174, agenti 68/68 — training/embed/README.md).
+#   jiný běh:        export EMBED_MODEL_S3=s3://lexislocal-bench-results-485237569555/_models/lexis-bge-m3-ft/<běh>/
+#   původní bge-m3:  export EMBED_MODEL_S3=none
+EMBED_MODEL_S3_DEFAULT="s3://$RESULTS_BUCKET/_models/lexis-bge-m3-ft/2026-10-09_1451_embed_train/"
+EMBED_MODEL_S3="${EMBED_MODEL_S3:-$EMBED_MODEL_S3_DEFAULT}"
+EMBED_MODEL="bge-m3"; EMB_CACHE_TAG="bge-m3"
+if [ "$EMBED_MODEL_S3" != "none" ] && [ -n "$AWS" ]; then
   # 7. 10. 2026 (run 7): role lexis-bench-ec2 nemá s3:ListBucket → --recursive padá na AccessDenied.
   # Proto stahujeme konkrétní soubory (stačí s3:GetObject) a Modelfile si napíšeme sami.
   EMS3="${EMBED_MODEL_S3%/}"
   mkdir -p /opt/lexis-embmodel && "$AWS" s3 cp "$EMS3/lexis-bge-m3-ft.gguf" /opt/lexis-embmodel/ --only-show-errors \
     && printf 'FROM ./lexis-bge-m3-ft.gguf\n' > /opt/lexis-embmodel/Modelfile \
     && ( cd /opt/lexis-embmodel && ollama create lexis-bge-m3-ft -f Modelfile ) \
-    && EMBED_MODEL="lexis-bge-m3-ft" && EMBED_CACHE=0 && echo "=== model vyhledávání: doladěný z $EMBED_MODEL_S3 (cache vektorů vypnutá — jiné váhy pod stejným názvem)" \
+    && EMBED_MODEL="lexis-bge-m3-ft" && EMB_CACHE_TAG="lexis-bge-m3-ft_$(basename "$EMS3")" \
+    && echo "=== model vyhledávání: doladěný z $EMBED_MODEL_S3 (cache vektorů: $EMB_CACHE_TAG)" \
     || echo "!! doladěný model vyhledávání se nepodařilo načíst — používám bge-m3"
 fi
 for m in "$EMBED_MODEL" "$CHAT_MODEL"; do
@@ -172,12 +177,13 @@ echo "=== token: $TOKEN_NOTE"
 
 # Cache vektorů báze zákonů z minulého běhu (S3). Plnění báze pak netrvá ~1,5 h, ale minuty:
 # vektory stejných textů se nepočítají znovu (lib/embed_cache.js; jen veřejné zákony/judikatura).
-EMB_DIR=/opt/lexis-embcache; EMB_FILE="$EMB_DIR/embeddings-$EMBED_MODEL.jsonl"
-EMB_S3="s3://$RESULTS_BUCKET/_cache/embeddings-$EMBED_MODEL.jsonl.gz"
+# Doladěný model má cache podle běhu tréninku (stejný název v Ollamě, ale jiné váhy → jiný soubor).
+EMB_DIR=/opt/lexis-embcache; EMB_FILE="$EMB_DIR/embeddings-$EMB_CACHE_TAG.jsonl"
+EMB_S3="s3://$RESULTS_BUCKET/_cache/embeddings-$EMB_CACHE_TAG.jsonl.gz"
 mkdir -p "$EMB_DIR"
 if [ -n "$AWS" ] && [ "${EMBED_CACHE:-1}" = "1" ] && "$AWS" s3 cp "$EMB_S3" "$EMB_FILE.gz" --only-show-errors 2>/dev/null; then
   gunzip -f "$EMB_FILE.gz" && echo "=== cache vektorů: $(wc -l < "$EMB_FILE") záznamů z S3"
-elif [ "${EMBED_CACHE:-1}" != "1" ]; then echo "=== cache vektorů: vypnutá (doladěný model) — vektory se spočítají znovu a do S3 se neukládají"
+elif [ "${EMBED_CACHE:-1}" != "1" ]; then echo "=== cache vektorů: vypnutá (EMBED_CACHE=0) — vektory se spočítají znovu a do S3 se neukládají"
 else echo "=== cache vektorů: v S3 zatím není (první běh) — vektory se spočítají a po naplnění uloží"; fi
 EMB_BEFORE=$( [ -f "$EMB_FILE" ] && wc -l < "$EMB_FILE" || echo 0)
 

@@ -53,17 +53,40 @@ Lokálně: `python3 evaluate.py --archive … --models bge-m3 lexis-bge-m3-ft --
 
 **Nasazovat jen když** doladěný model vyjde lépe na obou sadách a pak i v serverovém testu.
 
-## Vyzkoušení na serverovém testu
+## Výsledky 5. běhu a nasazení (10. 10. 2026)
 
-User data serverového testu (šablona `lexis-kompletni`) doplnit o řádek před stažením skriptu:
+Vybrán `mix-0.3` (0,7 × bge-m3 + 0,3 × doladěný), hodnoceno s hybridem 0,8/0,2 jako na serveru:
+
+| Sada | bge-m3 R@1 | mix-0.3 R@1 |
+|---|---|---|
+| zlatá (124 ručních dotazů) | 66,1 % (R@10 95,2) | **71,0 %** (R@10 97,6, MRR 0,807) |
+| – styl advokát | 78,6 % | 82,1 % |
+| – styl klient | 55,9 % | 61,8 % |
+| odložené testovací dotazy | 67,0 % | 74,5 % |
+
+Serverový test (profil kompletní, 2026-10-10_1625): 174/174 kontrol, agenti 68/68 včetně
+rešerší R1/R4/X1, neověřené citace ~15 % (27/181) — beze změny nebo lépe než běhy 7–9.
+
+**Od té doby je mix-0.3 výchozí** v `scripts/aws/remote-office-userdata.sh`
+(`s3://…/_models/lexis-bge-m3-ft/2026-10-09_1451_embed_train/`). Přepnutí:
 
 ```
-export EMBED_MODEL_S3=s3://lexislocal-bench-results-485237569555/_models/lexis-bge-m3-ft/<běh>/
+export EMBED_MODEL_S3=s3://lexislocal-bench-results-485237569555/_models/lexis-bge-m3-ft/<běh>/   # jiný běh
+export EMBED_MODEL_S3=none                                                                          # původní bge-m3
 ```
 
-Server pak místo `bge-m3` použije doladěný model (cache vektorů se pro něj vypne).
+Cache vektorů se ukládá zvlášť pro každý běh tréninku (`_cache/embeddings-lexis-bge-m3-ft_<běh>.jsonl.gz`),
+takže se váhy různých běhů nepomíchají a od druhého spuštění se báze plní během minut.
+
+## Další krok: váha hybridu a reranker (`rerank_eval.py`)
+
+Správný paragraf je v top 10 u 97,6 % ručních dotazů, ale první jen u 71 % → prostor je v pořadí.
+`rerank_eval.py` (EC2: `scripts/aws/embed-rerank-userdata.sh`, g4dn ~40 min) změří na stejných sadách:
+váhu hybridu α 0,5–1,0, přeřazení top 10/20/30 kandidátů cross-encoderem `BAAI/bge-reranker-v2-m3`
+(samotný reranker i mix s hybridem) a rychlost rerankeru na GPU i CPU. Na serveru nic nemění —
+podle výsledku se rozhodne, zda reranker do LexisLocalu přidat.
 
 ## Licence
 
-bge-m3: MIT. qwen2.5:7b (generování dotazů): Apache 2.0. Dotazy negeneruje žádná placená
+bge-m3: MIT, bge-reranker-v2-m3: Apache 2.0. qwen2.5:7b (generování dotazů): Apache 2.0. Dotazy negeneruje žádná placená
 služba, jejíž podmínky by trénink zakazovaly.
