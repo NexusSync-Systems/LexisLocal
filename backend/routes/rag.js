@@ -47,7 +47,7 @@ router.get('/search', async (req, res) => {
 
         // Lexikální fallback zapnut: dashboard vyhledávání funguje i bez modelu
         // (degradovaný, klíčový režim). Výsledky nesou method:'lexical'/degraded:true.
-        const matches = await searchSimilar(query, searchLimit, resolvedFilters, { lexicalFallback: true });
+        const matches = await searchSimilar(query, searchLimit, resolvedFilters, { lexicalFallback: true, rerank: true });
         const degraded = matches.some(m => m.degraded);
         res.json({ query, matches, degraded });
     } catch (err) {

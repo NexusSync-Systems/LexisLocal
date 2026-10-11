@@ -45,7 +45,7 @@ const TOOLS = {
             if (!query) return { error: 'Prázdný dotaz.' };
             const limit = _num(args.limit, 5, 1, 10);
             const filters = (ctx && ctx.ragFilters) || null; // scope/spisAccess řeší volající
-            const results = await rag.searchSimilar(query, limit, filters, { lexicalFallback: true });
+            const results = await rag.searchSimilar(query, limit, filters, { lexicalFallback: true, rerank: true });
             return {
                 results: (results || []).map(r => ({
                     fileName: r.fileName,

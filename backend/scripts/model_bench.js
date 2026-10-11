@@ -300,7 +300,7 @@ async function fetchContexts(cases, opts, ragModule) {
         const scopes = tc.ragScopes || [`_kb_${tc.agent}`];
         let matches = [];
         try {
-            matches = await rag.searchSimilar(tc.prompt, opts.ragK, { scopes, clientAccess: false }, { lexicalFallback: true, dedupeKb: true });
+            matches = await rag.searchSimilar(tc.prompt, opts.ragK, { scopes, clientAccess: false }, { lexicalFallback: true, dedupeKb: true, rerank: true });
         } catch (e) {
             console.log(`   ⚠️  ${tc.id}: vyhledání v bázi selhalo (${e.message})`);
         }

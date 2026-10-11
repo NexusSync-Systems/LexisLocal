@@ -78,15 +78,35 @@ export EMBED_MODEL_S3=none                                                      
 Cache vektorů se ukládá zvlášť pro každý běh tréninku (`_cache/embeddings-lexis-bge-m3-ft_<běh>.jsonl.gz`),
 takže se váhy různých běhů nepomíchají a od druhého spuštění se báze plní během minut.
 
-## Další krok: váha hybridu a reranker (`rerank_eval.py`)
+## Váha hybridu a reranker (`rerank_eval.py`, 10. 10. 2026)
 
-Správný paragraf je v top 10 u 97,6 % ručních dotazů, ale první jen u 71 % → prostor je v pořadí.
-`rerank_eval.py` (EC2: `scripts/aws/embed-rerank-userdata.sh`, g4dn ~40 min) změří na stejných sadách:
-váhu hybridu α 0,5–1,0, přeřazení top 10/20/30 kandidátů cross-encoderem `BAAI/bge-reranker-v2-m3`
-(samotný reranker i mix s hybridem) a rychlost rerankeru na GPU i CPU. Na serveru nic nemění —
-podle výsledku se rozhodne, zda reranker do LexisLocalu přidat.
+Mix-0.3 v Ollamě, celé paragrafy, R@1 (správný § na 1. místě):
+
+| Sada | bez rerankeru (α 0,8) | bge-reranker-v2-m3, top 20, jen reranker | **mix 0,85 × reranker + 0,15 × hybrid** |
+|---|---|---|---|
+| zlatá | 70,2 % | 75,0 % | **77,4 %** |
+| – advokát | 82,1 % | 82,1 % | 83,9 % |
+| – klient | 60,3 % | 69,1 % | **72,1 %** |
+| test | 72,3 % | 83,5 % | 83,5 % |
+| test_klient | 32,5 % | 42,5 % | 43,2 % |
+
+- α hybridu: u mix-0.3 je 0,75–1,0 v šumu → beze změny 0,8.
+- Rychlost bge-reranker-v2-m3: T4 GPU ~0,2–0,3 s/dotaz, **CPU (4 vlákna) ~19 s** → jen s GPU / Apple Silicon.
+- Backend: `lib/rerank_service.js` (fáze 2 k `lib/reranker.js`; VYPNUTO, zapíná `RAG_RERANK=1`).
+  S `RAG_RERANK_URL` volá lokální službu `scripts/rerank_server.py` (CUDA / MPS / CPU, API jako
+  llama.cpp `/v1/rerank`), bez URL běží v procesu přes ONNX q8 (`lib/reranker.js`). Mění jen pořadí,
+  `score` a prahy zůstávají; chyba/timeout → původní pořadí. Serverový test: `export RERANK=1`.
+- Rychlost na vlastním počítači: `scripts/rerank_bench.py`.
+
+## Laboratoř vyhledávání (`search_lab.py`, 2. měření)
+
+Měří jako server (kousky ~700 znaků s překryvem — přesný port `chunkText`, nejlepší kousek z §):
+A) celé § / kousky / kousky s hlavičkou (zákon + § + nadpis), B) přepis dotazu qwen2.5:7b do právních
+pojmů (jen přepis / spojený text / fúze skóre), C) rerankery bge-reranker-v2-m3, gte-multilingual-reranker-base,
+mmarco-mMiniLMv2 — přesnost + rychlost GPU / CPU fp32 / CPU int8, D) přepis + reranker.
+EC2: `scripts/aws/embed-lab-userdata.sh` (g4dn, ~75 min).
 
 ## Licence
 
-bge-m3: MIT, bge-reranker-v2-m3: Apache 2.0. qwen2.5:7b (generování dotazů): Apache 2.0. Dotazy negeneruje žádná placená
+bge-m3: MIT; bge-reranker-v2-m3, gte-multilingual-reranker-base, mmarco-mMiniLMv2: Apache 2.0. qwen2.5:7b (generování dotazů): Apache 2.0. Dotazy negeneruje žádná placená
 služba, jejíž podmínky by trénink zakazovaly.

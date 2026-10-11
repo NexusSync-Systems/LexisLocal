@@ -35,6 +35,11 @@ BRANCH="release-prep"
 #               spolehlivosti; po dohrání výsledků se instance SAMA VYPNE (nečeká na limit).
 #               ~3,5 h, vypne se nejpozději po 5,5 h.
 PROFILE="${PROFILE:-plny}"
+# Reranker (cross-encoder) nad výsledky RAG — VOLITELNÝ (export RERANK=1). Lokální služba
+# scripts/rerank_server.py na GPU, backend ho volá přes RAG_RERANK_URL (lib/rerank_service.js).
+# Měření 10. 10. 2026: zlatá sada R@1 70 → 77 %, ~0,2 s na dotaz na T4.
+RERANK="${RERANK:-0}"
+RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
 if [ "$PROFILE" = "kompletni" ]; then
   MAX_MINUTES=330; COMPARE_MODELS=""; SUITE_REPEAT="${SUITE_REPEAT:-3}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
 fi
@@ -187,6 +192,34 @@ elif [ "${EMBED_CACHE:-1}" != "1" ]; then echo "=== cache vektorů: vypnutá (EM
 else echo "=== cache vektorů: v S3 zatím není (první běh) — vektory se spočítají a po naplnění uloží"; fi
 EMB_BEFORE=$( [ -f "$EMB_FILE" ] && wc -l < "$EMB_FILE" || echo 0)
 
+# Volitelný reranker: Python + torch (CUDA) + sentence-transformers, služba jen na 127.0.0.1:8081.
+RERANK_OK=0
+if [ "$RERANK" = "1" ]; then
+  apt-get install -y -qq python3-venv python3.10-venv python3-pip >/dev/null 2>&1 || true
+  if python3 -m venv /opt/rerank-venv && [ -x /opt/rerank-venv/bin/python ]; then
+    RPY=/opt/rerank-venv/bin/python; "$RPY" -m pip install -q --upgrade pip
+    DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | cut -d. -f1)
+    if [ "${DRV:-0}" -ge 580 ]; then "$RPY" -m pip install -q torch; else "$RPY" -m pip install -q torch --index-url https://download.pytorch.org/whl/cu126; fi
+    "$RPY" -m pip install -q sentence-transformers einops
+    cat > /etc/systemd/system/lexis-reranker.service <<UNIT
+[Unit]
+Description=LexisLocal reranker (lokální, jen 127.0.0.1)
+After=network-online.target
+[Service]
+Environment=RERANK_MODEL=$RERANK_MODEL
+ExecStart=$RPY /opt/LexisLocal/scripts/rerank_server.py --host 127.0.0.1 --port 8081
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl daemon-reload; systemctl enable --now lexis-reranker
+    for i in $(seq 1 120); do curl -sf http://127.0.0.1:8081/health >/dev/null && break; sleep 5; done
+  fi
+  if curl -sf http://127.0.0.1:8081/health >/dev/null; then
+    RERANK_OK=1; echo "=== reranker: $RERANK_MODEL běží ($(curl -sf http://127.0.0.1:8081/health))"
+  else echo "!! reranker se nepodařilo spustit — server poběží bez něj"; journalctl -u lexis-reranker --no-pager -n 30 2>/dev/null | tail -n 30; fi
+else echo "=== reranker: vypnutý (RERANK=1 ho zapne)"; fi
+
 cat > /opt/LexisLocal/.env <<ENV
 BIND_HOST=0.0.0.0
 PORT=443
@@ -204,6 +237,9 @@ RAG_HYBRID_ALPHA=0.8
 RAG_MIN_SCORE=0.14
 EMBED_CACHE_FILE=$EMB_FILE
 ENV
+if [ "$RERANK_OK" = "1" ]; then
+  printf 'RAG_RERANK=1\nRAG_RERANK_URL=http://127.0.0.1:8081\nRAG_RERANK_K=20\nRAG_RERANK_WEIGHT=0.85\n' >> /opt/LexisLocal/.env
+fi
 
 cat > /etc/systemd/system/lexislocal.service <<UNIT
 [Unit]

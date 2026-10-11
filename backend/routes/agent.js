@@ -143,7 +143,7 @@ router.post('/:agentId', async (req, res) => {
             if (resolvedFilters) {
                 console.log(`🧠 RAG: Aktivní filtry pro vyhledávání: ${JSON.stringify(resolvedFilters)}`);
             }
-            const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true });
+            const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true, rerank: true });
             const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
             ragSources = highConfidenceMatches.map(m => ({
                 fileName: m.fileName,

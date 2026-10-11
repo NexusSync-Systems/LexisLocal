@@ -23,6 +23,7 @@ const ollama = require('./ai_provider');
 
 const { WATCH_DIR, dataPath } = require('./config'); // jeden zdroj pravdy, viz lib/config.js
 const secureCrypto = require('./secure_crypto'); // AES-GCM + zpětné čtení CBC (jeden zdroj)
+const rerankService = require('./rerank_service');
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
 
 // #5: hybridní retrieval (sémantika + lexikální shoda). OPT-IN (RAG_HYBRID=1),
@@ -911,7 +912,14 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     // dedupeKb: z téhož souboru ZNALOSTNÍ BÁZE (např. „§ 204“) max. 1 úsek — dlouhý
     // paragraf jinak zabere víc míst v top-k a vytlačí další relevantní ustanovení.
     // Klientské spisy se nededuplikují (u dlouhé smlouvy chceme víc jejích částí).
-    return (opts && opts.dedupeKb ? dedupeKbResults(results) : results).slice(0, limit);
+    let ranked = opts && opts.dedupeKb ? dedupeKbResults(results) : results;
+    // Volitelný reranker (lib/rerank_service.js): jen když o něj volající požádá (opts.rerank)
+    // A je zapnutý v env (RAG_RERANK=1; služba RAG_RERANK_URL, jinak ONNX v procesu). Mění POŘADÍ top-K, ne `score` —
+    // prahy (RAG_MIN_SCORE, 0.70 v conflicts) tak drží význam. Chyba/timeout → původní pořadí.
+    if (opts && opts.rerank && !embeddingFailed && rerankService.rerankEnabled()) {
+        ranked = await rerankService.rerankResults(query, ranked);
+    }
+    return ranked.slice(0, limit);
 }
 
 /** Ponechá z každého KB souboru (scope `_kb_*`) jen první = nejlépe skórovaný úsek. Čistá funkce. */

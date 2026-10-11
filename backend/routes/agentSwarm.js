@@ -62,7 +62,7 @@ router.post('/debate', async (req, res) => {
         if (oborDetection) {
             console.log(`🧭 Swarm obor: ${oborDetection.label} (${oborDetection.source}${oborDetection.confident ? '' : ', nejistě → celoplošně'})`);
         }
-        const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true });
+        const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true, rerank: true });
         const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
 
         if (highConfidenceMatches.length > 0) {
