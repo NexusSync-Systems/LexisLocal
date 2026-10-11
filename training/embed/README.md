@@ -104,7 +104,20 @@ Měří jako server (kousky ~700 znaků s překryvem — přesný port `chunkTex
 A) celé § / kousky / kousky s hlavičkou (zákon + § + nadpis), B) přepis dotazu qwen2.5:7b do právních
 pojmů (jen přepis / spojený text / fúze skóre), C) rerankery bge-reranker-v2-m3, gte-multilingual-reranker-base,
 mmarco-mMiniLMv2 — přesnost + rychlost GPU / CPU fp32 / CPU int8, D) přepis + reranker.
-EC2: `scripts/aws/embed-lab-userdata.sh` (g4dn, ~75 min).
+EC2: `scripts/aws/embed-lab-userdata.sh` (g4dn, ~30–45 min).
+
+**1. běh (11. 10. 2026, mix-0.3, R@1 / MRR@10):**
+
+| Členění | gold | gold_klient | test | test_klient |
+|---|---|---|---|---|
+| celé paragrafy | 70,2 % / 0,803 | 60,3 % / 0,726 | 74,7 % / 0,826 | 35,3 % / 0,450 |
+| kousky 700 znaků (= server) | 66,1 % / 0,774 | 57,4 % / 0,701 | 73,7 % / 0,822 | 33,0 % / 0,431 |
+| kousky 700 + hlavička | 66,1 % / 0,782 | 57,4 % / 0,706 | 72,0 % / 0,813 | 33,7 % / 0,433 |
+
+- Server kvůli dělení na 700 znaků ztrácí ~4 body na zlaté sadě → 2. běh měří i kousky 1200 / 2000 znaků.
+- Přepis dotazu qwen2.5:7b **škodí** všude (gold 66 → 61 % i ve fúzi; přepisy jsou nepřesné, vymýšlí
+  zákony) a stojí ~1,1 s → nepoužívat.
+- Rerankery v 1. běhu nenaběhly (sentence-transformers 6 + starší huggingface_hub) → opraveno, 2. běh `LAB_ARGS=--skip-rewrite`.
 
 ## Licence
 

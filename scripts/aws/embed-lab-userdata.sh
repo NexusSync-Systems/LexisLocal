@@ -76,7 +76,10 @@ DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1 | cu
 echo "ovladač NVIDIA: $DRV" | tee -a "$OUT/_gpu.txt"
 if [ "${DRV:-0}" -ge 580 ]; then "$PY" -m pip install -q torch || { echo "!! pip torch selhal"; exit 1; }
 else "$PY" -m pip install -q torch --index-url https://download.pytorch.org/whl/cu126 || { echo "!! pip torch (cu126) selhal"; exit 1; }; fi
-"$PY" -m pip install -q sentence-transformers datasets accelerate numpy || { echo "!! pip selhal"; exit 1; }
+# 11. 10. 2026: pozdější downgrade transformers<5 nechal sentence-transformers 6 + starý huggingface_hub
+# → import padal (BucketNotFoundError). Proto kompatibilní verze hned v jednom kroku.
+"$PY" -m pip install -q "sentence-transformers>=3.4,<6" "transformers>=4.44,<5" einops datasets accelerate numpy || { echo "!! pip selhal"; exit 1; }
+"$PY" -c "import sentence_transformers, transformers, huggingface_hub as h; print('st', sentence_transformers.__version__, 'tf', transformers.__version__, 'hub', h.__version__)" || { echo "!! sentence-transformers nejde importovat"; exit 1; }
 "$PY" -c "import torch;print('torch', torch.__version__, 'cuda', torch.cuda.is_available())" | tee -a "$OUT/_gpu.txt"
 "$PY" -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)" || { echo "!! torch nevidí GPU"; exit 1; }
 
@@ -108,8 +111,7 @@ mkdir -p "$WORK/pairs"
   && echo "=== testovací dotazy: $(wc -l < "$WORK/pairs/pairs_test.jsonl")" || echo "!! testovací dotazy nejsou — jen zlatá sada"
 
 # 5) Měření (Ollama: vektory + přepis dotazů; rerankery v torch na stejné GPU — T4 16 GB stačí)
-"$PY" -m pip install -q einops "sentence-transformers>=3.4,<6" "transformers>=4.44,<5" 2>/dev/null || true   # gte-multilingual-reranker: vlastní kód modelu nejde s transformers 5 (11. 10. 2026)
 echo "=== měření start $(date -Is)"
 "$PY" "$T/search_lab.py" --archive "$ARCH" --pairs "$WORK/pairs" --model "$FT_NAME" --chat-model "$CHAT_MODEL" \
-  --ollama http://127.0.0.1:11434 --report "$OUT" || { echo "!! měření selhalo"; exit 1; }
+  --ollama http://127.0.0.1:11434 ${LAB_ARGS:-} --report "$OUT" || { echo "!! měření selhalo"; exit 1; }
 echo "=== hotovo $(date -Is)"

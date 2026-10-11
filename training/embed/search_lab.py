@@ -95,8 +95,11 @@ def chunk_text(text, mx=700, ov=120):
 
 
 def build_units(corpus, mode):
-    """mode: par | chunk | chunk_hdr → (texty jednotek, vlastník = index paragrafu, začátky segmentů)."""
+    """mode: par | chunk | chunk_hdr | chunkN (N = max. znaků kousku, např. chunk1500)
+    → (texty jednotek, vlastník = index paragrafu, začátky segmentů)."""
     texts, owner = [], []
+    m = re.fullmatch(r"chunk(\d+)", mode)
+    mx = int(m.group(1)) if m else 700
     for di, d in enumerate(corpus):
         if mode == "par":
             texts.append(d["text"])
@@ -104,7 +107,7 @@ def build_units(corpus, mode):
             continue
         lines = [l.strip() for l in d["text"].splitlines() if l.strip()]
         hdr = " ".join(lines[:2])
-        for ci, c in enumerate(chunk_text(d["text"])):
+        for ci, c in enumerate(chunk_text(d["text"], mx=mx, ov=min(120, mx // 2))):
             texts.append(f"{hdr} — {c}" if mode == "chunk_hdr" and ci > 0 else c)
             owner.append(di)
     owner = np.asarray(owner)
@@ -211,6 +214,8 @@ def main():
     ap.add_argument("--cpu-threads", type=int, default=4)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--skip-rewrite", action="store_true")
+    ap.add_argument("--modes", nargs="+", default=["par", "chunk", "chunk1200", "chunk2000"],
+                    help="členění: par | chunk (700, jako server) | chunk_hdr | chunkN")
     ap.add_argument("--report", default="")
     a = ap.parse_args()
     t_start = time.time()
@@ -237,7 +242,7 @@ def main():
 
     # A) členění
     spaces, U = {}, {}
-    for mode in ("par", "chunk", "chunk_hdr"):
+    for mode in a.modes:
         sp = Space(mode, corpus, enc, cache, a.batch)
         spaces[mode] = sp
         res["cleneni"][mode] = {}
@@ -245,7 +250,8 @@ def main():
             U[(mode, s)] = sp.unit_scores(QV[s], QS[s], a.alpha)
             res["cleneni"][mode][s] = rank_metrics(sp.par_scores(U[(mode, s)]), REL[s])
         print(f"   A {mode}: gold {res['cleneni'][mode].get('gold')}", flush=True)
-    best_mode = max(("chunk", "chunk_hdr"), key=lambda m: (res["cleneni"][m]["gold"]["MRR@10"], res["cleneni"][m]["gold"]["R@1"]))
+    cand_modes = [m for m in a.modes if m != "par"] or list(a.modes)
+    best_mode = max(cand_modes, key=lambda m: (res["cleneni"][m]["gold"]["MRR@10"], res["cleneni"][m]["gold"]["R@1"]))
     res["meta"]["cleneni_pro_dalsi_kroky"] = best_mode
     sp = spaces[best_mode]
     PS = {s: sp.par_scores(U[(best_mode, s)]) for s in sets}
