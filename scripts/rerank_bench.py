@@ -5,7 +5,7 @@ Měří ms na jeden dotaz při přeřazení 20 úseků ~700 znaků z báze záko
 Jen veřejné zákony z repozitáře, nic se neodesílá (model se jednou stáhne z Hugging Face).
 
   python3 -m venv ~/.venvs/lexis-rerank
-  ~/.venvs/lexis-rerank/bin/pip install torch sentence-transformers einops
+  ~/.venvs/lexis-rerank/bin/pip install torch einops "sentence-transformers>=3.4,<6" "transformers>=4.44,<5"
   ~/.venvs/lexis-rerank/bin/python scripts/rerank_bench.py
   # jen jeden model:  … rerank_bench.py --models BAAI/bge-reranker-v2-m3
 """

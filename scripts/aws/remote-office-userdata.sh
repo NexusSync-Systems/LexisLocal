@@ -200,7 +200,7 @@ if [ "$RERANK" = "1" ]; then
     RPY=/opt/rerank-venv/bin/python; "$RPY" -m pip install -q --upgrade pip
     DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | cut -d. -f1)
     if [ "${DRV:-0}" -ge 580 ]; then "$RPY" -m pip install -q torch; else "$RPY" -m pip install -q torch --index-url https://download.pytorch.org/whl/cu126; fi
-    "$RPY" -m pip install -q sentence-transformers einops
+    "$RPY" -m pip install -q einops "sentence-transformers>=3.4,<6" "transformers>=4.44,<5"
     cat > /etc/systemd/system/lexis-reranker.service <<UNIT
 [Unit]
 Description=LexisLocal reranker (lokální, jen 127.0.0.1)

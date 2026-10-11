@@ -108,7 +108,7 @@ mkdir -p "$WORK/pairs"
   && echo "=== testovací dotazy: $(wc -l < "$WORK/pairs/pairs_test.jsonl")" || echo "!! testovací dotazy nejsou — jen zlatá sada"
 
 # 5) Měření (Ollama: vektory + přepis dotazů; rerankery v torch na stejné GPU — T4 16 GB stačí)
-"$PY" -m pip install -q einops 2>/dev/null || true   # gte-multilingual-reranker (vlastní kód modelu)
+"$PY" -m pip install -q einops "sentence-transformers>=3.4,<6" "transformers>=4.44,<5" 2>/dev/null || true   # gte-multilingual-reranker: vlastní kód modelu nejde s transformers 5 (11. 10. 2026)
 echo "=== měření start $(date -Is)"
 "$PY" "$T/search_lab.py" --archive "$ARCH" --pairs "$WORK/pairs" --model "$FT_NAME" --chat-model "$CHAT_MODEL" \
   --ollama http://127.0.0.1:11434 --report "$OUT" || { echo "!! měření selhalo"; exit 1; }
