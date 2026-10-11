@@ -119,6 +119,22 @@ EC2: `scripts/aws/embed-lab-userdata.sh` (g4dn, ~30–45 min).
   zákony) a stojí ~1,1 s → nepoužívat.
 - Rerankery v 1. běhu nenaběhly (sentence-transformers 6 + starší huggingface_hub) → opraveno, 2. běh `LAB_ARGS=--skip-rewrite`.
 
+**2. běh (11. 10. 2026, 2026-10-11_1531_embed_lab):**
+
+| | gold | gold_klient | test | test_klient |
+|---|---|---|---|---|
+| kousky 1200 znaků | 68,5 % | 57,4 % | 74,0 % | 35,0 % |
+| kousky 2000 znaků | 69,3 % | 58,8 % | 74,7 % | 35,3 % |
+| + bge-reranker-v2-m3, mix 0,85 (top 20) | **76,6 %** | **70,6 %** | **83,3 %** | **44,0 %** |
+| + mmarco-mMiniLMv2, mix 0,85 | 73,4 % | 63,2 % | 77,7 % | 32,7 % |
+| + gte-multilingual-reranker-base, mix 0,85 | 62,9 % | 50,0 % | 64,3 % | 32,7 % |
+
+Rychlost na dotaz (20 kousků po ~2000 znacích): bge GPU T4 0,21 s / CPU 4 vlákna 74 s; mmarco 0,03 s / 1,5 s;
+gte 0,09 s / 21 s. Mac (MPS, kousky ~500 znaků, `scripts/rerank_bench.py`): bge 1,2 s, mmarco 0,17 s.
+
+Závěr: báze zákonů na kousky 2000 znaků (`RAG_KB_CHUNK_MAX_CHARS`, výchozí od 11. 10. 2026);
+GPU server → bge-reranker-v2-m3; Mac → bge nebo mmarco; jen CPU → mmarco; gte nepoužívat (zhoršuje).
+
 ## Licence
 
 bge-m3: MIT; bge-reranker-v2-m3, gte-multilingual-reranker-base, mmarco-mMiniLMv2: Apache 2.0. qwen2.5:7b (generování dotazů): Apache 2.0. Dotazy negeneruje žádná placená

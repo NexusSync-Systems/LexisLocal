@@ -438,6 +438,17 @@ const CHUNK_OVERLAP = Math.max(0, Math.min(
     (parseInt(process.env.RAG_CHUNK_OVERLAP_CHARS, 10) || 120),
     Math.floor(CHUNK_MAX / 2)
 ));
+// Znalostní báze agentů (_kb_*: zákony, judikatura, vzory) má VLASTNÍ, větší kousky.
+// Měření 11. 10. 2026 (training/embed/search_lab.py, zlatá sada 124 dotazů nad zákony):
+// kousky 700 znaků 66,1 % správně na 1. místě, 1200 → 68,5 %, 2000 → 69,3 % (celé § 70,2 %).
+// Paragraf rozsekaný na 700 znaků ztrácí kontext (nadpis, odstavce) → hledání ho hůř trefí.
+// Klientské spisy zůstávají na RAG_CHUNK_MAX_CHARS (jiný druh textu, neměřeno).
+// Změna se projeví u NOVĚ nahraných dokumentů báze — stávající je třeba nahrát znovu
+// (reindex-kb jen přepočítá vektory stávajících kousků, nepřeseká je).
+function kbChunkMaxChars() {
+    const v = parseInt(process.env.RAG_KB_CHUNK_MAX_CHARS, 10);
+    return Number.isFinite(v) ? Math.max(200, v) : 2000;
+}
 
 // Rozdělí příliš dlouhý odstavec na věty (tečka/!/? + mezera + další „slovo"). Věta
 // delší než `max` se tvrdě rozseká po slovech. České zkratky (odst., §, č.) můžou
@@ -628,7 +639,8 @@ async function indexKnowledge(scope, fileName, text) {
     if (!scope || String(scope).indexOf(KB_PREFIX) !== 0) {
         throw new Error(`indexKnowledge: neplatný scope „${scope}" (musí začínat ${KB_PREFIX}).`);
     }
-    const chunks = chunkText(text);
+    const kbMax = kbChunkMaxChars();
+    const chunks = chunkText(text, { maxChars: kbMax, overlapChars: Math.min(CHUNK_OVERLAP, Math.floor(kbMax / 2)) });
     if (chunks.length === 0) {
         console.warn(`⚠️ RAG KB: „${fileName}" (${scope}) neobsahuje text k indexaci.`);
         return { indexed: 0 };
@@ -963,6 +975,7 @@ module.exports = {
     lexicalScore,
     blendScore,
     chunkText,
+    kbChunkMaxChars,
     indexKnowledge,
     deleteKnowledge,
     listKnowledge,

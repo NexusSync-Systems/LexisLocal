@@ -39,7 +39,7 @@ PROFILE="${PROFILE:-plny}"
 # scripts/rerank_server.py na GPU, backend ho volá přes RAG_RERANK_URL (lib/rerank_service.js).
 # Měření 10. 10. 2026: zlatá sada R@1 70 → 77 %, ~0,2 s na dotaz na T4.
 RERANK="${RERANK:-0}"
-RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
+RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"   # levnější: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1 (training/embed/README.md)
 if [ "$PROFILE" = "kompletni" ]; then
   MAX_MINUTES=330; COMPARE_MODELS=""; SUITE_REPEAT="${SUITE_REPEAT:-3}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
 fi
