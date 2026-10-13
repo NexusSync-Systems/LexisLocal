@@ -42,6 +42,10 @@ PROFILE="${PROFILE:-plny}"
 # citace 24 % vs 20 % a agent W3 (dopis, osobní údaje) 0/3 vs 3/3 → reranker neškodí, zapnuto.
 RERANK="${RERANK:-1}"
 RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"   # levnější: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1 (training/embed/README.md)
+# Počet pasáží z RAG pro agenta. Laboratoř 13. 10. 2026 (chunky 2000 + bge reranker): správný § v top 3 / top 5
+# — zlatá sada 91,9 / 95,2 %, klientské dotazy 88,2 / 94,1 %, test_klient 57,7 / 64,7 %. Práh RAG_MIN_SCORE
+# relevantní od nerelevantních neoddělí (skóre se překrývají; 0,40 ztratí 2,5 % relevantních) → zůstává 0,14.
+RAG_AGENT_K="${RAG_AGENT_K:-5}"
 if [ "$PROFILE" = "kompletni" ]; then
   MAX_MINUTES=330; COMPARE_MODELS=""; SUITE_REPEAT="${SUITE_REPEAT:-3}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
 fi
@@ -237,6 +241,7 @@ EMBEDDING_MODEL=$EMBED_MODEL
 RAG_HYBRID=1
 RAG_HYBRID_ALPHA=0.8
 RAG_MIN_SCORE=0.14
+RAG_AGENT_K=$RAG_AGENT_K
 EMBED_CACHE_FILE=$EMB_FILE
 ENV
 if [ "$RERANK_OK" = "1" ]; then

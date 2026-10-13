@@ -158,3 +158,24 @@ Závěr: reranker zhoršení citací nezpůsobil; chunky 2000 se na ověřován�
 (R5: 1/3, 6/6, 0/3), takže jeden běh na variantu nestačí. W3 (dopis s částkou z podkladů klienta)
 prošel jen s rerankerem. → `remote-office-userdata.sh` má RERANK=1 jako výchozí, timeout 8 s.
 `server_suite.js` nově ukládá ke každé neověřené citaci důvod (status/reason) a v reportu je sekce „Ověření citací“.
+
+## Laboratoř 3: počet pasáží a práh (13. 10. 2026, `2026-10-13_1828_embed_lab`)
+
+Kousky 2000 znaků, hybrid 0,8, pořadí podle mixu rerankeru (0,85) — jako server. Správný § mezi prvními K pasážemi
+(bge-reranker-v2-m3):
+
+| Sada | K=1 | K=3 (dosud) | K=4 | K=5 | K=8 |
+|---|---|---|---|---|---|
+| zlatá | 76,6 % | 91,9 % | 94,3 % | **95,2 %** | 98,4 % |
+| – klient | 70,6 % | 88,2 % | 92,7 % | **94,1 %** | 97,1 % |
+| test_klient | 44,0 % | 57,7 % | 61,3 % | **64,7 %** | 69,0 % |
+
+Práh `RAG_MIN_SCORE` (hybridní skóre; reranker ho nemění) relevantní pasáže **neoddělí**: skóre relevantních p5/p50
+0,43 / 0,54, nerelevantních v top K p50/p95 0,46 / 0,59. Práh 0,40 by vyhodil 2,5 % relevantních a jen 13 % nerelevantních,
+0,50 už 32 % relevantních. → práh zůstává 0,14 (do 0,30 nic neodfiltruje), o počtu pasáží rozhoduje K.
+
+Závěr: `RAG_AGENT_K=5` (+3 až +7 bodů; +2 pasáže ≈ +1 300 tokenů, `AGENT_NUM_CTX` 8192 stačí). Zatím jen v
+`remote-office-userdata.sh` — výchozí v kódu (3) se změní až po serverovém testu.
+
+Rychlost rerankeru na CPU (4 vlákna, 20 kousků) po opravě int8: bge 18,9 s → **10,0 s** (int8), mmarco 1,6 s → **1,1 s**.
+Pro instalaci bez GPU tedy mmarco int8; bge jen s GPU / Apple Silicon.
