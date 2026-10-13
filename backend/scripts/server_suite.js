@@ -407,10 +407,21 @@ async function runCase(c, attempt) {
     const failed = miss.length + hit.length + meta.length;
     const run = { id: c.id, attempt, agent: c.agent, category: c.category, status: r.status, ms: r.ms, simulated,
         score: total ? (total - failed) / total : (ok2(r.status) ? 1 : 0), pass: ok2(r.status) && !simulated && failed === 0,
-        miss, hit, meta, response: resp, citationCheck: r.json && r.json.citationCheck ? { total: r.json.citationCheck.total, unverified: r.json.citationCheck.unverifiedCount } : null,
+        miss, hit, meta, response: resp, citationCheck: citationSummary(r.json && r.json.citationCheck),
         dateFacts: r.json && r.json.dateFacts, outputGuard: r.json && r.json.outputGuard };
     agentRuns.push(run);
     return run;
+}
+// Souhrn ověření citací do výsledků: počty + KAŽDÁ neověřená citace s důvodem
+// (status/reason z lib/citation_verifier). Bez důvodů nešlo zjistit, proč podíl
+// neověřených kolísá (test 13. 10. 2026: 15–24 % mezi běhy, kontrolor nejvíc).
+function citationSummary(cc) {
+    if (!cc) return null;
+    const items = (Array.isArray(cc.citations) ? cc.citations : [])
+        .filter(c => c && !c.verified)
+        .slice(0, 40)
+        .map(c => ({ raw: String(c.raw || '').slice(0, 80), status: c.status || null, reason: c.reason || null, law: c.law || null }));
+    return { total: cc.total, unverified: cc.unverifiedCount, items };
 }
 async function phaseE() {
     console.log('\nE — agenti (eval sada)');
@@ -957,6 +968,33 @@ function writeReport(meta) {
             `- Neprošlo ani jednou: ${never.length ? never.map(([id, c]) => `${id} 0/${c.n}`).join(', ') : 'nic'}`, '',
             '| Případ | Agent | Prošlo |', '|---|---|---|');
         for (const [id, c] of Object.entries(perCase)) L.push(`| ${id} | ${c.agent} | ${c.pass}/${c.n} |`);
+    }
+    // Neověřené citace podle důvodu — odkud se berou (vymyšlený §, zákon mimo bázi, …).
+    const ccRuns = agentRuns.filter(r => r.citationCheck);
+    if (ccRuns.length) {
+        const tot = ccRuns.reduce((a, r) => a + (r.citationCheck.total || 0), 0);
+        const unv = ccRuns.reduce((a, r) => a + (r.citationCheck.unverified || 0), 0);
+        const byStatus = {}, byRaw = {}, byAgent = {};
+        for (const r of ccRuns) {
+            const a = byAgent[r.agent] = byAgent[r.agent] || [0, 0];
+            a[0] += r.citationCheck.total || 0; a[1] += r.citationCheck.unverified || 0;
+            for (const it of (r.citationCheck.items || [])) {
+                const k = `${it.status} — ${it.reason || ''}`;
+                byStatus[k] = (byStatus[k] || 0) + 1;
+                const rk = `${it.raw}${it.law ? ` (${it.law})` : ''}`;
+                byRaw[rk] = (byRaw[rk] || 0) + 1;
+            }
+        }
+        L.push('', '## Ověření citací', '',
+            `- Neověřené celkem: **${unv}/${tot}${tot ? ` (${Math.round(unv / tot * 100)} %)` : ''}**`,
+            `- Podle agenta: ${Object.entries(byAgent).map(([ag, v]) => `${ag} ${v[1]}/${v[0]}`).join(', ')}`,
+            '', '| Důvod | Počet |', '|---|---|');
+        for (const [k, n] of Object.entries(byStatus).sort((x, y) => y[1] - x[1])) L.push(`| ${k} | ${n} |`);
+        const top = Object.entries(byRaw).sort((x, y) => y[1] - x[1]).slice(0, 15);
+        if (top.length) {
+            L.push('', 'Nejčastější neověřené citace:', '', '| Citace | Počet |', '|---|---|');
+            for (const [k, n] of top) L.push(`| ${k.replace(/\|/g, '\\|')} | ${n} |`);
+        }
     }
     if (meta.load) {
         L.push('', '## Zátěž', '', '| Souběh | p50 | p95 | chyby |', '|---|---|---|---|');

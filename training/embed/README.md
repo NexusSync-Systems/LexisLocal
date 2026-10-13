@@ -139,3 +139,22 @@ GPU server → bge-reranker-v2-m3; Mac → bge nebo mmarco; jen CPU → mmarco; 
 
 bge-m3: MIT; bge-reranker-v2-m3, gte-multilingual-reranker-base, mmarco-mMiniLMv2: Apache 2.0. qwen2.5:7b (generování dotazů): Apache 2.0. Dotazy negeneruje žádná placená
 služba, jejíž podmínky by trénink zakazovaly.
+
+
+## Serverový test bez rerankeru (13. 10. 2026)
+
+Běh `2026-10-13_0657_remote_kompletni` (g4dn.xlarge / T4, KB chunky 2000, RERANK=0, agenti 3×)
+proti `2026-10-11_2117_remote_kompletni` (g6.xlarge / L4, KB chunky 2000, RERANK=1):
+
+| | RERANK=1 (11. 10.) | RERANK=0 (13. 10.) | chunky 700, bez rerankeru (10. 10.) |
+|---|---|---|---|
+| kontroly | 173/174 | 173/174 | 174/174 |
+| agenti (běhy) | 67/68 | 65/68 (W3 0/3) | — |
+| neověřené citace | 30/153 (20 %) | 36/150 (24 %) | 27/181 (15 %) |
+| kontrolor K1–K3 | 23/73 | 26/74 | 18/84 |
+
+Závěr: reranker zhoršení citací nezpůsobil; chunky 2000 se na ověřování citací přímo nepromítají
+(index § z řádků „Citace:“, zákony uložené po paragrafech). Rozptyl mezi pokusy téhož případu je velký
+(R5: 1/3, 6/6, 0/3), takže jeden běh na variantu nestačí. W3 (dopis s částkou z podkladů klienta)
+prošel jen s rerankerem. → `remote-office-userdata.sh` má RERANK=1 jako výchozí, timeout 8 s.
+`server_suite.js` nově ukládá ke každé neověřené citaci důvod (status/reason) a v reportu je sekce „Ověření citací“.

@@ -35,10 +35,12 @@ BRANCH="release-prep"
 #               spolehlivosti; po dohrání výsledků se instance SAMA VYPNE (nečeká na limit).
 #               ~3,5 h, vypne se nejpozději po 5,5 h.
 PROFILE="${PROFILE:-plny}"
-# Reranker (cross-encoder) nad výsledky RAG — VOLITELNÝ (export RERANK=1). Lokální služba
+# Reranker (cross-encoder) nad výsledky RAG — VÝCHOZÍ ZAPNUTÝ (vypnutí: export RERANK=0). Lokální služba
 # scripts/rerank_server.py na GPU, backend ho volá přes RAG_RERANK_URL (lib/rerank_service.js).
 # Měření 10. 10. 2026: zlatá sada R@1 70 → 77 %, ~0,2 s na dotaz na T4.
-RERANK="${RERANK:-0}"
+# Test 13. 10. 2026 (RERANK=0 vs 11. 10. RERANK=1, oba chunky 2000): bez rerankeru neověřené
+# citace 24 % vs 20 % a agent W3 (dopis, osobní údaje) 0/3 vs 3/3 → reranker neškodí, zapnuto.
+RERANK="${RERANK:-1}"
 RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"   # levnější: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1 (training/embed/README.md)
 if [ "$PROFILE" = "kompletni" ]; then
   MAX_MINUTES=330; COMPARE_MODELS=""; SUITE_REPEAT="${SUITE_REPEAT:-3}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
@@ -218,7 +220,7 @@ UNIT
   if curl -sf http://127.0.0.1:8081/health >/dev/null; then
     RERANK_OK=1; echo "=== reranker: $RERANK_MODEL běží ($(curl -sf http://127.0.0.1:8081/health))"
   else echo "!! reranker se nepodařilo spustit — server poběží bez něj"; journalctl -u lexis-reranker --no-pager -n 30 2>/dev/null | tail -n 30; fi
-else echo "=== reranker: vypnutý (RERANK=1 ho zapne)"; fi
+else echo "=== reranker: vypnutý (RERANK=0)"; fi
 
 cat > /opt/LexisLocal/.env <<ENV
 BIND_HOST=0.0.0.0
@@ -238,7 +240,7 @@ RAG_MIN_SCORE=0.14
 EMBED_CACHE_FILE=$EMB_FILE
 ENV
 if [ "$RERANK_OK" = "1" ]; then
-  printf 'RAG_RERANK=1\nRAG_RERANK_URL=http://127.0.0.1:8081\nRAG_RERANK_K=20\nRAG_RERANK_WEIGHT=0.85\n' >> /opt/LexisLocal/.env
+  printf 'RAG_RERANK=1\nRAG_RERANK_URL=http://127.0.0.1:8081\nRAG_RERANK_K=20\nRAG_RERANK_WEIGHT=0.85\nRAG_RERANK_TIMEOUT_MS=8000\n' >> /opt/LexisLocal/.env
 fi
 
 cat > /etc/systemd/system/lexislocal.service <<UNIT
