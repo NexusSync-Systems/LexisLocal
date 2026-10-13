@@ -186,7 +186,9 @@ def cpu_speed(name, pairs, threads):
         t0 = time.time(); ce.predict(pairs, batch_size=20, show_progress_bar=False)
         out["cpu_fp32_ms"] = round(1000 * (time.time() - t0) / 5)
         try:
-            ce.model = torch.quantization.quantize_dynamic(ce.model, {torch.nn.Linear}, dtype=torch.qint8)
+            # 13. 10. 2026: přiřazení `ce.model = quantize_dynamic(...)` v sentence-transformers 5 rozbije
+            # predict („list indices must be integers or slices, not tuple“) → kvantizace na místě.
+            torch.quantization.quantize_dynamic(ce.model, {torch.nn.Linear}, dtype=torch.qint8, inplace=True)
             ce.predict(pairs[:2], batch_size=2, show_progress_bar=False)
             t0 = time.time(); ce.predict(pairs, batch_size=20, show_progress_bar=False)
             out["cpu_int8_ms"] = round(1000 * (time.time() - t0) / 5)
@@ -233,7 +235,7 @@ def main():
     REL = {s: [{idx[x] for x in r["rel"]} for r in rows] for s, rows in sets.items()}
     print("sady:", {k: len(v) for k, v in sets.items()}, flush=True)
     res = {"meta": {"model": a.model, "alpha": a.alpha, "k": a.k, "beta": a.beta, "sady": {k: len(v) for k, v in sets.items()}},
-           "cleneni": {}, "prepis": {}, "rerank": {}, "kombinace": {}}
+           "cleneni": {}, "prepis": {}, "rerank": {}, "kombinace": {}, "pasaze": {}}
 
     enc = OllamaEncoder(a.model, a.ollama)
     cache = {}
@@ -319,6 +321,22 @@ def main():
                     res["kombinace"].setdefault(name, {})[s] = {"bez": rank_metrics(P, REL[s]), "rerank": m_only, f"mix{a.beta:g}": m_mix}
                 else:
                     out[s] = {"bez": rank_metrics(P, REL[s]), "rerank": m_only, f"mix{a.beta:g}": m_mix}
+                    # E) kolik pasáží dát agentovi (RAG_AGENT_K) a práh (RAG_MIN_SCORE) — jako server:
+                    # pořadí = mix rerankeru, `score` = hybrid (reranker ho nemění), agent dostane top K ≥ práh.
+                    mixS = a.beta * Rn + (1 - a.beta) * Pn
+                    ordr = np.argsort(-mixS, axis=1)[:, :PASAZE_MAX_K]
+                    pe = res["pasaze"].setdefault(name, {"_rel": [], "_irr": []})
+                    hit = {k: 0 for k in range(1, PASAZE_MAX_K + 1)}
+                    for i in range(len(rows)):
+                        pos = None
+                        for r, j in enumerate(ordr[i]):
+                            is_rel = int(cand[i][j]) in REL[s][i]
+                            (pe["_rel"] if is_rel else pe["_irr"]).append((float(Pc[i][j]), r + 1, s))
+                            if is_rel and pos is None:
+                                pos = r
+                        for k in hit:
+                            hit[k] += int(pos is not None and pos < k)
+                    pe[s] = {f"R@{k}": round(v / max(1, len(rows)), 4) for k, v in hit.items()}
         out["_gpu_ms_na_dotaz"] = round(1000 * gpu_t / max(1, gpu_n))
         del ce
         torch.cuda.empty_cache() if dev == "cuda" else None
@@ -329,9 +347,24 @@ def main():
               f"mix {g.get(f'mix{a.beta:g}', {}).get('R@1')} | {out.get('_gpu_ms_na_dotaz')} ms GPU, "
               f"{out.get('cpu_fp32_ms')} ms CPU fp32, {out.get('cpu_int8_ms')} ms CPU int8", flush=True)
 
+    for name, pe in res["pasaze"].items():
+        rel, irr = pe.pop("_rel"), pe.pop("_irr")
+        tab = {}
+        for K in (3, 5):
+            r_k = [x[0] for x in rel if x[1] <= K]; i_k = [x[0] for x in irr if x[1] <= K]
+            tab[f"K{K}"] = {f"{t:.2f}": {"ztracene_relevantni": round(sum(x < t for x in r_k) / max(1, len(r_k)), 4),
+                                         "odfiltrovane_nerelevantni": round(sum(x < t for x in i_k) / max(1, len(i_k)), 4)}
+                            for t in PRAHY}
+            tab[f"K{K}"]["_skore_relevantni_p05_p50"] = [round(float(np.percentile(r_k, q)), 3) for q in (5, 50)] if r_k else None
+            tab[f"K{K}"]["_skore_nerelevantni_p50_p95"] = [round(float(np.percentile(i_k, q)), 3) for q in (50, 95)] if i_k else None
+        pe["_prahy"] = tab
     res["meta"]["minut"] = round((time.time() - t_start) / 60, 1)
     if a.report:
         write_report(a, res, sets)
+
+
+PASAZE_MAX_K = 8                                   # nejvyšší zkoušené RAG_AGENT_K
+PRAHY = (0.10, 0.14, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50)   # zkoušené RAG_MIN_SCORE (server dnes 0,14)
 
 
 def _f(x):
@@ -376,6 +409,26 @@ def write_report(a, res, sets):
             for v in ("bez", "rerank", f"mix{a.beta:g}"):
                 L.append(f"| {name} | {v} | " + " | ".join(_f(per.get(s, {}).get(v)) for s in S) + " |")
         L.append("")
+    if res.get("pasaze"):
+        L += ["## E) Počet pasáží pro agenta a práh skóre", "",
+              "Pořadí jako server (hybrid → reranker mix), agent dostane top K pasáží se skóre ≥ práh. "
+              "Server dnes: RAG_AGENT_K=3, RAG_MIN_SCORE=0,14.", ""]
+        for name, pe in res["pasaze"].items():
+            L += [f"**{name}** — správný § mezi prvními K pasážemi:", "",
+                  "| Sada | " + " | ".join(f"K={k}" for k in range(1, PASAZE_MAX_K + 1)) + " |",
+                  "|---|" + "---|" * PASAZE_MAX_K]
+            for s_ in S:
+                if s_ in pe:
+                    L.append(f"| {s_} | " + " | ".join(f"{pe[s_][f'R@{k}']:.1%}" for k in range(1, PASAZE_MAX_K + 1)) + " |")
+            for K in ("K3", "K5"):
+                t = pe.get("_prahy", {}).get(K, {})
+                L += ["", f"Práh při {K} (podíl pasáží pod prahem; skóre relevantních p5/p50 {t.get('_skore_relevantni_p05_p50')}, "
+                      f"nerelevantních p50/p95 {t.get('_skore_nerelevantni_p50_p95')}):", "",
+                      "| Práh | ztracené relevantní | odfiltrované nerelevantní |", "|---|---|---|"]
+                for th, v in t.items():
+                    if not th.startswith("_"):
+                        L.append(f"| {th} | {v['ztracene_relevantni']:.1%} | {v['odfiltrovane_nerelevantni']:.1%} |")
+            L.append("")
     with open(os.path.join(a.report, "search_lab.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(L))
     print("\n".join(L))

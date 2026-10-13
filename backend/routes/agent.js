@@ -170,7 +170,7 @@ router.post('/:agentId', async (req, res) => {
                     messages.push({
                         role: 'system',
                         content: `Podklady ze znalostní báze (zákony, judikatura):\n${kbMatches.map(fmt).join('\n\n---\n\n')}\n\n` +
-                            'Při odpovědi vycházej z těchto podkladů a cituj jen ustanovení, která v nich jsou. Lhůty a čísla přebírej doslovně. Pokud podklady na otázku nestačí, řekni to.'
+                            'Při odpovědi vycházej z těchto podkladů a cituj jen ustanovení, která v nich jsou. Lhůty a čísla přebírej doslovně. U každého § uveď i zákon (např. „§ 2248 OZ“, „§ 204 o. s. ř.“). Pokud podklady na otázku nestačí, řekni to.'
                     });
                 }
                 if (clientMatches.length > 0) {

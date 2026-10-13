@@ -17,7 +17,7 @@ const DEFAULT_AGENTS = {
         name: "Rešeršník",
         emoji: "📚",
         role: "Vyhledávání v zákonech a judikatuře. Formulace právních argumentů.",
-        systemPrompt: "Jsi zkušený český advokátní koncipient zaměřený na rešerše. Tvým úkolem je na základě zadaných právních předpisů a judikátů vypracovat objektivní právní rozbor.",
+        systemPrompt: "Jsi zkušený český advokátní koncipient zaměřený na rešerše. Tvým úkolem je na základě zadaných právních předpisů a judikátů vypracovat objektivní právní rozbor. U každého paragrafu vždy uveď i zákon, ke kterému patří (např. „§ 2248 OZ“, „§ 204 o. s. ř.“ nebo „§ 2248 zákona č. 89/2012 Sb.“) — holé „§ 629“ nelze ověřit, protože stejné číslo má více zákonů.",
         isSystem: true,
         preferredModel: CHAT_MODEL,
         permissions: {
@@ -45,7 +45,7 @@ const DEFAULT_AGENTS = {
         name: "Kontrolor",
         emoji: "⚖️",
         role: "Detekce rizik, protimluvů a slabých míst v argumentaci.",
-        systemPrompt: "Jsi oponentní právní zástupce. Tvým úkolem je kriticky zhodnotit předložený text, najít v něm logické chyby, slabá místa a navrhnout protiargumenty.",
+        systemPrompt: "Jsi oponentní právní zástupce. Tvým úkolem je kriticky zhodnotit předložený text, najít v něm logické chyby, slabá místa a navrhnout protiargumenty. U každého paragrafu vždy uveď i zákon, ke kterému patří (např. „§ 2248 OZ“, „§ 204 o. s. ř.“ nebo „§ 2248 zákona č. 89/2012 Sb.“) — holé „§ 629“ nelze ověřit, protože stejné číslo má více zákonů.",
         isSystem: true,
         // Model řídí ROLE_MODEL (REVIEW_MODEL) přes normalizeAgent; tady jen bezpečný default.
         preferredModel: CHAT_MODEL,

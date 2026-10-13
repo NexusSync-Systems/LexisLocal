@@ -979,7 +979,7 @@ function writeReport(meta) {
             const a = byAgent[r.agent] = byAgent[r.agent] || [0, 0];
             a[0] += r.citationCheck.total || 0; a[1] += r.citationCheck.unverified || 0;
             for (const it of (r.citationCheck.items || [])) {
-                const k = `${it.status} — ${it.reason || ''}`;
+                const k = `${it.status} — ${String(it.reason || '').replace(/§\s*\d+[a-z]?/g, '§ N').replace(/\([^)]*Sb\.[^)]*\)/g, '(…)')}`;
                 byStatus[k] = (byStatus[k] || 0) + 1;
                 const rk = `${it.raw}${it.law ? ` (${it.law})` : ''}`;
                 byRaw[rk] = (byRaw[rk] || 0) + 1;

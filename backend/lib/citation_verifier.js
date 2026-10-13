@@ -257,11 +257,31 @@ function verifyCitations(text, opts = {}) {
 
     const raw = extractCitations(text);
     const kbIndex = opts.kbIndex || null; // { '99/1963': Set('57') } z lib/kb_law_index.js
+    // Zákony, které odpověď sama jmenuje (číslem nebo zkratkou u jiného §) — podle nich
+    // se odvodí zákon u „holého“ § bez zákona.
+    const mentionedLaws = new Set(raw.filter(c => c.law).map(c => c.law));
     const citations = raw.map(c => {
         let res = verifyOne(c, contextNorm, referenceIndex);
+        let inferredLaw = null;
         if (res.status !== 'verified' && kbIndex && c.law && kbIndex[c.law]) {
             if (c.type === 'zakon') res = { status: 'verified', reason: 'zákon je ve znalostní bázi' };
             else if (c.type === 'paragraf' && kbIndex[c.law].has(c.paragraph)) res = { status: 'verified', reason: 'paragraf je ve znalostní bázi zákonů' };
+        } else if (res.status !== 'verified' && kbIndex && c.type === 'paragraf' && !c.law && c.paragraph) {
+            // Server test 13. 10. 2026: všech 29 neověřených citací byl „holý“ § (§ 2248, § 629…)
+            // bez zákona do 300 znaků → do báze se vůbec nehledalo. Hledáme § ve všech zákonech
+            // báze; přednost mají zákony jmenované jinde v odpovědi. Jednoznačný nález = ověřeno
+            // (s odvozeným zákonem), více zákonů = „ambiguous_law“ (neověřeno, doplnit zákon).
+            const par = String(c.paragraph).toLowerCase();
+            const all = Object.keys(kbIndex).filter(l => kbIndex[l] && kbIndex[l].has(par));
+            const pref = all.filter(l => mentionedLaws.has(l));
+            const pick = pref.length === 1 ? pref : (pref.length === 0 && all.length === 1 ? all : null);
+            if (pick) {
+                inferredLaw = pick[0];
+                res = { status: 'verified', reason: `paragraf je ve znalostní bázi (zákon č. ${inferredLaw} Sb. odvozen — v odpovědi neuveden u §)` };
+            } else if (all.length > 1) {
+                const cand = pref.length > 1 ? pref : all;
+                res = { status: 'ambiguous_law', reason: `§ ${c.paragraph} je ve více zákonech báze (${cand.map(l => l + ' Sb.').join(', ')}) — uveďte zákon` };
+            }
         }
         // Dohledá, ve kterém chunku citace je (pro odkaz v UI).
         let sourceId = null;
@@ -275,7 +295,8 @@ function verifyCitations(text, opts = {}) {
         return {
             raw: c.raw,
             type: c.type,
-            law: c.law || null,
+            law: c.law || inferredLaw || null,
+            lawInferred: !!inferredLaw,
             paragraph: c.paragraph || null,
             article: c.article || null,
             status: res.status,
