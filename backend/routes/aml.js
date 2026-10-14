@@ -15,7 +15,22 @@ const path = require('path');
 const fs = require('fs');
 
 // POST /api/aml/identify — identifikace + kontrola klienta
+// Firemní režim: prověrka navázaná na spis = podle ACL spisu; bez spisu = autor nebo správce.
+// (AML záznam nese rodné číslo, adresu a rizikové faktory klienta.)
+const access = require('../lib/access');
+function _canSeeCheck(c, principal) {
+    if (!access.isFirmMode()) return true;
+    if (access.isAdminOrSolo(principal)) return true;
+    if (c.spisId) return !access.checkSpisAccess(c.spisId, principal, 'read');
+    return !!(c.createdBy && principal && c.createdBy.id === principal.userId);
+}
+
 router.post('/identify', async (req, res) => {
+    const sid = req.body && req.body.spisId;
+    if (sid) {
+        const deny = access.checkSpisAccess(sid, req.principal, 'write');
+        if (deny) return res.status(deny.status).json({ error: deny.error });
+    }
     try {
         const record = await aml.identify(req.body || {});
         logEvent('AML', 'Identifikace klienta', record.jmeno, { risk: record.risk, spisId: record.spisId });
@@ -28,7 +43,7 @@ router.post('/identify', async (req, res) => {
 // GET /api/aml/checks — historie AML prověrek; filtr ?spisId=&risk=
 router.get('/checks', (req, res) => {
     try {
-        res.json({ checks: aml.listChecks({ spisId: req.query.spisId, risk: req.query.risk }) });
+        res.json({ checks: aml.listChecks({ spisId: req.query.spisId, risk: req.query.risk }).filter(c => _canSeeCheck(c, req.principal)) });
     } catch (err) {
         res.status(500).json({ error: `Chyba při načtení AML prověrek: ${err.message}` });
     }
@@ -38,6 +53,7 @@ router.get('/checks', (req, res) => {
 router.get('/checks/:id', (req, res) => {
     const check = aml.getCheck(req.params.id);
     if (!check) return res.status(404).json({ error: 'AML prověrka nenalezena.' });
+    if (!_canSeeCheck(check, req.principal)) return res.status(403).json({ error: 'Přístup k prověrce odepřen.' });
     res.json({ check });
 });
 

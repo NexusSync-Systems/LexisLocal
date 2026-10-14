@@ -996,6 +996,22 @@ function writeReport(meta) {
             for (const [k, n] of top) L.push(`| ${k.replace(/\|/g, '\\|')} | ${n} |`);
         }
     }
+    // Odezva agentů (14. 10. 2026): podklad pro cílovou odezvu — p50/p95 podle asistenta
+    // ze všech skutečných (ne simulovaných) běhů s HTTP 200.
+    {
+        const by = {};
+        for (const r of agentRuns) {
+            if (r.simulated || r.status !== 200 || !Number.isFinite(r.ms)) continue;
+            (by[r.agent] = by[r.agent] || []).push(r.ms);
+            (by['(všichni)'] = by['(všichni)'] || []).push(r.ms);
+        }
+        const q = (a, p) => a[Math.min(a.length - 1, Math.floor(a.length * p))];
+        const rows = Object.entries(by).map(([ag, a]) => { a.sort((x, y) => x - y); return [ag, a.length, q(a, 0.5), q(a, 0.95), a[a.length - 1]]; });
+        if (rows.length) {
+            L.push('', '## Odezva agentů (jeden dotaz, bez souběhu)', '', '| Asistent | Běhů | p50 | p95 | max |', '|---|---|---|---|---|');
+            for (const [ag, n, p50, p95, mx] of rows) L.push(`| ${ag} | ${n} | ${(p50 / 1000).toFixed(1)} s | ${(p95 / 1000).toFixed(1)} s | ${(mx / 1000).toFixed(1)} s |`);
+        }
+    }
     if (meta.load) {
         L.push('', '## Zátěž', '', '| Souběh | p50 | p95 | chyby |', '|---|---|---|---|');
         for (const [n, v] of Object.entries(meta.load)) L.push(`| ${n} | ${(v.p50 / 1000).toFixed(1)} s | ${(v.p95 / 1000).toFixed(1)} s | ${v.errors} |`);

@@ -112,5 +112,24 @@ function revoke(spis, userId) {
     return acl;
 }
 
+/**
+ * Pro routy mimo spisy.js: ověří přístup ke spisu podle id (firemní režim).
+ * Vrací null = v pořádku, jinak { status, error } k odeslání. Neexistující spis → 404.
+ */
+function checkSpisAccess(spisId, principal, level) {
+    if (!isFirmMode()) return null;
+    let spis = null;
+    try { spis = require('./spisy').getSpis(spisId); } catch (e) { spis = null; }
+    if (!spis) return { status: 404, error: 'Spis nenalezen.' };
+    return canAccess(spis, principal, level) ? null : { status: 403, error: 'Přístup ke spisu odepřen.' };
+}
+
+/** Je principal správce (scope admin) nebo běží solo režim? */
+function isAdminOrSolo(principal) {
+    if (!isFirmMode()) return true;
+    return !!principal && principalLib.hasScope(principal, 'admin');
+}
+
 module.exports = {
+    checkSpisAccess, isAdminOrSolo,
     firmModeSource, persistFirmMode, isFirmMode, setFirmMode, canAccess, grant, revoke, normalizeAccess };

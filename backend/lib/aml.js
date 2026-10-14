@@ -141,6 +141,8 @@ async function identify(input) {
         rc: input.rc ? String(input.rc) : null,
         adresa: input.adresa ? String(input.adresa) : null,
         spisId: input.spisId || null,
+        // Kdo prověrku provedl (účet z HTTP požadavku) — v firemním režimu ji vidí on, správce a čtenáři spisu.
+        createdBy: (() => { try { return require('./request_context').currentActor(); } catch (e) { return null; } })(),
         provedl: input.provedl ? String(input.provedl) : '',
         poznamka: input.poznamka ? String(input.poznamka) : '',
         registry: registryData ? {

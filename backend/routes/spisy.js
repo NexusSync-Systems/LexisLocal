@@ -181,6 +181,14 @@ router.get('/:id/timeline', (req, res) => {
     res.json(spisy.getSpisTimeline(req.params.id));
 });
 
+// GET /api/spisy/:id/skartace-inventar — co o spisu leží v LexisLocal a co se stane při
+// skartaci (smazat / ponechat ze zákona / pseudonymizovat). Jen čte. Vlastník nebo správce.
+router.get('/:id/skartace-inventar', (req, res) => {
+    const spis = gate(req, res, 'admin'); if (!spis) return;
+    try { res.json(require('../lib/skartace_inventory').inventory(spis.id)); }
+    catch (err) { res.status(500).json({ error: `Inventář se nepodařilo sestavit: ${err.message}` }); }
+});
+
 // GET /api/spisy/:id/audit?format=json|csv|docx — auditní stopa spisu (kdo, kdy, co: změny i čtení).
 // Jen vlastník spisu nebo správce (ukazuje i činnost kolegů). Samotný export se audituje.
 router.get('/:id/audit', async (req, res) => {

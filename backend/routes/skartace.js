@@ -12,7 +12,14 @@ const { logEvent } = require('../lib/audit');
 // GET /api/skartace/navrh — spisy s uplynulou retencí + čekající na skartaci
 router.get('/navrh', (req, res) => {
     try {
-        res.json(skartace.getSkartaceNavrh());
+        const n = skartace.getSkartaceNavrh();
+        const access = require('../lib/access');
+        if (access.isFirmMode() && !access.isAdminOrSolo(req.principal)) {
+            const ok = s => access.canAccess(s, req.principal, 'read');
+            n.expired = n.expired.filter(ok); n.retained = n.retained.filter(ok); n.inSkartace = n.inSkartace.filter(ok);
+            n.summary = { expired: n.expired.length, retained: n.retained.length, inSkartace: n.inSkartace.length };
+        }
+        res.json(n);
     } catch (err) {
         res.status(500).json({ error: `Chyba skartačního návrhu: ${err.message}` });
     }

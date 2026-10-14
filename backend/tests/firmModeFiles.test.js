@@ -149,3 +149,44 @@ test('export auditní stopy: vlastník CSV/DOCX/JSON, čtenář ne; export se s�
     expect(d.statusCode).toBe(200);
     expect(d.body.slice(0, 2).toString()).toBe('PK');
 });
+
+describe('zbylé cesty (dočištění 14. 10. 2026)', () => {
+    let spisC;
+    beforeAll(async () => {
+        spisC = (await request(app).post('/api/spisy').set(as(A.token)).send({ nazev: 'Další důvěrná věc', spisZn: '33 C 1/2026' })).body.spis;
+    });
+
+    test('záznam e-mailu do cizího spisu: 403, do nesvázaného OK', async () => {
+        expect((await request(app).post('/api/case/email-logged').set(as(B.token)).send({ caseNumber: '33 C 1/2026', recipientEmail: 'x@example.cz' })).statusCode).toBe(403);
+        expect((await request(app).post('/api/case/email-logged').set(as(B.token)).send({ caseNumber: '99 C 9/2026' })).statusCode).toBe(200);
+    });
+
+    test('AML: prověrka do cizího spisu ne; cizí prověrky nevidím, svoje ano', async () => {
+        expect((await request(app).post('/api/aml/identify').set(as(B.token)).send({ typ: 'FO', jmeno: 'Karel Testovací', spisId: spisC.id })).statusCode).toBe(403);
+        const own = await request(app).post('/api/aml/identify').set(as(A.token)).send({ typ: 'FO', jmeno: 'Karel Testovací', spisId: spisC.id });
+        expect(own.statusCode).toBe(201);
+        const mine = await request(app).post('/api/aml/identify').set(as(B.token)).send({ typ: 'FO', jmeno: 'Bez Spisu' });
+        expect(mine.statusCode).toBe(201);
+        const listB = (await request(app).get('/api/aml/checks').set(as(B.token))).body.checks.map(c => c.id);
+        expect(listB).toContain(mine.body.check.id);
+        expect(listB).not.toContain(own.body.check.id);
+        expect((await request(app).get(`/api/aml/checks/${own.body.check.id}`).set(as(B.token))).statusCode).toBe(403);
+        expect((await request(app).get('/api/aml/checks').set(as(A.token))).body.checks.map(c => c.id)).not.toContain(mine.body.check.id);
+        expect((await request(app).get('/api/aml/checks').set(ADMIN)).body.checks.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test('manažerská data a skartační protokoly jen správce; návrh skartace jen čitelné spisy', async () => {
+        expect((await request(app).get('/api/managerial/profitability').set(as(A.token))).statusCode).toBe(403);
+        expect((await request(app).get('/api/managerial/profitability').set(ADMIN)).statusCode).toBe(200);
+        expect((await request(app).get('/api/skartace/protokoly').set(as(A.token))).statusCode).toBe(403);
+        await request(app).post(`/api/spisy/${spisC.id}/stav`).set(as(A.token)).send({ stav: 'skartace' });
+        const nB = (await request(app).get('/api/skartace/navrh').set(as(B.token))).body;
+        expect(nB.inSkartace.some(s => s.id === spisC.id)).toBe(false);
+        const nA = (await request(app).get('/api/skartace/navrh').set(as(A.token))).body;
+        expect(nA.inSkartace.some(s => s.id === spisC.id)).toBe(true);
+    });
+
+    test('ověření podpisu dokumentu z cizího spisu: 403', async () => {
+        expect((await request(app).post('/api/document/verify-signature').set(as(B.token)).send({ fileName: 'tajne/zaloba.pdf' })).statusCode).toBe(403);
+    });
+});

@@ -24,6 +24,10 @@ const ADMIN_RULES = [
     ['POST', '/api/watcher/toggle'],
     ['POST', '/api/audit/clear'],
     ['POST', '/api/skartace/protokol'],
+    // Nález 14. 10. 2026: ziskovost, kapacity a sazby napříč všemi spisy = vedení kanceláře;
+    // protokoly skartace vyjmenovávají spisy celé kanceláře.
+    ['*', '/api/managerial'],
+    ['GET', '/api/skartace/protokoly'],
     ['POST', '/api/agents'],
     ['DELETE', '/api/agents'],
     ['POST', '/api/agent-tokens'],

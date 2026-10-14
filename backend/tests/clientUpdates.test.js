@@ -165,3 +165,15 @@ test('/api/email/send: příznak confirmedByLawyer od asistentky nestačí', asy
     const ok = await request(app).post('/api/email/send').set(as(ADV.token)).send({ to: 'jan.novak@example.cz', subject: 'x', body: 'y', confirmedByLawyer: true });
     expect(ok.statusCode).toBe(200);
 });
+
+test('inventář před skartací: ukáže, co zůstane (deník, souhrny), jen vlastník/správce', async () => {
+    const r = await request(app).get(`/api/spisy/${spis.id}/skartace-inventar`).set(as(ADV.token));
+    expect(r.statusCode).toBe(200);
+    const byKind = Object.fromEntries(r.body.items.map(i => [i.kind, i]));
+    expect(byKind.client_updates.count).toBeGreaterThanOrEqual(1);
+    expect(byKind.client_updates.action).toBe('smazat');
+    expect(byKind.spis_events.count).toBeGreaterThanOrEqual(1);
+    expect(byKind.aml_checks.action).toBe('ponechat');
+    expect(byKind.audit.action).toBe('pseudonymizovat');
+    expect((await request(app).get(`/api/spisy/${spis.id}/skartace-inventar`).set(as(SEK.token))).statusCode).toBe(403);
+});

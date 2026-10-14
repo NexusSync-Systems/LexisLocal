@@ -61,6 +61,7 @@ router.post('/verify-signature', async (req, res) => {
             const inbox = await loadInbox();
             const item = inbox.files[fileName];
             if (!item) return res.status(404).json({ error: 'Dokument nebyl nalezen v doručené poště.' });
+            if (!require('../lib/file_acl').canAccessFile(item, req.principal, 'write')) return res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
             try { buf = require('fs').readFileSync(item.filePath); }
             catch (e) { return res.status(404).json({ error: 'Soubor na disku neexistuje.' }); }
             if (!/\.pdf$/i.test(item.fileName || item.filePath)) return res.status(400).json({ error: 'Podpis lze ověřit jen u PDF.' });

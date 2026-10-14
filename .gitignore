@@ -64,3 +64,6 @@ bench-results/
 zakony/
 backend/eval/kb/.kb-index-*.json
 backend/eval/server_suite/reports/
+
+# Podklady a vyplněná hodnocení advokátem (generuje npm run review:lawyer)
+backend/eval/lawyer_review/
