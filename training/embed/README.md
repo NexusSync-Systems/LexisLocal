@@ -179,3 +179,18 @@ Závěr: `RAG_AGENT_K=5` (+3 až +7 bodů; +2 pasáže ≈ +1 300 tokenů, `AGEN
 
 Rychlost rerankeru na CPU (4 vlákna, 20 kousků) po opravě int8: bge 18,9 s → **10,0 s** (int8), mmarco 1,6 s → **1,1 s**.
 Pro instalaci bez GPU tedy mmarco int8; bge jen s GPU / Apple Silicon.
+
+## 6. běh (13.–14. 10. 2026, `2026-10-13_1936_embed_train`)
+
+Klientské dotazy teď pokrývají 4 353 ze 4 404 paragrafů (6 419 tréninkových párů navíc k 19 472). Vybrán opět mix-0.3:
+
+| Sada (hybrid 0,8) | bge-m3 | doladěný (100 %) | mix-0.3 (6. běh) | mix-0.3 (5. běh, nasazený) |
+|---|---|---|---|---|
+| zlatá | 66,1 % | 66,1 % | 71,0 % (MRR 0,811) | 71,0 % (MRR 0,807) |
+| – advokát | 78,6 % | 73,2 % | 82,1 % | 82,1 % |
+| – klient | 55,9 % | 60,3 % | 61,8 % | 61,8 % |
+| test_klient | 23,4 % | 41,4 % | 32,9 % | — |
+
+Závěr: víc klientských dotazů od qwenu ruční zlatou sadu nezlepšilo — čistě doladěný model se naučí styl generátoru
+(test_klient 41 %), na ručních dotazech ale ne. Nasazený model 5. běhu **zůstává**; další doladění bez nových
+(ručních / reálných) dotazů už nemá smysl. Větší zisk dává reranker (zlatá 71 → 77 %) a K=5 (top 5 ~95 %).
