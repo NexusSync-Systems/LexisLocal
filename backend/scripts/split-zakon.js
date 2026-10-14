@@ -199,4 +199,5 @@ if (require.main === module) {
     try { main(); } catch (e) { console.error('❌ ' + e.message); process.exit(1); }
 }
 
-module.exports = { splitParagraphs, sequenceReport, renderDoc, isHeadingLine };
+// fileSafe/renderDoc sdílí i fetch-esbirka.js (stejný formát souborů → kb_law_index sedí).
+module.exports = { splitParagraphs, sequenceReport, renderDoc, isHeadingLine, fileSafe };

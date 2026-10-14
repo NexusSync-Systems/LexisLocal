@@ -237,6 +237,7 @@ app.use('/api/lhutnik', require('./routes/lhutnik'));
 app.use('/api/skartace', require('./routes/skartace'));
 app.use('/api/fakturace', require('./routes/fakturace'));
 app.use('/api/client-updates', require('./routes/clientUpdates'));
+app.use('/api/codexis', require('./routes/codexis'));
 app.use('/api/aml', require('./routes/aml'));
 app.use('/api/agent', require('./routes/agent'));
 app.use('/api/agent-swarm', require('./routes/agentSwarm'));

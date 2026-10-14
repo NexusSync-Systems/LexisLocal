@@ -154,6 +154,18 @@ const TOOLS = {
             if (_localOnly()) return { error: 'Lokální režim (mlčenlivost): externí cloudová rešerše je zakázána.' };
             return await _lawgptJudgments(args.query, args.limit);
         }
+    },
+    // CODEXIS AI (licence kanceláře, opt-in správcem). Ven jde jen očištěná otázka, nikdy spis.
+    search_codexis: {
+        permission: 'read_files',
+        description: 'Dotaz na CODEXIS AI (komerční právní databáze — komentáře, judikatura, literatura; čerpá kredity kanceláře). ' +
+            'Použij JEN pro obecnou právní otázku, kterou lokální báze nepokryje. Nikdy neposílej jména, čísla ani skutkové údaje klienta.',
+        parameters: {
+            type: 'object',
+            properties: { query: { type: 'string', description: 'Obecná právní otázka bez osobních údajů klienta.' } },
+            required: ['query']
+        },
+        impl: async (args) => require('./codexis').ask(args.query, { via: 'agent' })
     }
 };
 
@@ -169,6 +181,7 @@ function toolsForAgent(agent) {
         if (!_agentAllows(agent, t.permission)) continue;
         // CLOUD rešerši nabídni jen když je zapnutá a NEjsme v lokálním režimu.
         if (name === 'search_caselaw_online' && (!_externalResearchEnabled() || _localOnly())) continue;
+        if (name === 'search_codexis' && !require('./codexis').isEnabled()) continue;
         out.push({ type: 'function', function: { name, description: t.description, parameters: t.parameters } });
     }
     return out;

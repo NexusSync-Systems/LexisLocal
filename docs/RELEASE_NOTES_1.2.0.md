@@ -28,6 +28,12 @@ Před vydáním: zvýšit `version` v `package.json` (na `release-prep` je dosud
 - Kontrola smluv najde typická nevyvážená ustanovení (rozhodčí doložka, záloha, sankce) i v dlouhých smlouvách.
 - Odolnost proti „pokynům pro AI“ schovaným v dokumentech a proti vyzrazení nastavení.
 
+**Právní zdroje**
+- Zákony přímo z e-Sbírky po paragrafech (sada 23 zákonů pro advokacii) a judikatura ze Sbírky rozhodnutí
+  Nejvyššího soudu — skripty `fetch-esbirka.js` a `fetch-ns-sbirka.js` (viz `docs/PRAVNI_ZDROJE.md`).
+- Volitelné napojení na **CODEXIS AI** pro kanceláře s vlastní licencí: rešeršník se zeptá jejich databáze,
+  ven jde jen obecná otázka bez údajů klienta, každý dotaz v auditu. Vypnuto, zapíná správce.
+
 **Pošta, datové schránky, soudy**
 - Datová schránka: příjem zpráv a .zfo, úkol k písemnosti, systémové zprávy bez falešných lhůt.
 - Hlídač jednání (InfoJednání) a insolvencí (ISIR) podle spisové značky.

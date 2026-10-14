@@ -62,6 +62,35 @@ router.post('/external-research', (req, res) => {
     } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+// ── CODEXIS AI (licence kanceláře; klíč se nikdy nevrací) ───────────────────
+// GET /api/settings/codexis — { configured, switchOn, localOnly, enabled }
+router.get('/codexis', (req, res) => res.json(require('../lib/codexis').status()));
+
+// POST /api/settings/codexis { apiKey?, enabled? } — jen správce (authz: POST /api/settings*)
+router.post('/codexis', (req, res) => {
+    try {
+        const cx = require('../lib/codexis');
+        const b = req.body || {};
+        if (typeof b.apiKey === 'string') {
+            const k = b.apiKey.trim();
+            if (k && !/^[\x21-\x7e]{16,256}$/.test(k)) return res.status(400).json({ error: 'Klíč nemá očekávaný tvar.' });
+            cx.setKey(k);
+            logEvent('Nastavení', k ? 'Uložen klíč CODEXIS AI' : 'Odebrán klíč CODEXIS AI', 'codexis', {});
+        }
+        if (typeof b.enabled === 'boolean') {
+            cx.setEnabled(b.enabled);
+            logEvent('Nastavení', 'CODEXIS AI ' + (b.enabled ? 'zapnuto' : 'vypnuto'), 'codexis', {});
+        }
+        res.json({ success: true, ...cx.status() });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// POST /api/settings/codexis/check — ověří klíč a licenci (nečerpá kredity)
+router.post('/codexis/check', async (req, res) => {
+    try { res.json(await require('../lib/codexis').check()); }
+    catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
 // ── Firemní režim (přístup ke spisům podle vlastníka a sdílení) ──────────────
 // GET /api/settings/firm-mode — stav + kolik spisů nemá vlastníka s účtem (uvidí je jen správce).
 router.get('/firm-mode', (req, res) => {

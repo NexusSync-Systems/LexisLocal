@@ -33,6 +33,7 @@ Object.assign(LexisLocalApp.prototype, {
 
     async loadUsersTab() {
         if (typeof this.loadFirmModeCard === 'function') this.loadFirmModeCard();
+        if (typeof this.loadCodexisCard === 'function') this.loadCodexisCard();
         if (typeof this.loadProfileCard === 'function') this.loadProfileCard();
         const list = document.getElementById('users-list');
         const roleSel = document.getElementById('user-new-role');
@@ -207,6 +208,60 @@ Object.assign(LexisLocalApp.prototype, {
                 ${d.spisyWithoutOwnerAccount ? `<div style="font-size:0.75rem;color:#b45309;margin-top:8px;">⚠️ ${escapeHtml(String(d.spisyWithoutOwnerAccount))} z ${escapeHtml(String(d.spisy))} spisů nemá vlastníka s účtem — ve firemním režimu je uvidí jen správce. Vlastníka nastavíte v detailu spisu (Spisová služba → spis → Přístup).</div>` : ''}`;
             const btn = document.getElementById('firm-mode-toggle');
             if (btn) btn.addEventListener('click', () => this.setFirmMode(btn.dataset.on === '1'));
+        } catch (e) { el.innerHTML = `<div style="color:#b45309;">⚠️ ${escapeHtml(e.message)}</div>`; }
+    },
+
+    // CODEXIS AI — licence kanceláře, zapíná správce. Klíč se jen ukládá, nikdy nezobrazuje.
+    async loadCodexisCard() {
+        const el = document.getElementById('codexis-card');
+        if (!el) return;
+        try {
+            const r = await fetch(`${this.apiBase}/settings/codexis`, { headers: this.getHeaders() });
+            const d = await r.json();
+            const stav = d.localOnly ? 'Zakázáno lokálním režimem (mlčenlivost)'
+                : d.enabled ? 'Zapnuto' : d.configured ? 'Vypnuto (klíč uložen)' : 'Nenastaveno';
+            el.innerHTML = `
+                <h3 style="margin:0 0 6px;">📚 CODEXIS AI (volitelné)</h3>
+                <p style="font-size:0.78rem;opacity:0.8;margin:0 0 10px;line-height:1.45;">
+                    Pro kanceláře s vlastní licencí CODEXIS AI: rešeršník se může zeptat jejich databáze (komentáře, judikatura).
+                    Každý dotaz čerpá kredity vaší licence. <b>Odchází jen obecná právní otázka</b> — osobní údaje se odstraní,
+                    dokumenty spisu se neposílají; CODEXIS AI ale využívá i externí AI (OpenAI). Každý dotaz se zapisuje do auditu.</p>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+                    <strong style="color:${d.enabled ? '#15803d' : 'var(--text-secondary)'};">${escapeHtml(stav)}</strong>
+                    ${d.configured && !d.localOnly ? `<button class="btn ${d.switchOn ? 'btn-secondary' : 'btn-primary'}" id="cx-toggle" style="padding:5px 12px;font-size:0.8rem;">${d.switchOn ? 'Vypnout' : 'Zapnout'}</button>
+                        <button class="btn btn-secondary" id="cx-check" style="padding:5px 12px;font-size:0.8rem;">Ověřit licenci</button>` : ''}
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <input type="password" id="cx-key" placeholder="${d.configured ? 'Nový klíč API (nahradí uložený)' : 'Klíč API z CODEXIS AI (Nastavení → Komunikační kanály → API)'}" autocomplete="off" style="flex:1;min-width:220px;font-size:0.8rem;">
+                    <button class="btn btn-secondary" id="cx-save" style="padding:5px 12px;font-size:0.8rem;">Uložit klíč</button>
+                    ${d.configured ? '<button class="btn btn-secondary" id="cx-remove" style="padding:5px 12px;font-size:0.8rem;">Odebrat klíč</button>' : ''}
+                </div>
+                <div id="cx-msg" style="font-size:0.78rem;margin-top:6px;"></div>`;
+            const msg = (t, ok) => { const m = document.getElementById('cx-msg'); if (m) { m.textContent = t; m.style.color = ok ? '#15803d' : '#b45309'; } };
+            const post = async (p, body) => {
+                const rr = await fetch(`${this.apiBase}/settings/codexis${p}`, { method: 'POST', headers: this.getHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body || {}) });
+                const dd = await rr.json().catch(() => ({}));
+                if (!rr.ok) throw new Error(dd.error || ('HTTP ' + rr.status));
+                return dd;
+            };
+            const on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', fn); };
+            on('cx-save', async () => {
+                const k = (document.getElementById('cx-key').value || '').trim();
+                if (!k) return msg('Vložte klíč.', false);
+                try { await post('', { apiKey: k }); this.loadCodexisCard(); } catch (e) { msg('❌ ' + e.message, false); }
+            });
+            on('cx-remove', async () => {
+                if (!await LexisUI.confirm('Odebrat klíč CODEXIS AI?')) return;
+                try { await post('', { apiKey: '', enabled: false }); this.loadCodexisCard(); } catch (e) { msg('❌ ' + e.message, false); }
+            });
+            on('cx-toggle', async () => {
+                if (!d.switchOn && !await LexisUI.confirm('Zapnout CODEXIS AI? Rešeršní otázky (bez údajů klienta) pak mohou odcházet mimo kancelář a čerpat kredity licence.')) return;
+                try { await post('', { enabled: !d.switchOn }); this.loadCodexisCard(); } catch (e) { msg('❌ ' + e.message, false); }
+            });
+            on('cx-check', async () => {
+                msg('Ověřuji…', true);
+                try { const c = await post('/check'); msg(c.ok ? `✅ Klíč platí (virtuální stroj: ${c.vm || '?'})` : '❌ ' + c.error, c.ok); } catch (e) { msg('❌ ' + e.message, false); }
+            });
         } catch (e) { el.innerHTML = `<div style="color:#b45309;">⚠️ ${escapeHtml(e.message)}</div>`; }
     },
 

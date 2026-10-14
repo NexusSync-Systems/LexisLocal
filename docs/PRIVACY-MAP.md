@@ -18,6 +18,7 @@ zpracovatelská smlouva (čl. 28 GDPR).
 | AML identifikace (RČ, adresa, rizika) | `lib/aml.js` | lokální DB `aml_checks` | nikomu | AML zákon | právní povinnost | lhůta podle AML zákona (ověřit) |
 | Faktury | `lib/fakturace.js` | lokální DB `invoices` | nikomu (export ručně) | účetnictví | právní povinnost | účetní/daňové lhůty (ověřit) |
 | Auditní log (kdo, kdy, co — **nově i čtení**) | `lib/audit.js` | šifrovaný log + šifrovaný archiv `.audit_archiv/` | nikomu | bezpečnost, prokazatelnost nakládání se spisem | oprávněný zájem | **dnes neomezeně, viz nález 3** |
+| Rešeršní otázka pro CODEXIS AI (po odstranění osobních údajů) | rešeršník / dashboard (`lib/codexis.js`) | audit (začátek otázky) | **CODEXIS AI (Atlas)**, podle jejich stránek i OpenAI — jen když to správce zapne a kancelář má licenci | rešerše v komerční databázi | oprávněný zájem; ověřit smlouvu s Atlasem | podle podmínek CODEXIS |
 | Údaje zaměstnanců (jméno, role, zařízení, aktivita v auditu) | `lib/users.js`, `request_context` | `users.json`, audit | nikomu | řízení přístupu, audit | oprávněný zájem / pracovní smlouva | po dobu účtu + audit |
 
 ## Nálezy podle závažnosti
