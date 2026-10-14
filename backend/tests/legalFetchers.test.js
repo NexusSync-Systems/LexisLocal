@@ -16,9 +16,14 @@ describe('fetch-esbirka', () => {
 
     test('fragmenty → paragrafy podle kotvy #par_N, se strukturou a nadpisem', () => {
         const frags = [
-            { kodTypuFragmentu: 'Cast', hloubka: 1, staleUrl: '/sb/2012/89#cast_1', xhtml: 'ČÁST PRVNÍ OBECNÁ ČÁST' },
-            { kodTypuFragmentu: 'Hlava', hloubka: 2, staleUrl: '/sb/2012/89#cast_1-hlava_5', xhtml: 'HLAVA V Promlčení' },
-            { kodTypuFragmentu: 'Paragraf', staleUrl: '/sb/2012/89/2026-10-14#par_629', xhtml: '§ 629 Promlčecí lhůty' },
+            { kodTypuFragmentu: 'Virtual_Document', hloubka: 0, staleUrl: '/sb/2012/89/2026-01-01', xhtml: '' },
+            { kodTypuFragmentu: 'Prefix_Title', hloubka: 2, staleUrl: '/sb/2012/89/2026-01-01', xhtml: 'občanský zákoník' },
+            { kodTypuFragmentu: 'Cast', hloubka: 2, staleUrl: '/sb/2012/89#cast_1', xhtml: '<var>ČÁST PRVNÍ</var>' },
+            { kodTypuFragmentu: 'Nadpis_pod', hloubka: 3, staleUrl: '/sb/2012/89#cast_1', xhtml: 'OBECNÁ ČÁST' },
+            { kodTypuFragmentu: 'Hlava', hloubka: 3, staleUrl: '/sb/2012/89#cast_1-hlava_5', xhtml: '<var>HLAVA V</var>' },
+            { kodTypuFragmentu: 'Nadpis_pod', hloubka: 4, staleUrl: '/sb/2012/89#cast_1-hlava_5', xhtml: 'Promlčení' },
+            { kodTypuFragmentu: 'Nadpis_nad', hloubka: 4, staleUrl: '/sb/2012/89#cast_1-hlava_5', xhtml: 'Promlčecí lhůty' },
+            { kodTypuFragmentu: 'Paragraf', staleUrl: '/sb/2012/89/2026-10-14#par_629', xhtml: '<var>§ 629</var>' },
             { kodTypuFragmentu: 'Odstavec_Dc', staleUrl: '/sb/2012/89/2026-10-14#par_629-odst_1', xhtml: '<p>(1) Promlčecí lhůta trvá tři roky.</p>' },
             { kodTypuFragmentu: 'Odstavec_Dc', staleUrl: '/sb/2012/89/2026-10-14#par_629-odst_2', xhtml: '(2) Majetkové právo se promlčí nejpozději uplynutím deseti let.' },
             { kodTypuFragmentu: 'Paragraf', staleUrl: '/sb/2012/89/2026-10-14#par_630', xhtml: '§ 630' },

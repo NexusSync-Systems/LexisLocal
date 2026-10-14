@@ -67,3 +67,7 @@ backend/eval/server_suite/reports/
 
 # Podklady a vyplněná hodnocení advokátem (generuje npm run review:lawyer)
 backend/eval/lawyer_review/
+
+# Ukázky z --probe (fetch-esbirka.js, fetch-ns-sbirka.js)
+esbirka_probe_*.json
+ns_sbirka_probe.html

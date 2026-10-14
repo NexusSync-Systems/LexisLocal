@@ -135,30 +135,43 @@ function fragmentsToParagraphs(frags) {
     const out = [];
     const struct = [];   // [{ depth, text }]
     let cur = null, curPar = null;
+    let lastWasStruct = false;   // „Nadpis_pod“ hned za ČÁST/HLAVA/Díl = název té úrovně
+    let pendingTitle = '';       // nadpis nad paragrafem (patří k následujícímu §)
     for (const f of frags || []) {
         const type = String(f.kodTypuFragmentu || '');
-        if (/^Priloha/i.test(type)) { cur = null; curPar = null; continue; }
+        if (/^Priloha/i.test(type)) { cur = null; curPar = null; lastWasStruct = false; continue; }
+        if (/^(Virtual|Prefix)/i.test(type)) continue;   // hlavička předpisu (číslo, název, „Parlament se usnesl…“)
         const text = xhtmlToText(f.xhtml);
         const par = parOf(f);
+        const isTitle = /^Nadpis/i.test(type);
         if (!par) {
             if (STRUCT_TYPES.test(type) && text) {
                 const depth = Number.isFinite(f.hloubka) ? f.hloubka : struct.length;
                 while (struct.length && struct[struct.length - 1].depth >= depth) struct.pop();
                 struct.push({ depth, text: text.replace(/\n+/g, ' ') });
+                lastWasStruct = true;
+                pendingTitle = '';
+            } else if (isTitle && text) {
+                if (lastWasStruct && struct.length) struct[struct.length - 1].text += ' ' + text.replace(/\n+/g, ' ');
+                else pendingTitle = (pendingTitle ? pendingTitle + ' – ' : '') + text.replace(/\n+/g, ' ');
+                lastWasStruct = false;
             }
             continue;
         }
+        lastWasStruct = false;
         if (par !== curPar) {
             cur = { num: par, title: '', struct: struct.map(s => s.text).join(' › '), lines: [], head: false };
+            if (pendingTitle) { cur.title = pendingTitle; pendingTitle = ''; }
             out.push(cur);
             curPar = par;
         }
+        if (isTitle) { if (text && !cur.title) cur.title = text.replace(/\n+/g, ' '); continue; }
         // Fragment samotného § („§ 629“, případně s nadpisem) → nadpis; ostatní → text.
         const isParHead = /^Paragraf/i.test(type) || (!cur.head && /#par_[^-]+$/.test(String(f.staleUrl || '')) && /^§/.test(text));
         if (isParHead && !cur.head) {
             cur.head = true;
             const rest = text.replace(/^§\s*\d+[a-z]*\s*/i, '').trim();
-            if (rest && rest.length <= 140 && !/[.;:,]$/.test(rest) && !/^\(\d+\)/.test(rest)) cur.title = rest.replace(/\n+/g, ' ');
+            if (rest && !cur.title && rest.length <= 140 && !/[.;:,]$/.test(rest) && !/^\(\d+\)/.test(rest)) cur.title = rest.replace(/\n+/g, ' ');
             else if (rest) cur.lines.push(rest);
             continue;
         }
@@ -246,14 +259,21 @@ async function main() {
     let ok = 0;
     for (const law of a.laws) {
         if (!law.zkratka || !law.nazev) { console.error(`⚠️  ${law.cislo}: chybí --zkratka nebo --nazev, přeskakuji.`); continue; }
-        console.log(`📖 ${law.zkratka} ${law.cislo} — ${law.nazev} (znění ke dni ${datum})`);
-        let frags;
-        try { frags = await fetchFragments(base, key, staleUrl(law.cislo, datum), delay, s => console.log(s)); }
+        console.log(`📖 ${law.zkratka} ${law.cislo} — ${law.nazev} (znění účinné ke dni ${datum})`);
+        let frags, zneni = datum;
+        try {
+            const su = staleUrl(law.cislo, datum);
+            // Skutečně vrácené znění (k datu se vrací to účinné — např. 2026-01-01 i při dotazu na dnešek).
+            const meta = await getJson(base, `/dokumenty-sbirky/${su}`, key);
+            zneni = String((meta && meta.datumUcinnostiZneniOd) || '').slice(0, 10) || datum;
+            await sleep(delay);
+            frags = await fetchFragments(base, key, su, delay, s => console.log(s));
+        }
         catch (e) { console.error(`   ❌ ${e.code === 'DOKUMENT_NENALEZEN' ? 'předpis k tomuto datu neexistuje / není účinný' : e.message}`); continue; }
         const paras = fragmentsToParagraphs(frags);
-        console.log(`   ${frags.length} fragmentů → ${paras.length} §`);
+        console.log(`   ${frags.length} fragmentů → ${paras.length} § (znění od ${zneni})`);
         if (paras.length < 5) { console.error('   ⚠️  Podezřele málo paragrafů — spusť --probe a pošli ukázku.'); continue; }
-        if (a.dryRun) { console.log(renderDoc({ cislo: law.cislo, nazev: law.nazev, zneni: datum }, [paras[0]]).slice(0, 500)); continue; }
+        if (a.dryRun) { console.log(renderDoc({ cislo: law.cislo, nazev: law.nazev, zneni }, [paras[0]]).slice(0, 500)); continue; }
         const dir = path.join(expandHome(a.out), fileSafe(law.zkratka));
         fs.mkdirSync(dir, { recursive: true });
         const seen = new Map();
@@ -262,7 +282,7 @@ async function main() {
             let name = `${fileSafe(law.zkratka)} ${fileSafe(law.cislo)} § ${pad(p.num)}`;
             const n = (seen.get(name) || 0) + 1; seen.set(name, n);
             if (n > 1) name += ` (${n})`;
-            fs.writeFileSync(path.join(dir, name + '.txt'), renderDoc({ cislo: law.cislo, nazev: law.nazev, zneni: datum }, [p]), 'utf8');
+            fs.writeFileSync(path.join(dir, name + '.txt'), renderDoc({ cislo: law.cislo, nazev: law.nazev, zneni }, [p]), 'utf8');
         }
         console.log(`   ✅ ${paras.length} souborů → ${dir}`);
         ok++;
