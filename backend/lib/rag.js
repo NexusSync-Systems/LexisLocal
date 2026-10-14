@@ -878,6 +878,14 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
         }
     }
 
+    // Firemní režim: jen úseky dokumentů ze spisů, ke kterým má volající přístup
+    // (lib/file_acl.js; principal z opts nebo z request_context). Nález 14. 10. 2026:
+    // agent jinak čerpal i z cizích spisů. Výjimka jen opts.aclBypass (prověrka střetu
+    // zájmů musí projít celou kancelář — výsledky si redaguje sama, viz conflicts.js).
+    if (clientAccess && !(opts && opts.aclBypass)) {
+        chunks = require('./file_acl').filterChunks(chunks, opts ? opts.principal : undefined);
+    }
+
     // Znalostní báze agenta (per-agent RAG): PŘIDÁ chunky z KB partitionů `_kb_<id>`
     // do kandidátů. Skórují se stejně (kosinově), takže se nemění význam prahu 0.70.
     if (filters && Array.isArray(filters.scopes) && filters.scopes.length > 0) {

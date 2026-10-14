@@ -26,6 +26,15 @@ function _nameMatches(query, candidate) {
     const c = new Set(_tokens(candidate)); if (!c.size) return false;
     return q.every(t => c.has(t));
 }
+// Střet zájmů se prověřuje napříč CELOU kanceláří (searchSimilar s aclBypass), ale
+// ve firemním režimu nesmí zpráva ukázat obsah spisu, ke kterému tazatel nemá přístup:
+// shoda se ohlásí, název souboru a úryvek se skryjí (nález 14. 10. 2026).
+function _hitView(hit) {
+    let readable = true;
+    try { readable = require('./file_acl').canReadChunkFile(hit.fileName); } catch (e) { readable = false; }
+    if (readable) return { fileName: hit.fileName, textSnippet: String(hit.text || '').substring(0, 180) + '...' };
+    return { fileName: null, restricted: true, textSnippet: 'Shoda ve spisu, ke kterému nemáte přístup — obraťte se na správce kanceláře.' };
+}
 function _spisLabel(sp) { return [sp.spisZn, sp.nazev].filter(Boolean).join(' — ') || sp.id; }
 function registryMatches(name, role) {
     let spisy = [];
@@ -66,14 +75,14 @@ class ConflictDetector {
         let clientSearchOk = true;
         let opponentSearchOk = true;
         try {
-            clientMatches = await searchSimilar(cleanClient, 3);
+            clientMatches = await searchSimilar(cleanClient, 3, null, { aclBypass: true });
         } catch (e) {
             clientSearchOk = false;
             console.warn("⚠️ Conflicts RAG: Selhalo vyhledávání pro klienta:", e.message);
         }
 
         try {
-            counterpartyMatches = await searchSimilar(cleanCounterparty, 3);
+            counterpartyMatches = await searchSimilar(cleanCounterparty, 3, null, { aclBypass: true });
         } catch (e) {
             opponentSearchOk = false;
             console.warn("⚠️ Conflicts RAG: Selhalo vyhledávání pro protistranu:", e.message);
@@ -97,9 +106,8 @@ class ConflictDetector {
                 conflictsFound.push({
                     type: 'counterparty_match',
                     subject: cleanCounterparty,
-                    fileName: hit.fileName,
                     score: hit.score,
-                    textSnippet: hit.text.substring(0, 180) + "..."
+                    ..._hitView(hit)
                 });
             });
         } else if (relevantClientHits.length > 0) {
@@ -111,9 +119,8 @@ class ConflictDetector {
                 conflictsFound.push({
                     type: 'client_match',
                     subject: cleanClient,
-                    fileName: hit.fileName,
                     score: hit.score,
-                    textSnippet: hit.text.substring(0, 180) + "..."
+                    ..._hitView(hit)
                 });
             });
         }

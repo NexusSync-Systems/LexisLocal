@@ -64,6 +64,7 @@ router.post('/debate', async (req, res) => {
         }
         const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true, rerank: true });
         const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
+        require('../lib/file_acl').logChunkReads(highConfidenceMatches, 'Použití spisu agenty (debata)');
 
         if (highConfidenceMatches.length > 0) {
             // 'redacted' (kterýkoli agent debaty) → klientské pasáže anonymizovaně; KB beze změny.

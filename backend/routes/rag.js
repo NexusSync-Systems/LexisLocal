@@ -49,6 +49,7 @@ router.get('/search', async (req, res) => {
         // (degradovaný, klíčový režim). Výsledky nesou method:'lexical'/degraded:true.
         const matches = await searchSimilar(query, searchLimit, resolvedFilters, { lexicalFallback: true, rerank: true });
         const degraded = matches.some(m => m.degraded);
+        require('../lib/file_acl').logChunkReads(matches, 'Vyhledávání ve spisu');
         res.json({ query, matches, degraded });
     } catch (err) {
         res.status(500).json({ error: `Chyba sémantického vyhledávání: ${err.message}` });

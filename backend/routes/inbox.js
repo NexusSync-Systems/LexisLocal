@@ -16,12 +16,20 @@ const { safePathInWatchDir } = require('../lib/pathsafe');
 const { loadAuditLogs } = require('../lib/audit');
 const HearingsWatcher = require('../lib/hearings');
 const db = require('../lib/database');
+const fileAcl = require('../lib/file_acl');
+
+// Firemní režim: dokument zařazený do spisu jen s přístupem ke spisu (lib/file_acl.js).
+function denyFile(res, fileData, level) {
+    if (fileAcl.canAccessFile(fileData, undefined, level)) return false;
+    res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
+    return true;
+}
 
 // GET /api/inbox - Retrieve unread parsed documents
 router.get('/', async (req, res) => {
     try {
         const inbox = await loadInbox();
-        const unreadFiles = Object.values(inbox.files).filter(f => f.status === 'unread');
+        const unreadFiles = fileAcl.filterFiles(Object.values(inbox.files).filter(f => f.status === 'unread'));
         res.json({
             inbox: unreadFiles
         });
@@ -40,6 +48,7 @@ router.post('/mark-read', async (req, res) => {
     try {
         const inbox = await loadInbox();
         if (inbox.files[fileName]) {
+            if (denyFile(res, inbox.files[fileName], 'write')) return;
             inbox.files[fileName].status = 'read';
             await saveInbox(inbox);
             res.json({ success: true, message: `Soubor ${fileName} byl označen za vyřízený.` });
@@ -56,7 +65,7 @@ router.get('/all', async (req, res) => {
     try {
         const inbox = await loadInbox();
         res.json({
-            inbox: Object.values(inbox.files)
+            inbox: fileAcl.filterFiles(Object.values(inbox.files))
         });
     } catch (err) {
         res.status(500).json({ error: `Chyba při načítání kompletní doručené pošty: ${err.message}` });
@@ -68,6 +77,12 @@ router.get('/case/:caseNum/timeline', async (req, res) => {
     const { caseNum } = req.params;
     try {
         const timeline = [];
+
+        // Firemní režim: timeline spisu jen s přístupem ke spisu.
+        const caseSpis = require('../lib/spisy').findByCase(caseNum);
+        if (caseSpis && !require('../lib/access').canAccess(caseSpis, req.principal, 'read')) {
+            return res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
+        }
 
         // 1. Get files belonging to this case in the inbox
         const inboxData = (await loadInbox()) || { files: {} };
@@ -165,6 +180,7 @@ router.post('/delete', async (req, res) => {
 
         if (inbox.files[key]) {
             const fileData = inbox.files[key];
+            if (denyFile(res, fileData, 'write')) return;
 
             // Delete physical file if it exists
             if (fileData.filePath && fs.existsSync(fileData.filePath)) {
@@ -275,6 +291,7 @@ router.get('/content', async (req, res) => {
         if (!fileData) {
             return res.status(404).json({ error: "Soubor nebyl nalezen v indexu." });
         }
+        if (denyFile(res, fileData, 'read')) return;
 
         const filePath = fileData.filePath;
         if (!fs.existsSync(filePath)) {
@@ -286,6 +303,8 @@ router.get('/content', async (req, res) => {
         const { getOrExtract } = require('../lib/text_cache');
         const content = await getOrExtract(filePath);
 
+        const fileSpis = fileAcl.spisForFile(fileData);
+        require('../lib/audit').logRead('Čtení dokumentu', fileName, fileSpis ? fileSpis.id : null);
         res.json({
             fileName: fileName,
             content: content

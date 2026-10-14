@@ -145,6 +145,7 @@ router.post('/:agentId', async (req, res) => {
             }
             const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true, rerank: true });
             const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
+            require('../lib/file_acl').logChunkReads(highConfidenceMatches, 'Použití spisu agentem');
             ragSources = highConfidenceMatches.map(m => ({
                 fileName: m.fileName,
                 score: m.score,

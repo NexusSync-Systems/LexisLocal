@@ -152,9 +152,39 @@ Object.assign(LexisLocalApp.prototype, {
                 <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;margin-bottom:12px;" onclick="window.appInstance.openSpis('${safeId(id)}')">← Zpět na spis</button>
                 <h3 style="margin:0 0 8px;">🕒 Časová osa spisu</h3>
                 <div style="font-size:0.8rem;opacity:0.7;margin-bottom:10px;">Sloučeno: deník, audit, dokumenty, lhůty, jednání (${escapeHtml(String(tl.count))} událostí).</div>
+                <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
+                    <span style="font-size:0.8rem;opacity:0.7;">Auditní stopa (kdo, kdy, co — i čtení):</span>
+                    <button class="btn btn-secondary" style="font-size:0.78rem;padding:4px 10px;" onclick="window.appInstance.downloadSpisAudit('${safeId(id)}','csv')">⬇ CSV</button>
+                    <button class="btn btn-secondary" style="font-size:0.78rem;padding:4px 10px;" onclick="window.appInstance.downloadSpisAudit('${safeId(id)}','docx')">⬇ Protokol DOCX</button>
+                    <span id="ss-audit-msg" style="font-size:0.78rem;color:#f87171;"></span>
+                </div>
                 <ul style="margin:0;padding-left:18px;list-style:none;">${rows}</ul>`;
         } catch (e) {
             el.innerHTML = `<div style="color:#f87171;padding:12px;">Chyba: ${escapeHtml(e.message)}</div>`;
+        }
+    },
+
+    // Export auditní stopy spisu (jen vlastník/správce — server vrátí 403 jinak).
+    async downloadSpisAudit(id, fmt) {
+        const msg = document.getElementById('ss-audit-msg');
+        if (msg) msg.textContent = '';
+        try {
+            const res = await fetch(`${this.apiBase}/spisy/${encodeURIComponent(id)}/audit?format=${fmt === 'docx' ? 'docx' : 'csv'}`, { headers: this.getHeaders() });
+            if (!res.ok) {
+                let err = `HTTP ${res.status}`;
+                try { err = (await res.json()).error || err; } catch (e) { /* není JSON */ }
+                throw new Error(err);
+            }
+            const blob = await res.blob();
+            const cd = res.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename="([^"]+)"/);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = m ? m[1] : `audit.${fmt}`;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        } catch (e) {
+            if (msg) msg.textContent = 'Export se nezdařil: ' + e.message;
         }
     },
 

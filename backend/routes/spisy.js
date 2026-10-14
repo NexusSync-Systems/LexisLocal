@@ -22,7 +22,7 @@ function requireAccess(req, res, spis, level) {
     }
     return true;
 }
-const { logEvent } = require('../lib/audit');
+const { logEvent, logRead } = require('../lib/audit');
 
 // Načte spis podle :id a ověří přístup. Vrací spis, nebo null (odpověď už odeslaná).
 // Nález 14. 10. 2026: detail, úprava, stav, deník, zařazení dokumentu a smazání spisu
@@ -119,6 +119,7 @@ router.get('/:id', (req, res) => {
     if (!gate(req, res, 'read')) return;
     const detail = spisy.getSpisDetail(req.params.id);
     if (!detail) return res.status(404).json({ error: 'Spis nenalezen.' });
+    logRead('Otevření spisu', detail.spisZn || detail.nazev || req.params.id, req.params.id);
     res.json(detail);
 });
 
@@ -178,6 +179,37 @@ router.get('/:id/timeline', (req, res) => {
     if (!spis) return res.status(404).json({ error: 'Spis nenalezen.' });
     if (!requireAccess(req, res, spis, 'read')) return;
     res.json(spisy.getSpisTimeline(req.params.id));
+});
+
+// GET /api/spisy/:id/audit?format=json|csv|docx — auditní stopa spisu (kdo, kdy, co: změny i čtení).
+// Jen vlastník spisu nebo správce (ukazuje i činnost kolegů). Samotný export se audituje.
+router.get('/:id/audit', async (req, res) => {
+    const spis = gate(req, res, 'admin'); if (!spis) return;
+    try {
+        const ax = require('../lib/audit_export');
+        const fmt = String(req.query.format || 'json').toLowerCase();
+        const rows = ax.rowsForSpis(spis.id);
+        const label = spis.spisZn || spis.nazev || spis.id;
+        const safe = String(label).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\-]+/g, '_').slice(0, 60) || 'spis';
+        const chain = require('../lib/audit').verifyAuditChain();
+        if (fmt === 'csv') {
+            logEvent('Spisová služba', 'Export auditní stopy spisu (CSV)', label, { spisId: spis.id, rows: rows.length });
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="audit_${safe}.csv"`);
+            return res.send(ax.toCsv(rows));
+        }
+        if (fmt === 'docx') {
+            const actor = require('../lib/request_context').currentActor();
+            const buf = await ax.toDocx(spis, rows, chain, actor && actor.name);
+            logEvent('Spisová služba', 'Export auditní stopy spisu (DOCX)', label, { spisId: spis.id, rows: rows.length });
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+            res.setHeader('Content-Disposition', `attachment; filename="audit_${safe}.docx"`);
+            return res.send(buf);
+        }
+        res.json({ spisId: spis.id, chain, rows });
+    } catch (err) {
+        res.status(500).json({ error: `Export auditní stopy selhal: ${err.message}` });
+    }
 });
 
 // POST /api/spisy/:id/folder — idempotentně založí fyzickou složku spisu + vizitku

@@ -53,13 +53,80 @@ function loadAuditLogs() {
     }
 }
 
+function _logCap() {
+    const n = parseInt(process.env.AUDIT_LOG_CAP, 10);
+    return Number.isFinite(n) && n >= 10 ? n : 1000;
+}
+function _archiveDir() { return dataPath('.audit_archiv'); }
+
+// Zapíše záznamy jako samostatný šifrovaný segment archivu. Vyhodí při chybě —
+// saveAuditLogs pak NEořízne aktivní log (raději větší soubor než ztráta historie).
+function _archiveSegment(entries, prefix) {
+    if (!entries || !entries.length) return null;
+    const dir = _archiveDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const name = `${prefix}_${new Date().toISOString().replace(/[:.]/g, '-')}_${crypto.randomBytes(3).toString('hex')}.json`;
+    fs.writeFileSync(path.join(dir, name), JSON.stringify(secureCrypto.encrypt(getKey(), JSON.stringify(entries))), 'utf-8');
+    _archiveCache = null;
+    return name;
+}
+
+// Archivní segmenty jsou neměnné → cache podle seznamu souborů.
+let _archiveCache = null;
+function loadArchivedLogs() {
+    const dir = _archiveDir();
+    let names = [];
+    try { names = fs.readdirSync(dir).filter(n => /\.json$/.test(n)).sort(); } catch (e) { return []; }
+    const key = names.join('|');
+    if (_archiveCache && _archiveCache.key === key) return _archiveCache.logs;
+    const out = [];
+    for (const n of names) {
+        try {
+            const parsed = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf-8'));
+            const arr = Array.isArray(parsed) ? parsed : JSON.parse(secureCrypto.decrypt(getKey(), parsed));
+            if (Array.isArray(arr)) arr.forEach(e => out.push(Object.assign({}, e, { archived: n })));
+        } catch (e) {
+            console.error(`❌ Audit: archivní segment ${n} nelze přečíst:`, e.message);
+        }
+    }
+    _archiveCache = { key, logs: out };
+    return out;
+}
+
+/** Celá historie: archiv + aktivní log, bez duplicit (podle id), od nejstaršího. */
+function loadAllAuditLogs() {
+    const seen = new Set();
+    const all = [];
+    for (const e of loadArchivedLogs().concat(loadAuditLogs())) {
+        if (!e) continue;
+        const k = e.id || (e.timestamp + '|' + e.hash);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        all.push(e);
+    }
+    return all.sort((x, y) => String(x.timestamp || '').localeCompare(String(y.timestamp || '')));
+}
+
 /**
  * Save audit logs (vždy šifrovaně).
  */
 function saveAuditLogs(logs) {
     try {
-        // Keep logs capped at 1000 items to prevent huge file sizes, ordered from oldest to newest
-        const cappedLogs = logs.slice(-1000);
+        // Aktivní log drží posledních AUDIT_LOG_CAP (1000) záznamů. Nález 14. 10. 2026:
+        // starší se dřív TIŠE zahazovaly (slice(-1000)) → historie spisu mizela. Teď se
+        // přebytek odloží do šifrovaného archivního segmentu (.audit_archiv/rollover_*.json)
+        // a getLogsForSpis/export ho čtou dál. Segmenty jsou souvislé → řetěz hashů pokračuje.
+        // Odkládá se po dávkách (cap + 20 %), ne po jednom záznamu → málo velkých segmentů.
+        const cap = _logCap();
+        let cappedLogs = logs;
+        if (logs.length > cap + Math.max(50, Math.floor(cap / 5))) {
+            try {
+                _archiveSegment(logs.slice(0, logs.length - cap), 'rollover');
+                cappedLogs = logs.slice(-cap);
+            } catch (archErr) {
+                console.error('❌ Audit: archivace přebytku selhala, aktivní log se neořezává:', archErr.message);
+            }
+        }
         const payload = JSON.stringify(secureCrypto.encrypt(getKey(), JSON.stringify(cappedLogs)));
         fs.writeFileSync(AUDIT_LOG_FILE, payload, 'utf-8');
     } catch (e) {
@@ -118,6 +185,7 @@ function clearAuditLogs() {
             fs.mkdirSync(dir, { recursive: true });
             archive = path.join(dir, `audit_${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
             fs.copyFileSync(AUDIT_LOG_FILE, archive);
+            _archiveCache = null;
         }
         saveAuditLogs([]); // zapíše prázdný (šifrovaný) log
         return archive ? path.basename(archive) : true;
@@ -133,7 +201,7 @@ function clearAuditLogs() {
  */
 function getLogsForSpis(spisId) {
     if (!spisId) return [];
-    return loadAuditLogs()
+    return loadAllAuditLogs()
         .filter(e => e && (e.spisId === spisId || (e.details && e.details.spisId === spisId)))
         .sort((x, y) => String(x.timestamp || '').localeCompare(String(y.timestamp || '')));
 }
@@ -165,7 +233,51 @@ function verifyAuditChain() {
     return { ok: true, checked, legacy, total: logs.length };
 }
 
+// --- Auditní stopa ČTENÍ (kdo spis/dokument otevřel, stáhl, použil v agentovi) -----
+// Čtení je častější než zápisy — stejný uživatel + spis + úkon se zapíše nejvýš jednou
+// za okno AUDIT_READ_WINDOW_MIN (výchozí 15 min), jinak by log (celý šifrovaně
+// přepisovaný) rychle bobtnal. Výchozí: zapnuto ve firemním režimu; AUDIT_READS=1/0
+// vynutí zapnutí/vypnutí (např. i pro solo).
+const _readSeen = new Map();
+
+function _readWindowMs() {
+    const m = parseFloat(process.env.AUDIT_READ_WINDOW_MIN);
+    return (Number.isFinite(m) && m >= 0 ? m : 15) * 60000;
+}
+
+function readLoggingEnabled() {
+    if (process.env.AUDIT_READS === '0') return false;
+    if (process.env.AUDIT_READS === '1') return true;
+    try { return require('./access').isFirmMode(); } catch (e) { return false; }
+}
+
+/** Zaznamená čtení (deduplikovaně). Vrací true, když se záznam zapsal. */
+function logRead(operation, target, spisId, details = {}) {
+    if (!readLoggingEnabled()) return false;
+    let actor = null;
+    try { actor = require('./request_context').currentActor(); } catch (e) { /* mimo požadavek */ }
+    const who = actor ? `${actor.kind}:${actor.id}` : 'system';
+    const key = `${who}|${spisId || target}|${operation}`;
+    const now = Date.now();
+    const win = _readWindowMs();
+    const last = _readSeen.get(key);
+    if (last !== undefined && now - last < win) return false;
+    _readSeen.set(key, now);
+    if (_readSeen.size > 5000) {
+        for (const [k, t] of _readSeen) { if (now - t >= win) _readSeen.delete(k); }
+    }
+    logEvent((actor && actor.name) || 'Systém', operation, target, Object.assign({}, details, { spisId: spisId || null, access: 'read' }));
+    return true;
+}
+
+function _resetReadDedup() { _readSeen.clear(); }
+
 module.exports = {
+    loadAllAuditLogs,
+    loadArchivedLogs,
+    logRead,
+    readLoggingEnabled,
+    _resetReadDedup,
     loadAuditLogs,
     logEvent,
     getLogsForSpis,
