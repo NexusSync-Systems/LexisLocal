@@ -59,6 +59,7 @@ function parseArgs(argv) {
         else if (k === '--retry-wait') a.retryWait = Math.max(0, parseInt(next(), 10) || 0);
         else if (k === '--server-wait') a.serverWait = Math.max(0, parseInt(next(), 10) || 0);
         else if (k === '--dry-run') a.dryRun = true;
+        else if (k === '--replace') a.replace = true;
         else if (k === '--help' || k === '-h') a.help = true;
         else { console.error(`Neznámý argument: ${k}`); a.help = true; }
     }
@@ -78,6 +79,8 @@ Režimy (jeden z nich):
   --token <hodnota>   API token (nebo --token-file, nebo $LEXIS_API_TOKEN)
   --token-file <c>    soubor s tokenem (přečte se a ořízne)
   --delay <ms>        pauza mezi soubory (výchozí 250)
+  --replace           dokumenty se STEJNÝM názvem v bázi nahradí (smaže a nahraje znovu) —
+                      pro aktualizaci zákonů na nové znění (výchozí: přeskočí)
   --reindex           PO nahrání přepočítat vektory celé báze (těžké; výchozí VYP)
   --no-reindex        (výchozí) reindex nespouštět — upload embedduje rovnou
   --retries <N>       kolikrát zopakovat přechodný výpadek spojení (výchozí 5)
@@ -213,14 +216,20 @@ async function ingest(a, token, base, target, dir) {
     let existing = new Set();
     if (!a.dryRun) {
         existing = await listExisting(a, base, target, token);
-        if (existing.size) console.log(`  ℹ️  v bázi už je ${existing.size} dok. — shodné názvy přeskočím`);
+        if (existing.size) console.log(`  ℹ️  v bázi už je ${existing.size} dok. — shodné názvy ${a.replace ? 'NAHRADÍM (--replace)' : 'přeskočím'}`);
     }
 
     let ok = 0, skip = 0, fail = 0, chunks = 0;
     for (let i = 0; i < files.length; i++) {
         const label = path.basename(files[i]);
         const tag = `[${i + 1}/${files.length}] ${label}`;
-        if (existing.has(label)) { console.log(`  ⏭  ${tag} (už v bázi)`); skip++; continue; }
+        if (existing.has(label) && !a.replace) { console.log(`  ⏭  ${tag} (už v bázi)`); skip++; continue; }
+        if (existing.has(label) && a.replace && !a.dryRun) {
+            try {
+                const del = await apiFetch(a, `${a.api}${base}/${encodeURIComponent(label)}`, { method: 'DELETE', headers: headers(token) }, `smazání ${label}`);
+                if (!del.ok) throw new Error(`HTTP ${del.status}`);
+            } catch (e) { console.log(`  ❌ ${tag} — starou verzi nešlo smazat: ${e.message}`); fail++; continue; }
+        }
         if (a.dryRun) { console.log(`  · ${tag}`); continue; }
         try {
             const r = await uploadOne(a, base, token, files[i]);

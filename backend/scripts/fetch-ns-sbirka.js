@@ -130,8 +130,35 @@ function matches(d, a) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+// Node „fetch failed“ skrývá skutečnou příčinu v err.cause (DNS, TLS…). Častý případ u
+// státních webů: server nepošle mezilehlý certifikát → Node ho neověří (prohlížeč ano).
+// Pak zkusíme systémový curl (na macOS ověřuje proti systémové důvěře a umí řetěz doplnit).
+// Ověřování TLS se NIKDY nevypíná.
+let _useCurl = false;
+function _cause(e) {
+    const c = e && e.cause;
+    return c ? `${c.code || ''} ${c.message || ''}`.trim() : (e && e.message) || String(e);
+}
+function _curl(url) {
+    const { execFileSync } = require('child_process');
+    return execFileSync('curl', ['-sS', '-L', '--fail', '--max-time', '60', '-A', UA['User-Agent'], url],
+        { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+}
 async function getText(url) {
-    const res = await fetch(url, { headers: UA });
+    if (_useCurl) return _curl(url);
+    let res;
+    try { res = await fetch(url, { headers: UA }); }
+    catch (e) {
+        const why = _cause(e);
+        try {
+            const t = _curl(url);
+            _useCurl = true;
+            console.log(`ℹ️  Node fetch selhal (${why}) — dál stahuji přes systémový curl.`);
+            return t;
+        } catch (e2) {
+            throw new Error(`nelze stáhnout ${url}: ${why}; curl: ${String(e2.stderr || e2.message).trim().split('\n')[0]}`);
+        }
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
     return res.text();
 }
