@@ -70,6 +70,21 @@ test('sdílet lze jen s uživatelem kanceláře', async () => {
     expect((await request(app).post(`/api/spisy/${s.id}/share`).set(as(A.token)).send({ userId: B.user.id, level: 'write' })).statusCode).toBe(200);
 });
 
+test('ACL i u detailu, úprav, deníku a smazání spisu (nález 14. 10. 2026)', async () => {
+    const s = (await request(app).post('/api/spisy').set(as(A.token)).send({ nazev: 'Důvěrný spis' })).body.spis;
+    const id = s.id;
+    expect((await request(app).get(`/api/spisy/${id}`).set(as(B.token))).statusCode).toBe(403);
+    expect((await request(app).patch(`/api/spisy/${id}`).set(as(B.token)).send({ nazev: 'X' })).statusCode).toBe(403);
+    expect((await request(app).post(`/api/spisy/${id}/stav`).set(as(B.token)).send({ stav: 'archiv' })).statusCode).toBe(403);
+    expect((await request(app).post(`/api/spisy/${id}/event`).set(as(B.token)).send({ type: 'poznamka', note: 'x' })).statusCode).toBe(403);
+    expect((await request(app).delete(`/api/spisy/${id}`).set(as(B.token))).statusCode).toBe(403);
+    expect((await request(app).get(`/api/spisy/${id}`).set(as(A.token))).statusCode).toBe(200);
+    // sdílení jen pro čtení: číst smí, měnit ne
+    expect((await request(app).post(`/api/spisy/${id}/share`).set(as(A.token)).send({ userId: B.user.id, level: 'read' })).statusCode).toBe(200);
+    expect((await request(app).get(`/api/spisy/${id}`).set(as(B.token))).statusCode).toBe(200);
+    expect((await request(app).patch(`/api/spisy/${id}`).set(as(B.token)).send({ nazev: 'X' })).statusCode).toBe(403);
+});
+
 test('seznam kolegů: jméno a role bez zařízení a tokenů, dostupný i koncipientovi', async () => {
     const r = await request(app).get('/api/me/colleagues').set(as(B.token));
     expect(r.statusCode).toBe(200);
