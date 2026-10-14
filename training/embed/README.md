@@ -213,3 +213,18 @@ prompty s „§ + zákon“, agenti 10× (220 běhů), trvání suite 88 min.
   sazby (6 × 3 300 = 19 800 Kč místo 6 × 4 500 = 27 000 Kč z podkladů). → prompt spisovatele: částky a období
   z podkladů přebírat doslovně, nepřepočítávat. Ověřit dalším během (zatím K=5 nechat jen v testu).
 - Ostatní kategorie 10/10 při všech opakováních (lhůty 60/60, rešerše 20/20, kontrola smluv 20/20, bezpečnost AI 30/30).
+
+## Ověřovací běh 10× (14. 10. 2026, `2026-10-14_0632_remote_kompletni`)
+
+Po úpravě promptu spisovatele (částky z podkladů doslovně) a normalizaci „§ 0075a“:
+
+| | 14. 10. ráno | 14. 10. dopoledne |
+|---|---|---|
+| kontroly | 173/174 | **174/174** |
+| agenti (běhy) | 215/220 | **220/220**, nic nekolísá |
+| W3 | 5/10 | **10/10** |
+| neověřené citace | 29/700 (4 %) | **15/1083 (1 %)** — 10× `ambiguous_law` (§ 84, § 10), 3× „článku 629“ |
+| zátěž p50 1 / 4 / 8 | 15 / 27 / 24 s | 13 / 24 / 25 s (p95 při 8: 46 s) |
+
+→ `RAG_AGENT_K` výchozí 5, když je zapnutý reranker (`lib/rag.js agentRagK`); bez rerankeru zůstává 3
+(měření 1. 10. 2026 bez rerankeru: k=5 horší). Ladění vyhledávání a citací tímto uzavřeno.

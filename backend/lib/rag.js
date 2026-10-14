@@ -59,9 +59,13 @@ function _rrfK() {
 // Počet pasáží z báze pro agenty (rešeršník, spisovatel…). Default 3. Změřeno na L4
 // (2026-10-01, 10 úloh): k=5 qwen2.5:7b zhoršilo z 92 % na 86 % (víc šumu → špatný §
 // u nájmu i odvolání), qwen2.5:32b beze změny (98 % při k=3 i k=5). Přepis RAG_AGENT_K (1–10).
+// 14. 10. 2026: S rerankerem (bge-reranker-v2-m3) a kousky 2000 znaků je to naopak — laboratoř: správný §
+// v top 5 95 % vs. top 3 92 % (klientské dotazy 94 vs. 88 %); serverový test 10× s k=5: 174/174, agenti
+// 220/220, neověřené citace 1 %. → se zapnutým rerankerem výchozí 5, bez něj zůstává 3.
 function agentRagK() {
     const k = parseInt(process.env.RAG_AGENT_K, 10);
-    return (Number.isFinite(k) && k >= 1 && k <= 10) ? k : 3;
+    if (Number.isFinite(k) && k >= 1 && k <= 10) return k;
+    try { return rerankService.rerankEnabled() ? 5 : 3; } catch (e) { return 3; }
 }
 
 function blendScore(semantic, lexical, alpha) {
