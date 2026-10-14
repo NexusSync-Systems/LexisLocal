@@ -103,6 +103,9 @@ function parseDecision(html) {
 
 function header(d, url) {
     const L = [];
+    // Nadpis stránky („Rozsudek Nejvyššího soudu ze dne …, sp. zn. …“) — u některých rozhodnutí
+    // se datum v nadpisu liší od řádku „Datum rozhodnutí“ (chyba na webu sbírky); necháme obojí.
+    if (d.title) L.push(d.title);
     L.push('Soud: ' + (d.soud || 'Nejvyšší soud'));
     if (d.spisZn) L.push('Sp. zn.: ' + d.spisZn);
     if (d.datum) L.push('Datum vydání: ' + d.datum);

@@ -79,6 +79,7 @@ describe('fetch-ns-sbirka', () => {
         expect(d.druh).toBe('Rozhodnutí ve věcech civilních');
         expect(d.text).toMatch(/^I\. Dosavadní průběh řízení\n1\. Žalobkyně/);
         const h = NS.header(d, 'https://sbirka.nsoud.cz/sbirka/25584/');
+        expect(h.split('\n')[0]).toMatch(/^Rozsudek Nejvyššího soudu ze dne 10\. 6\. 2025/);
         expect(h).toContain('Sp. zn.: 31 Cdo 1434/2025');
         expect(h).toContain('Sbírka soudních rozhodnutí a stanovisek: č. 45/2026, sešit 6');
         expect(h).toContain('Klíčová slova: Odpovědnost státu za újmu, Průtahy v řízení');
