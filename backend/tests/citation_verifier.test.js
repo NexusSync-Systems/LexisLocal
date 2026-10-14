@@ -143,3 +143,10 @@ describe('holý § bez zákona — odvození zákona z báze', () => {
         expect(r.citations[0].lawInferred).toBe(false);
     });
 });
+
+test('§ s nulami na začátku (z názvu souboru báze) se normalizuje — server test 14. 10. 2026', () => {
+    const { indexFromTexts } = require('../lib/kb_law_index');
+    const kb = indexFromTexts(['Citace: § 75a zákona č. 99/1963 Sb.']);
+    const r = verifyCitations('Podle § 0075a o. s. ř. platí …', { kbIndex: kb });
+    expect(r.citations[0]).toMatchObject({ paragraph: '75a', law: '99/1963', status: 'verified' });
+});

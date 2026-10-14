@@ -105,7 +105,9 @@ function extractCitations(text) {
             raw: normalizeWhitespace(m[0]),
             type: 'paragraf',
             index: m.index,
-            paragraph: m[1].toLowerCase()
+            // „§ 0075a“: model opíše název souboru báze („OSR 99-1963 § 0075a“) s nulami
+            // na začátku (server test 14. 10. 2026: 10× neověřeno) → normalizace na „75a“.
+            paragraph: m[1].toLowerCase().replace(/^0+(?=\d)/, '')
         });
     }
 

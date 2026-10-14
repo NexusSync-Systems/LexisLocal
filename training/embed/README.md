@@ -194,3 +194,22 @@ Klientské dotazy teď pokrývají 4 353 ze 4 404 paragrafů (6 419 tréninkový
 Závěr: víc klientských dotazů od qwenu ruční zlatou sadu nezlepšilo — čistě doladěný model se naučí styl generátoru
 (test_klient 41 %), na ručních dotazech ale ne. Nasazený model 5. běhu **zůstává**; další doladění bez nových
 (ručních / reálných) dotazů už nemá smysl. Větší zisk dává reranker (zlatá 71 → 77 %) a K=5 (top 5 ~95 %).
+
+## Serverový test 10× (14. 10. 2026, `2026-10-14_0248_remote_kompletni`)
+
+g4dn.xlarge, reranker bge, `RAG_AGENT_K=5`, nový ověřovač citací (holý § → odvozený zákon / `ambiguous_law`),
+prompty s „§ + zákon“, agenti 10× (220 běhů), trvání suite 88 min.
+
+| | 13. 10. (K=3, 3×) | 14. 10. (K=5, 10×) |
+|---|---|---|
+| kontroly | 174/174 | 173/174 (jen W3) |
+| agenti (běhy) | 68/68 | 215/220 (98 %) — kolísá jen W3 5/10 |
+| neověřené citace | 29/161 (18 %) | **29/700 (4 %)** |
+| zátěž p50 1 / 4 / 8 | 20 / 23 / 26 s | 15 / 27 / 24 s (p95 při 8: 45 s) |
+
+- Citace: zbývá 13× `ambiguous_law` (§ 84, § 10 …), 12× holý § bez nálezu, 4× „článku 629“ (model píše článek místo §).
+  10× „§ 0075a (99/1963)“ — model opsal nuly z názvu souboru báze → verifier teď nuly na začátku odstraní.
+- W3 (výzva k úhradě výživného z podkladů klienta): v 5/10 během model přepočítal částku z vymyšlené měsíční
+  sazby (6 × 3 300 = 19 800 Kč místo 6 × 4 500 = 27 000 Kč z podkladů). → prompt spisovatele: částky a období
+  z podkladů přebírat doslovně, nepřepočítávat. Ověřit dalším během (zatím K=5 nechat jen v testu).
+- Ostatní kategorie 10/10 při všech opakováních (lhůty 60/60, rešerše 20/20, kontrola smluv 20/20, bezpečnost AI 30/30).
