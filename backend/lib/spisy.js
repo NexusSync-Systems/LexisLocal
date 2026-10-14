@@ -89,6 +89,13 @@ function findByCase(spisZn) {
     return (db.get('spisy') || []).find(s => _caseKey(s.spisZn) === key) || null;
 }
 
+function _cleanEmail(v) {
+    const e = String(v == null ? '' : v).trim();
+    if (!e) return '';
+    if (!/^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[a-z]{2,}$/i.test(e)) throw new Error('Neplatný e-mail klienta.');
+    return e;
+}
+
 function createSpis(data) {
     data = data || {};
     const spisZn = _normCase(data.spisZn);
@@ -107,6 +114,8 @@ function createSpis(data) {
         nazev: nazev,
         klient: data.klient ? String(data.klient).trim() : '',
         klientIco: data.klientIco ? String(data.klientIco).replace(/\s+/g, '') : '',
+        // E-mail klienta pro průběžné souhrny (lib/client_updates.js — odchází jen po schválení advokátem).
+        klientEmail: _cleanEmail(data.klientEmail),
         protistrana: data.protistrana ? String(data.protistrana).trim() : '',
         agenda: data.agenda ? String(data.agenda).trim() : '',
         odpovednyAdvokat: data.odpovednyAdvokat ? String(data.odpovednyAdvokat).trim() : '',
@@ -141,6 +150,7 @@ function updateSpis(id, patch) {
         if (patch[k] !== undefined) clean[k] = String(patch[k]);
     });
     if (patch.spisZn !== undefined) clean.spisZn = _normCase(patch.spisZn);
+    if (patch.klientEmail !== undefined) clean.klientEmail = _cleanEmail(patch.klientEmail);
     if (patch.klientIco !== undefined) clean.klientIco = String(patch.klientIco).replace(/\s+/g, '');
     if (patch.insZn !== undefined) clean.insZn = _normCase(patch.insZn);
     // Jiné insolvenční řízení → zapomenout uložený stav ISIR (jinak by hlídač ohlásil

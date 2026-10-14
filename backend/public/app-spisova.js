@@ -101,7 +101,7 @@ Object.assign(LexisLocalApp.prototype, {
             el.innerHTML = `
                 <h3 style="margin-top:0;">${escapeHtml(s.spisZn || s.nazev)}</h3>
                 <div style="font-size:0.85rem;opacity:0.8;margin-bottom:12px;">
-                    Klient: ${escapeHtml(s.klient || '—')} · Protistrana: ${escapeHtml(s.protistrana || '—')} · Stav: <b>${escapeHtml(SPIS_STAV_LABEL[s.stav] || s.stav)}</b>
+                    Klient: ${escapeHtml(s.klient || '—')}${s.klientEmail ? ' (' + escapeHtml(s.klientEmail) + ')' : ''} · Protistrana: ${escapeHtml(s.protistrana || '—')} · Stav: <b>${escapeHtml(SPIS_STAV_LABEL[s.stav] || s.stav)}</b>
                     ${s.retentionUntil ? ' · Retence do: ' + escapeHtml(s.retentionUntil) : ''}
                 </div>
                 <div style="font-size:0.82rem;margin:-6px 0 12px;">
@@ -126,6 +126,7 @@ Object.assign(LexisLocalApp.prototype, {
                     <button class="btn btn-primary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.fakturaZeSpisu('${safeId(s.id)}')">💶 Vystavit fakturu</button>
                     <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.openSpisTimeline('${safeId(s.id)}')">🕒 Časová osa</button>
                     <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.openSpisDrafts('${safeId(s.id)}')">📄 Koncepty</button>
+                    <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;" onclick="window.appInstance.openClientUpdates('${safeId(s.id)}')">✉ Souhrn pro klienta</button>
                 </div>
                 <div id="ss-spis-access" style="margin-bottom:14px;"></div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
@@ -363,6 +364,87 @@ Object.assign(LexisLocalApp.prototype, {
             if (v.trim()) { try { await this.ssSend('/registries/isir/check-now', 'POST', {}); } catch (e) { /* ověří hodinový hlídač */ } }
             this.openSpis ? this.openSpis(id) : this.loadSpisyList();
         } catch (e) { alert('Chyba: ' + e.message); }
+    },
+
+    // ===================== SOUHRNY PRO KLIENTA =============================
+    // Návrh skládá server (jen události určené klientovi); odchází až po schválení
+    // advokátem — asistentce server schválení odmítne (403).
+    async openClientUpdates(id) {
+        const el = document.getElementById('ss-spis-detail');
+        if (!el) return;
+        el.innerHTML = '<div style="opacity:0.6;padding:20px;">Načítám souhrny…</div>';
+        try {
+            const d = await this.ssGet(`/spisy/${id}`);
+            const s = d.spis || {};
+            const { updates } = await this.ssGet(`/client-updates?spisId=${encodeURIComponent(id)}`);
+            const label = { ke_schvaleni: '⏳ ke schválení', odeslano: '✅ odesláno', zamitnuto: '✖ zamítnuto', chyba: '⚠️ chyba odeslání' };
+            const open = (updates || []).filter(u => u.status === 'ke_schvaleni' || u.status === 'chyba');
+            const hist = (updates || []).filter(u => u.status === 'odeslano' || u.status === 'zamitnuto');
+            const editor = u => `
+                <div class="glass" style="padding:12px;border-radius:10px;margin-bottom:12px;">
+                    <div style="font-size:0.8rem;opacity:0.75;margin-bottom:6px;">${label[u.status] || escapeHtml(u.status)} · pro ${escapeHtml(u.to)} · navrhl(a) ${escapeHtml((u.createdBy && u.createdBy.name) || '—')}${u.error ? ' · <span style="color:#f87171;">' + escapeHtml(u.error) + '</span>' : ''}</div>
+                    <input id="cu-subj-${safeId(u.id)}" value="${escapeHtml(u.subject)}" style="width:100%;margin-bottom:6px;font-size:0.85rem;">
+                    <textarea id="cu-body-${safeId(u.id)}" rows="12" style="width:100%;font-size:0.85rem;font-family:inherit;">${escapeHtml(u.body)}</textarea>
+                    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+                        <button class="btn btn-secondary" style="font-size:0.78rem;padding:4px 10px;" onclick="window.appInstance.saveClientUpdate('${safeId(id)}','${safeId(u.id)}')">Uložit úpravy</button>
+                        <button class="btn btn-primary" style="font-size:0.78rem;padding:4px 10px;" onclick="window.appInstance.approveClientUpdate('${safeId(id)}','${safeId(u.id)}')">Schválit a odeslat</button>
+                        <button class="btn btn-secondary" style="font-size:0.78rem;padding:4px 10px;" onclick="window.appInstance.rejectClientUpdate('${safeId(id)}','${safeId(u.id)}')">Zamítnout</button>
+                    </div>
+                </div>`;
+            const histRows = hist.map(u => `<li style="font-size:0.8rem;margin-bottom:4px;">${label[u.status]} ${escapeHtml(((u.sentAt || u.rejectedAt || u.createdAt) || '').replace('T', ' ').slice(0, 16))} — ${escapeHtml(u.subject)}${u.approvedBy ? ' · schválil(a) ' + escapeHtml(u.approvedBy.name || '') : ''}</li>`).join('') || '<li style="opacity:0.6;">Zatím nic.</li>';
+            el.innerHTML = `
+                <button class="btn btn-secondary" style="font-size:0.8rem;padding:6px 12px;margin-bottom:12px;" onclick="window.appInstance.openSpis('${safeId(id)}')">← Zpět na spis</button>
+                <h3 style="margin:0 0 8px;">✉ Souhrn pro klienta</h3>
+                <div style="font-size:0.82rem;margin-bottom:10px;">E-mail klienta: <b>${escapeHtml(s.klientEmail || '— nevyplněn')}</b>
+                    <button class="btn btn-secondary" style="font-size:0.72rem;padding:3px 8px;margin-left:6px;" onclick="window.appInstance.upravitEmailKlienta('${safeId(id)}')">Upravit</button></div>
+                <div style="font-size:0.78rem;opacity:0.7;margin-bottom:10px;">Návrh obsahuje jen události určené klientovi (nové dokumenty, schůzky, faktury, změna stavu, potvrzené lhůty a jednání) — bez interních poznámek a názvů souborů. Odeslat ho smí jen advokát.</div>
+                <button class="btn btn-primary" style="font-size:0.8rem;padding:6px 12px;margin-bottom:12px;" ${s.klientEmail ? '' : 'disabled'} onclick="window.appInstance.createClientUpdate('${safeId(id)}')">Sestavit nový návrh</button>
+                <div id="cu-msg" style="font-size:0.8rem;color:#f87171;margin-bottom:8px;"></div>
+                ${open.map(editor).join('')}
+                <h4 style="margin:14px 0 6px;">Historie</h4><ul style="margin:0;padding-left:18px;list-style:none;">${histRows}</ul>`;
+        } catch (e) {
+            el.innerHTML = `<div style="color:#f87171;padding:12px;">Chyba: ${escapeHtml(e.message)}</div>`;
+        }
+    },
+    _cuMsg(t) { const m = document.getElementById('cu-msg'); if (m) m.textContent = t || ''; },
+    async createClientUpdate(spisId) {
+        try { await this.ssSend('/client-updates', 'POST', { spisId }); this.openClientUpdates(spisId); }
+        catch (e) { this._cuMsg('Návrh se nepodařilo sestavit: ' + e.message); }
+    },
+    async saveClientUpdate(spisId, id) {
+        try {
+            await this.ssSend(`/client-updates/${encodeURIComponent(id)}`, 'PATCH', {
+                subject: document.getElementById('cu-subj-' + id).value,
+                body: document.getElementById('cu-body-' + id).value
+            });
+            this._cuMsg('');
+        } catch (e) { this._cuMsg('Uložení se nezdařilo: ' + e.message); }
+    },
+    async approveClientUpdate(spisId, id) {
+        try {
+            await this.saveClientUpdate(spisId, id);
+            const ok = await LexisUI.confirm('Odeslat souhrn klientovi? Odesláním potvrzujete, že jste text zkontroloval(a).');
+            if (!ok) return;
+            await this.ssSend(`/client-updates/${encodeURIComponent(id)}/approve`, 'POST', {});
+            this.openClientUpdates(spisId);
+        } catch (e) { this._cuMsg('Odeslání se nezdařilo: ' + e.message); }
+    },
+    async rejectClientUpdate(spisId, id) {
+        try {
+            const reason = await LexisUI.prompt('Důvod zamítnutí (nepovinné):', '');
+            if (reason === null) return;
+            await this.ssSend(`/client-updates/${encodeURIComponent(id)}/reject`, 'POST', { reason });
+            this.openClientUpdates(spisId);
+        } catch (e) { this._cuMsg('Zamítnutí se nezdařilo: ' + e.message); }
+    },
+    async upravitEmailKlienta(id) {
+        try {
+            const d = await this.ssGet(`/spisy/${id}`);
+            const v = await LexisUI.prompt('E-mail klienta (pro souhrny o stavu věci):', (d.spis && d.spis.klientEmail) || '');
+            if (v === null) return;
+            await this.ssSend(`/spisy/${id}`, 'PATCH', { klientEmail: v });
+            this.openClientUpdates(id);
+        } catch (e) { this._cuMsg('Chyba: ' + e.message); }
     },
 
     async upravitSoudSpisu(id) {

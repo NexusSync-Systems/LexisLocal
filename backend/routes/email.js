@@ -251,6 +251,13 @@ router.post('/send', async (req, res) => {
             logEvent('E-mail', 'Odeslání ZAMÍTNUTO — chybí souhlas advokáta', b.clientName || to, { caseNumber: b.caseNumber || null });
             return res.status(403).json({ success: false, error: 'Odeslání odepřeno: chybí výslovný souhlas advokáta (confirmedByLawyer).', code: 'NO_CONSENT' });
         }
+        // Souhlas advokáta nesmí „odkliknout“ kdokoli: příznak platí jen od člověka se
+        // scope approve (advokát/správce), nikdy od agenta (nález 14. 10. 2026).
+        const p = req.principal;
+        if (p && (p.kind === 'agent' || !require('../lib/principal').hasScope(p, 'approve'))) {
+            logEvent('E-mail', 'Odeslání ZAMÍTNUTO — souhlas nepotvrdil advokát', b.clientName || to, { caseNumber: b.caseNumber || null });
+            return res.status(403).json({ success: false, error: 'Odeslat klientovi smí jen advokát nebo správce. Připravte souhrn ke schválení.', code: 'forbidden_role' });
+        }
         // SMTP nastavení z lokální DB
         const settingsList = db.get('email_settings') || [];
         const settings = settingsList.length > 0 ? settingsList[0] : {};
