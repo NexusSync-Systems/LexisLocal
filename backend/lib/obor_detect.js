@@ -51,7 +51,8 @@ function _centroidFor(scope) {
         let dim = 0, n = 0, sum = null;
         for (const c of chunks) {
             const v = c && c.vector;
-            if (!Array.isArray(v) || !v.length) continue;
+            // Pole i Float32Array (vektory načtené z disku jsou typované pole, viz rag.isVector).
+            if (!(Array.isArray(v) || ArrayBuffer.isView(v)) || !v.length) continue;
             if (!sum) { dim = v.length; sum = new Array(dim).fill(0); }
             if (v.length !== dim) continue; // ochrana proti smíšeným dimenzím (změna modelu)
             for (let i = 0; i < dim; i++) sum[i] += v[i];

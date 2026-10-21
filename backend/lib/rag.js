@@ -116,17 +116,33 @@ function getPartitionKey(directoryName) {
 // (Cannot create a string longer than 0x1fffffe8). Na disk proto vektory ukládáme jako
 // base64 Float32 (pole `vec`); v PAMĚTI zůstávají jako `vector` (pole čísel), takže se
 // zbytek kódu (cosineSimilarity apod.) nemění. Čtení zvládá OBA formáty (zpětná komp.).
+// PAMĚŤ: vektory načtené z disku drží `Float32Array` (4 B/číslo), ne pole čísel
+// (8 B/číslo + režie). U báze judikatury (~130 tis. kousků × 1024 dim.) je to rozdíl
+// ~0,5 GB vs. >1 GB a server jinak padal na „heap out of memory". Typované pole se
+// indexuje stejně jako pole (cosineSimilarity se nemění); kde se dřív testovalo
+// `Array.isArray(vector)`, používej `isVector()`.
+function isVector(v) {
+    return (Array.isArray(v) || (ArrayBuffer.isView(v) && !(v instanceof DataView))) && v.length > 0;
+}
+function _toF32(vec) {
+    if (vec == null) return null;
+    if (vec instanceof Float32Array) return vec;
+    return isVector(vec) ? Float32Array.from(vec) : vec;
+}
 function _vecToB64(vec) {
-    if (!Array.isArray(vec) || vec.length === 0) return null;
-    const f = Float32Array.from(vec);
+    if (!isVector(vec)) return null;
+    const f = vec instanceof Float32Array ? vec : Float32Array.from(vec);
     return Buffer.from(f.buffer, f.byteOffset, f.byteLength).toString('base64');
 }
 function _b64ToVec(b64) {
     if (typeof b64 !== 'string' || !b64) return null;
     const buf = Buffer.from(b64, 'base64');
     const n = Math.floor(buf.byteLength / 4);
-    const f = new Float32Array(buf.buffer, buf.byteOffset, n);
-    return Array.from(f);
+    // Kopie do vlastního (zarovnaného) bufferu — Buffer z poolu nemusí být zarovnaný na 4 B
+    // a sdílený pool by držel v paměti víc, než je potřeba.
+    const out = new Float32Array(n);
+    out.set(new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + n * 4)));
+    return out;
 }
 // Deduplikace chunků dle id (fallback fileName#chunkIndex) — brání navrstvení při
 // opakovaném seedování, které partition nafukuje.
@@ -193,21 +209,93 @@ function _shardPath(base, i) {
  * Velké partitiony se rozdělí na víc shardů (viz SHARD_MAX_CHUNKS), aby se serializace
  * nedotkla V8 limitu délky řetězce.
  */
+// --- Přírůstkový zápis a cache partitionů ---------------------------------------
+// Dřív každé uložení (= každý nahraný dokument) znovu zakódovalo, zašifrovalo
+// a přepsalo CELOU partition a každé načtení ji celou dešifrovalo. U báze judikatury
+// (desítky shardů, ~1 GB) to dělalo nahrávání kvadratické (každý další dokument
+// pomalejší) a server padal na paměť.
+//
+// Teď:
+//  • `_shardState` si pamatuje, které objekty chunků (a jejich vektory) leží v kterém
+//    shardu na disku. Při uložení se přepíší jen shardy, jejichž obsah se změnil
+//    (u přidání dokumentu typicky poslední shard) + shard 0, který nese meta a jehož
+//    mtime je podpis změny pro partitionStat(). Nezměněná partition se nepřepisuje vůbec.
+//  • `_partCache` drží dešifrovanou partition v paměti; platnost hlídá podpis shardu 0
+//    (mtime + velikost) a otisk klíče — zápis jiným procesem nebo rotace klíče ji zneplatní.
+//  • Stav platí, jen když shard 0 na disku odpovídá tomu, co jsme sami zapsali/načetli;
+//    jinak se zapisuje vše jako dřív (bezpečný návrat ke starému chování).
+// Vypnutí: RAG_PARTITION_CACHE=0 (pak se vždy čte i zapisuje celá partition).
+const _partCache = new Map();   // base → { sig, chunks, meta }
+const _shardState = new Map();  // base → { sig, count, metaJson, shards: [[{c,v,e,t}]] }
+
+function _cacheEnabled() {
+    return String(process.env.RAG_PARTITION_CACHE == null ? '1' : process.env.RAG_PARTITION_CACHE).trim() !== '0';
+}
+function _keyTag(key) {
+    return crypto.createHash('sha256').update(key).digest('hex').substring(0, 12);
+}
+function _diskSig(base, keyTag) {
+    try {
+        const st = fs.statSync(_shardPath(base, 0));
+        return `${st.mtimeMs}:${st.size}:${keyTag}`;
+    } catch (e) {
+        return null;
+    }
+}
+function _sliceSig(chunks) {
+    return chunks.map(c => ({ c, v: c.vector, e: c.embedded, t: c.text }));
+}
+function _sameSlice(prev, cur) {
+    if (!prev || prev.length !== cur.length) return false;
+    for (let i = 0; i < cur.length; i++) {
+        const p = prev[i], c = cur[i];
+        if (p.c !== c || p.v !== c.vector || p.e !== c.embedded || p.t !== c.text) return false;
+    }
+    return true;
+}
+function _forgetPartition(base) {
+    _partCache.delete(base);
+    _shardState.delete(base);
+}
+/** Testy: vyprázdní cache a stav shardů (simulace restartu procesu). */
+function _resetPartitionCache() {
+    _partCache.clear();
+    _shardState.clear();
+}
+
 function savePartition(directoryName, index) {
     const base = _partitionBase(directoryName);
     try {
         const key = getPartitionKey(directoryName);
-        // Kompaktní tvar (base64 vektory) + dedup → menší JSON.
+        const keyTag = _keyTag(key);
+        const useCache = _cacheEnabled();
+        // Dedup → shardy se skládají z týchž objektů chunků, jaké má volající.
         const deduped = _dedupChunks(index && index.chunks);
-        const encodedChunks = deduped.map(_encodeChunkForDisk);
         const meta = Object.assign({}, index); delete meta.chunks;
+        const metaJson = JSON.stringify(meta);
 
-        const shardCount = Math.max(1, Math.ceil(encodedChunks.length / SHARD_MAX_CHUNKS));
+        const shardCount = Math.max(1, Math.ceil(deduped.length / SHARD_MAX_CHUNKS));
+        const slices = [];
         for (let s = 0; s < shardCount; s++) {
-            const slice = encodedChunks.slice(s * SHARD_MAX_CHUNKS, (s + 1) * SHARD_MAX_CHUNKS);
+            slices.push(deduped.slice(s * SHARD_MAX_CHUNKS, (s + 1) * SHARD_MAX_CHUNKS));
+        }
+
+        // Předchozí stav platí jen tehdy, když shard 0 na disku je pořád ten, který
+        // známe (nikdo jiný ho mezitím nepřepsal) a klíč se nezměnil.
+        let prev = useCache ? _shardState.get(base) : null;
+        if (prev && prev.sig !== _diskSig(base, keyTag)) prev = null;
+        const sameLayout = !!prev && prev.count === shardCount && prev.metaJson === metaJson;
+
+        const changed = slices.map((slice, s) => !sameLayout || !_sameSlice(prev.shards[s], slice));
+        if (changed.some(Boolean)) changed[0] = true; // shard 0 = meta + podpis změny
+        // Shardy se zapisují od posledního k prvnímu: shard 0 (podpis) je poslední,
+        // takže při pádu uprostřed zápisu se neshoduje se stavem a příště se přepíše vše.
+        for (let s = shardCount - 1; s >= 0; s--) {
+            if (!changed[s]) continue;
+            const encoded = slices[s].map(_encodeChunkForDisk);
             const shardObj = (s === 0)
-                ? Object.assign({}, meta, { _shards: shardCount, chunks: slice })
-                : { chunks: slice };
+                ? Object.assign({}, meta, { _shards: shardCount, chunks: encoded })
+                : { chunks: encoded };
             // AES-256-GCM (integrita) přes sdílený secure_crypto — každý shard zvlášť.
             const payload = JSON.stringify(secureCrypto.encrypt(key, JSON.stringify(shardObj)));
             fs.writeFileSync(_shardPath(base, s), payload, 'utf8');
@@ -218,7 +306,14 @@ function savePartition(directoryName, index) {
             if (!fs.existsSync(p)) break;
             try { fs.unlinkSync(p); } catch (e) { /* best-effort */ }
         }
+
+        if (useCache) {
+            const sig = _diskSig(base, keyTag);
+            _shardState.set(base, { sig, count: shardCount, metaJson, shards: slices.map(_sliceSig) });
+            _partCache.set(base, { sig, chunks: deduped, meta });
+        }
     } catch (e) {
+        _forgetPartition(base); // stav na disku je nejistý → příště číst i psát celé
         console.error(`⚠️ RAG: Nepodařilo se uložit partition pro ${directoryName}:`, e.message);
     }
 }
@@ -265,21 +360,44 @@ function loadPartition(directoryName) {
 
     try {
         const key = getPartitionKey(directoryName);
+        const keyTag = _keyTag(key);
+        const useCache = _cacheEnabled();
+        const sigBefore = useCache ? _diskSig(base, keyTag) : null;
+        if (useCache) {
+            const hit = _partCache.get(base);
+            // Kopie pole chunků: volající ho smí filtrovat/doplňovat, aniž by měnil cache.
+            if (hit && hit.sig === sigBefore) return Object.assign({}, hit.meta, { chunks: hit.chunks.slice() });
+        }
         // Shard 0 nese meta + `_shards`. Starší jednosouborové partitiony `_shards` nemají
         // → čtou se jako jeden shard (zpětná kompatibilita).
         const first = JSON.parse(secureCrypto.decrypt(key, JSON.parse(fs.readFileSync(shard0, 'utf8'))));
         const shardCount = (first && Number.isInteger(first._shards) && first._shards > 0) ? first._shards : 1;
+        const shardLens = [(first.chunks || []).length];
         const allChunks = (first.chunks || []).slice();
         for (let s = 1; s < shardCount; s++) {
             const p = _shardPath(base, s);
             if (!fs.existsSync(p)) break;
             const obj = JSON.parse(secureCrypto.decrypt(key, JSON.parse(fs.readFileSync(p, 'utf8'))));
-            if (obj && Array.isArray(obj.chunks)) allChunks.push(...obj.chunks);
+            const arr = (obj && Array.isArray(obj.chunks)) ? obj.chunks : [];
+            for (const c of arr) allChunks.push(c); // bez push(...arr): velké shardy by přetekly zásobník
+            shardLens.push(arr.length);
         }
         const merged = Object.assign({}, first, { chunks: allChunks });
         delete merged._shards;
-        return _decodeIndexFromDisk(merged);
+        const decoded = _decodeIndexFromDisk(merged);
+
+        if (useCache && sigBefore && sigBefore === _diskSig(base, keyTag)) {
+            const meta = Object.assign({}, decoded); delete meta.chunks;
+            const shards = [];
+            let off = 0;
+            for (const n of shardLens) { shards.push(_sliceSig(decoded.chunks.slice(off, off + n))); off += n; }
+            _partCache.set(base, { sig: sigBefore, chunks: decoded.chunks, meta });
+            _shardState.set(base, { sig: sigBefore, count: shardLens.length, metaJson: JSON.stringify(meta), shards });
+            return Object.assign({}, meta, { chunks: decoded.chunks.slice() });
+        }
+        return decoded;
     } catch (e) {
+        _forgetPartition(base);
         console.error(`⚠️ RAG: Nepodařilo se dešifrovat partition pro ${directoryName}:`, e.message);
         return { chunks: [] };
     }
@@ -297,6 +415,7 @@ function reencryptAllPartitions(oldMasterKey, newMasterKey) {
         const base = _partitionBase(dir);
         if (!fs.existsSync(_shardPath(base, 0))) continue;
 
+        _forgetPartition(base); // shardy se přepíšou mimo savePartition
         const oldKey = crypto.pbkdf2Sync(oldMasterKey, dir, 1000, 32, 'sha256');
         const newKey = crypto.pbkdf2Sync(newMasterKey, dir, 1000, 32, 'sha256');
         // Každý shard je samostatně šifrovaný — přešifruj soubor po souboru (bez slučování),
@@ -323,7 +442,7 @@ async function loadIndex() {
     for (const dir of dirs) {
         const part = loadPartition(dir);
         if (part.chunks) {
-            allChunks.push(...part.chunks);
+            for (const c of part.chunks) allChunks.push(c);
         }
     }
     
@@ -592,7 +711,7 @@ async function indexDocument(fileName, text) {
                 id: `chk_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                 fileName: fileName,
                 text: chunks[i],
-                vector: vectors[i],
+                vector: _toF32(vectors[i]),
                 embedded: vectors[i] != null,
                 chunkIndex: i,
                 totalChunks: chunks.length
@@ -665,7 +784,7 @@ async function indexKnowledge(scope, fileName, text) {
                 id: `kb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                 fileName: fileName,
                 text: chunks[i],
-                vector: vectors[i],
+                vector: _toF32(vectors[i]),
                 embedded: vectors[i] != null,
                 chunkIndex: i,
                 totalChunks: chunks.length,
@@ -721,7 +840,7 @@ async function reindexKnowledge(scope, onProgress, opts = {}) {
     let done = 0;
     for (const c of snapshot) {
         const cur = c.vector;
-        if (!force && targetDim && Array.isArray(cur) && cur.length === targetDim) {
+        if (!force && targetDim && isVector(cur) && cur.length === targetDim) {
             // už embedováno správným modelem → recykluj, žádné volání ollamy
             vectors[c.id] = cur;
             embedded++; reused++;
@@ -747,7 +866,7 @@ async function reindexKnowledge(scope, onProgress, opts = {}) {
         const chunks = _dedupChunks(part.chunks || []);
         for (const c of chunks) {
             if (Object.prototype.hasOwnProperty.call(vectors, c.id)) {
-                c.vector = vectors[c.id];
+                c.vector = _toF32(vectors[c.id]);
                 c.embedded = c.vector != null;
             }
         }
@@ -891,7 +1010,7 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     if (filters && Array.isArray(filters.scopes) && filters.scopes.length > 0) {
         for (const scope of filters.scopes) {
             if (typeof scope === 'string' && scope.indexOf(KB_PREFIX) === 0) {
-                chunks.push(...(loadPartition(scope).chunks || []));
+                for (const c of (loadPartition(scope).chunks || [])) chunks.push(c);
             }
         }
     }
@@ -1006,5 +1125,7 @@ module.exports = {
     dedupChunks: _dedupChunks,
     encodeChunkForDisk: _encodeChunkForDisk,
     decodeChunkFromDisk: _decodeChunkFromDisk,
-    applyRrf: _applyRrf
+    applyRrf: _applyRrf,
+    isVector,
+    _resetPartitionCache
 };

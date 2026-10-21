@@ -28,7 +28,7 @@ describe('reindexKnowledge / reindexAllKnowledge', () => {
         await rag.indexKnowledge('_kb_reindex', 'doc.txt', 'Text do znalostní báze.');
         let part = rag.loadPartition('_kb_reindex');
         expect(part.chunks.length).toBeGreaterThan(0);
-        expect(part.chunks[0].vector).toEqual([1, 1, 1]);
+        expect(Array.from(part.chunks[0].vector)).toEqual([1, 1, 1]);
 
         // „změna embedding modelu" → jiný vektor
         global.__vec = [2, 2, 2];
@@ -36,7 +36,7 @@ describe('reindexKnowledge / reindexAllKnowledge', () => {
         expect(res.embedded).toBe(part.chunks.length);
 
         part = rag.loadPartition('_kb_reindex');
-        expect(part.chunks.every(c => JSON.stringify(c.vector) === JSON.stringify([2, 2, 2]))).toBe(true);
+        expect(part.chunks.every(c => JSON.stringify(Array.from(c.vector)) === JSON.stringify([2, 2, 2]))).toBe(true);
         expect(part.chunks.every(c => c.embedded === true)).toBe(true);
         // text a počet chunků se nemění
         expect(part.chunks[0].text).toContain('znalostní báze');
@@ -55,6 +55,6 @@ describe('reindexKnowledge / reindexAllKnowledge', () => {
         const scopes = results.map(r => r.scope);
         expect(scopes).toEqual(expect.arrayContaining(['_kb_alpha', '_kb_beta']));
         // po reindexu mají báze nový vektor
-        expect(rag.loadPartition('_kb_alpha').chunks.every(c => JSON.stringify(c.vector) === JSON.stringify([3, 3, 3]))).toBe(true);
+        expect(rag.loadPartition('_kb_alpha').chunks.every(c => JSON.stringify(Array.from(c.vector)) === JSON.stringify([3, 3, 3]))).toBe(true);
     });
 });
