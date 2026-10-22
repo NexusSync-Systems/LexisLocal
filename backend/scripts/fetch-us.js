@@ -1,0 +1,467 @@
+#!/usr/bin/env node
+/**
+ * fetch-us.js — rozhodnutí ÚSTAVNÍHO SOUDU do znalostní báze (nálezy, stanoviska pléna).
+ *
+ * Proč: nálezy ÚS jsou podle čl. 89 odst. 2 Ústavy závazné pro všechny; v rešerších
+ * nesmí chybět. ÚS nemá API ani otevřená data (na žádosti o hromadné poskytnutí
+ * odkazuje na NALUS), proto dva zdroje:
+ *
+ *  1) --ccc  Dataset „The Czech Constitutional Court Database" (Š. Paulík, HU Berlin;
+ *     Zenodo 11618008, CC BY 4.0) — metadata a plné texty 1993–2023 vytažené z NALUS.
+ *     Čte se přímo ze staženého ZIPu (přes `unzip -p`, nic se nerozbaluje na disk)
+ *     nebo z rozbalené složky s ccc_metadata.csv a ccc_texts.csv.
+ *  2) --nalus-probe  Uloží výsledek vyhledávání v NALUS (nálezy a stanoviska od data),
+ *     z něhož se doladí doplňování novějších rozhodnutí. NALUS nemá robots.txt;
+ *     podmínky webu dovolují další užití s uvedením zdroje, bezplatnosti a toho, že
+ *     nejde o autentické znění — to nese hlavička každého souboru.
+ *
+ * Soudní rozhodnutí jsou úřední dílo (§ 3 AZ). Výstup má hlavičku jako fetch-ns-sbirka.js.
+ *
+ * Příklady:
+ *   node backend/scripts/fetch-us.js --ccc ~/Downloads/ccc_database.zip --out ./judikatura-us
+ *   node backend/scripts/fetch-us.js --ccc ~/Downloads/ccc_database.zip --out ./us --od-roku 2010 --limit 50
+ *   node backend/scripts/fetch-us.js --nalus-probe --od 01.01.2024
+ * Pak: node backend/scripts/seed-kb.js --agent resersnik --dir ./judikatura-us --token-file ~/.lexislocal/api_token
+ *
+ * Přepínače: --typy "Nález,Stanovisko pléna" (lze přidat Usnesení)  --od-roku RRRR
+ *   --do-roku RRRR  --limit N  --vyznam N (jen význam 1..N; 1 = nejvýznamnější)
+ * Bez závislostí — Node ≥ 18 (+ systémový `unzip` pro čtení ZIPu, `curl` pro NALUS).
+ */
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { spawn, execFileSync } = require('child_process');
+const { StringDecoder } = require('string_decoder');
+
+const NALUS = 'https://nalus.usoud.cz';
+const UA = 'LexisLocal-us-fetch/1.0 (+https://nexusstack.eu)';
+const CCC_CITACE = 'The Czech Constitutional Court Database (Š. Paulík, Humboldt-Universität zu Berlin; Zenodo 11618008, CC BY 4.0)';
+const VYCHOZI_TYPY = ['Nález', 'Stanovisko pléna'];
+
+function parseArgs(argv) {
+    const a = { out: './judikatura-us', typy: VYCHOZI_TYPY.slice(), limit: 0, delay: 2000 };
+    for (let i = 2; i < argv.length; i++) {
+        const k = argv[i], next = () => argv[++i];
+        if (k === '--ccc') a.ccc = next();
+        else if (k === '--out') a.out = next();
+        else if (k === '--typy') a.typy = String(next()).split(',').map(s => s.trim()).filter(Boolean);
+        else if (k === '--od-roku') a.odRoku = parseInt(next(), 10) || 0;
+        else if (k === '--do-roku') a.doRoku = parseInt(next(), 10) || 0;
+        else if (k === '--limit') a.limit = parseInt(next(), 10) || 0;
+        else if (k === '--vyznam') a.vyznam = parseInt(next(), 10) || 0;
+        else if (k === '--nalus-probe') a.nalusProbe = true;
+        else if (k === '--od') a.od = next();
+        else if (k === '--delay') a.delay = Math.max(1000, parseInt(next(), 10) || 2000);
+        else if (k === '--help' || k === '-h') a.help = true;
+        else { console.error(`Neznámý argument: ${k}`); a.help = true; }
+    }
+    if (a.ccc) a.ccc = a.ccc.replace(/^~(?=$|\/)/, os.homedir());
+    return a;
+}
+
+// --- CSV (RFC 4180, proudově) ------------------------------------------------------
+// ccc_texts.csv má ~1 GB a pole s plnými texty přes víc řádků, proto vlastní proudový
+// parser (žádná závislost, nic se nedrží celé v paměti).
+class CsvParser {
+    constructor(onRow) {
+        this.onRow = onRow;
+        this.field = '';
+        this.row = [];
+        this.inQuotes = false;
+        this.quotePending = false; // byla uvozovka uvnitř uvozovek — escape, nebo konec pole?
+        this.fieldParts = [];
+    }
+    _endField() {
+        this.fieldParts.push(this.field);
+        this.row.push(this.fieldParts.length === 1 ? this.fieldParts[0] : this.fieldParts.join(''));
+        this.fieldParts = [];
+        this.field = '';
+    }
+    _endRow() {
+        this._endField();
+        const r = this.row;
+        this.row = [];
+        if (!(r.length === 1 && r[0] === '')) this.onRow(r);
+    }
+    push(chunk) {
+        let start = 0;
+        const s = chunk;
+        for (let i = 0; i < s.length; i++) {
+            const ch = s.charCodeAt(i);
+            if (this.quotePending) {
+                this.quotePending = false;
+                if (ch === 34) { this.field += s.slice(start, i); start = i + 1; this.field += '"'; continue; } // ""
+                this.inQuotes = false; // konec quoted pole, znak zpracujeme normálně
+            }
+            if (this.inQuotes) {
+                if (ch === 34) { this.field += s.slice(start, i); start = i + 1; this.quotePending = true; }
+                continue;
+            }
+            if (ch === 34) { this.field += s.slice(start, i); start = i + 1; this.inQuotes = true; }
+            else if (ch === 44) { this.field += s.slice(start, i); start = i + 1; this._endField(); }
+            else if (ch === 10) {
+                let end = i;
+                if (end > start && s.charCodeAt(end - 1) === 13) end--;
+                this.field += s.slice(start, end); start = i + 1; this._endRow();
+            }
+        }
+        if (start < s.length) {
+            // Dlouhé pole přes víc kusů: sbírej části, ať se řetězec neskládá kvadraticky.
+            this.field += s.slice(start);
+            if (this.field.length > 1 << 20) { this.fieldParts.push(this.field); this.field = ''; }
+        }
+    }
+    end() {
+        if (this.quotePending) { this.quotePending = false; this.inQuotes = false; }
+        if (this.field !== '' || this.row.length || this.fieldParts.length) this._endRow();
+    }
+}
+
+/** Celý CSV řetězec → pole řádků (pro testy a malé soubory). */
+function parseCsv(text) {
+    const rows = [];
+    const p = new CsvParser(r => rows.push(r));
+    p.push(String(text));
+    p.end();
+    return rows;
+}
+
+/** Najde v ZIPu člen končící na /csv/<jmeno> (bez __MACOSX). */
+function zipMember(zip, name) {
+    const list = execFileSync('unzip', ['-Z1', zip], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).split('\n');
+    const hit = list.find(l => !l.startsWith('__MACOSX') && (l === name || l.endsWith('/csv/' + name) || l.endsWith('/' + name)));
+    if (!hit) throw new Error(`v ZIPu chybí ${name}`);
+    return hit;
+}
+
+/** Proudově přečte CSV ze ZIPu nebo složky; onRow(objekt podle hlavičky). */
+function readCsv(source, name, onRow) {
+    return new Promise((resolve, reject) => {
+        let stream, child;
+        if (/\.zip$/i.test(source)) {
+            child = spawn('unzip', ['-p', source, zipMember(source, name)]);
+            stream = child.stdout;
+            let err = '';
+            child.stderr.on('data', d => { err += d; });
+            child.on('error', reject);
+            child.on('close', code => { if (code !== 0 && code !== null && !done) reject(new Error(`unzip skončil kódem ${code}: ${err.trim()}`)); });
+        } else {
+            const p = [path.join(source, name), path.join(source, 'csv', name)].find(f => fs.existsSync(f));
+            if (!p) return reject(new Error(`nenalezen ${name} ve složce ${source}`));
+            stream = fs.createReadStream(p);
+        }
+        let header = null;
+        let done = false;
+        let stopped = false;
+        const parser = new CsvParser(r => {
+            if (stopped) return;
+            if (!header) { header = r.map(h => h.replace(/^﻿/, '')); return; }
+            const o = {};
+            for (let i = 0; i < header.length; i++) o[header[i]] = r[i];
+            if (onRow(o) === false) { stopped = true; stream.destroy(); if (child) child.kill(); finish(); }
+        });
+        const dec = new StringDecoder('utf8');
+        const finish = () => { if (!done) { done = true; resolve(); } };
+        stream.on('data', b => { if (!stopped) parser.push(dec.write(b)); });
+        stream.on('end', () => { if (!stopped) { parser.push(dec.end()); parser.end(); } finish(); });
+        stream.on('error', e => { if (!stopped) reject(e); });
+    });
+}
+
+// --- Metadata datasetu -------------------------------------------------------------
+/** R vektor z datasetu („c("a", "b")", „NA", prostý text) → pole řetězců. */
+function rVector(v) {
+    const s = String(v == null ? '' : v).trim();
+    if (!s || s === 'NA') return [];
+    if (/^c\(/.test(s) && s.endsWith(')')) {
+        return [...s.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map(m => m[1].replace(/\\"/g, '"').trim()).filter(Boolean);
+    }
+    return [s];
+}
+
+/** „III.ÚS 2498/23" → „III. ÚS 2498/23"; „Pl.ÚS-st. 1/96" → „Pl. ÚS-st. 1/96". */
+function formatSpZn(caseId) {
+    return String(caseId || '').trim().replace(/^([IV]+|Pl)\.\s*ÚS/, '$1. ÚS').replace(/\s+/g, ' ');
+}
+
+const SENAT = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
+/**
+ * ECLI → { spisZn, poradi }. Stanoviska pléna mají v datasetu case_id „NA";
+ * ECLI „ECLI:CZ:US:2022:Pl.US-st.57.22.1" → „Pl. ÚS-st. 57/22", pořadí 1.
+ */
+function spZnFromEcli(ecli) {
+    // Pořadí na konci občas chybí (např. ECLI:CZ:US:2002:Pl.US-st.15.02) → 1.
+    const m = /^ECLI:CZ:US:\d{4}:(Pl|[1-4])\.US(-st)?\.(\d+)\.(\d+)(?:\.(\d+))?$/i.exec(String(ecli || '').trim());
+    if (!m) return null;
+    const sen = /^pl$/i.test(m[1]) ? 'Pl' : SENAT[m[1]];
+    return { spisZn: `${sen}. ÚS${m[2] ? '-st.' : ''} ${m[3]}/${m[4]}`, poradi: m[5] || '1' };
+}
+
+// Ústavní předpisy se v NALUS uvádějí číslem; doplníme název, ať je hlavička čitelná
+// i pro lexikální hledání („Listina", „Úmluva").
+const NAZVY_PREDPISU = {
+    '1/1993 Sb.': 'Ústava',
+    '2/1993 Sb.': 'Listina základních práv a svobod',
+    '209/1992 Sb.': 'Úmluva o ochraně lidských práv a základních svobod',
+    '104/1991 Sb.': 'Úmluva o právech dítěte',
+    '120/1976 Sb.': 'Mezinárodní pakt o občanských a politických právech',
+    '110/1998 Sb.': 'ústavní zákon o bezpečnosti ČR',
+};
+function pojmenujPredpis(s) {
+    const t = String(s).replace(/\/Sb\.m\.s\./g, '');
+    const m = /^(\d+\/\d{4} Sb\.)(.*)$/.exec(t);
+    return m && NAZVY_PREDPISU[m[1]] ? `${NAZVY_PREDPISU[m[1]]} (${m[1]})${m[2]}` : t;
+}
+
+/** ISO „2023-11-29" → „29.11.2023" (formát hlaviček NS). */
+function czDate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : '';
+}
+
+const FORMACE = { Plenum: 'plénum', 'First Chamber': 'I. senát', 'Second Chamber': 'II. senát', 'Third Chamber': 'III. senát', 'Fourth Chamber': 'IV. senát' };
+
+function na(v) { const s = String(v == null ? '' : v).trim(); return s === 'NA' ? '' : s; }
+
+/** Řádek ccc_metadata → objekt pro hlavičku. */
+function metaFromRow(r) {
+    const ecli = na(r.doc_id);
+    const zEcli = spZnFromEcli(ecli);
+    return {
+        ecli,
+        spisZn: na(r.case_id) ? formatSpZn(r.case_id) : (zEcli ? zEcli.spisZn : ''),
+        poradi: na(r.case_nr) || (zEcli ? zEcli.poradi : ''),
+        typ: na(r.type_decision),
+        popularniNazev: na(r.popular_name),
+        datum: czDate(r.date_decision),
+        rok: parseInt(r.year_decision, 10) || 0,
+        datumVyhlaseni: czDate(na(r.date_publication)),
+        vyznam: parseInt(r.importance, 10) || 0,
+        typRizeni: na(r.type_proceedings),
+        soudceZpravodaj: na(r.judge_rapporteur_name),
+        formace: FORMACE[na(r.formation)] || na(r.formation),
+        vyrok: rVector(r.type_verdict),
+        napadenyAkt: rVector(r.disputed_act),
+        ustavniPredpisy: rVector(r.concerned_constitutional_acts).map(pojmenujPredpis),
+        predpisy: rVector(r.concerned_acts).map(pojmenujPredpis),
+        predmet: rVector(r.subject_proceedings),
+        rejstrik: rVector(r.subject_register),
+        odlisneStanovisko: rVector(r.separate_opinion),
+        url: na(r.url_address).replace(':443/', '/'),
+    };
+}
+
+function matches(m, a) {
+    if (a.typy && a.typy.length && !a.typy.includes(m.typ)) return false;
+    if (a.odRoku && m.rok < a.odRoku) return false;
+    if (a.doRoku && m.rok > a.doRoku) return false;
+    if (a.vyznam && !(m.vyznam >= 1 && m.vyznam <= a.vyznam)) return false;
+    return true;
+}
+
+function header(m) {
+    const L = [];
+    const typ = m.typ || 'Rozhodnutí';
+    L.push(`${typ} Ústavního soudu ze dne ${m.datum || '?'}, sp. zn. ${m.spisZn}${m.popularniNazev ? ` („${m.popularniNazev}")` : ''}`);
+    L.push('Soud: Ústavní soud');
+    L.push('Sp. zn.: ' + m.spisZn);
+    L.push('Datum vydání: ' + (m.datum || '?'));
+    if (m.datumVyhlaseni) L.push('Datum vyhlášení: ' + m.datumVyhlaseni);
+    if (m.ecli) L.push('ECLI: ' + m.ecli);
+    L.push('Typ rozhodnutí: ' + typ);
+    if (m.popularniNazev) L.push('Populární název: ' + m.popularniNazev);
+    if (m.formace) L.push('Rozhodl: ' + m.formace);
+    if (m.soudceZpravodaj) L.push('Soudce zpravodaj: ' + m.soudceZpravodaj);
+    if (m.vyznam) L.push(`Význam: ${m.vyznam} (stupnice NALUS 1–4, 1 = nejvýznamnější)`);
+    if (m.typRizeni) L.push('Typ řízení: ' + m.typRizeni);
+    if (m.vyrok.length) L.push('Výrok: ' + m.vyrok.join('; '));
+    if (m.napadenyAkt.length) L.push('Napadený akt: ' + m.napadenyAkt.join('; '));
+    if (m.ustavniPredpisy.length) L.push('Dotčené ústavní předpisy: ' + m.ustavniPredpisy.join('; '));
+    if (m.predpisy.length) L.push('Zmíněná ustanovení: ' + m.predpisy.join('; '));
+    if (m.predmet.length) L.push('Předmět řízení: ' + m.predmet.join('; '));
+    if (m.rejstrik.length) L.push('Klíčová slova: ' + m.rejstrik.join(', '));
+    if (m.odlisneStanovisko.length) L.push('Odlišné stanovisko: ' + m.odlisneStanovisko.join(', '));
+    L.push('Zdroj: NALUS – databáze rozhodnutí Ústavního soudu' + (m.url ? ', ' + m.url : '') +
+        '; poskytnuto bezplatně, nejde o autentické znění rozhodnutí.');
+    if (m.zdrojDat !== 'nalus') L.push('Data: ' + CCC_CITACE);
+    return L.join('\n') + '\n\n';
+}
+
+function cleanText(t) {
+    return String(t || '')
+        .replace(/\r\n?/g, '\n')
+        .replace(/[ \t ]+/g, ' ')
+        .replace(/ *\n */g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function safeName(s) { return String(s || '').replace(/[^\p{L}\p{N} ._-]/gu, '_').replace(/\s+/g, '_').slice(0, 90) || 'rozhodnuti'; }
+function fileNameFor(m) { return `US_${safeName(m.spisZn)}_${safeName(m.poradi || '1')}.txt`; }
+
+async function importCcc(a) {
+    if (!fs.existsSync(a.ccc)) throw new Error(`nenalezeno: ${a.ccc}`);
+    fs.mkdirSync(a.out, { recursive: true });
+    const existing = new Set(fs.readdirSync(a.out));
+
+    console.log(`📚 Čtu metadata z ${path.basename(a.ccc)}…`);
+    const vybrane = new Map();
+    const pocty = {};
+    let celkem = 0;
+    await readCsv(a.ccc, 'ccc_metadata.csv', r => {
+        celkem++;
+        const m = metaFromRow(r);
+        if (!m.ecli || !m.spisZn || !matches(m, a)) return;
+        pocty[m.typ] = (pocty[m.typ] || 0) + 1;
+        vybrane.set(m.ecli, m);
+    });
+    console.log(`   ${celkem} rozhodnutí v datasetu, vybráno ${vybrane.size} (${Object.entries(pocty).map(([k, v]) => `${k}: ${v}`).join(', ') || '—'})`);
+
+    let saved = 0, already = 0, empty = 0;
+    console.log('📝 Čtu plné texty (~1 GB, chvíli to trvá)…');
+    await readCsv(a.ccc, 'ccc_texts.csv', r => {
+        const m = vybrane.get(r.doc_id);
+        if (!m) return;
+        vybrane.delete(r.doc_id);
+        const name = fileNameFor(m);
+        if (existing.has(name)) { already++; return; }
+        const text = cleanText(r.text);
+        if (text.length < 200) { empty++; return; }
+        fs.writeFileSync(path.join(a.out, name), header(m) + text + '\n');
+        saved++;
+        if (saved % 250 === 0) console.log(`  … ${saved} uloženo`);
+        if (a.limit && saved >= a.limit) return false;
+        if (vybrane.size === 0) return false; // vše nalezeno, zbytek souboru nečíst
+    });
+    console.log(`✅ Uloženo ${saved}, už staženo ${already}, bez textu ${empty + (a.limit && saved >= a.limit ? 0 : vybrane.size)} → ${a.out}`);
+    console.log(`   Další krok: node backend/scripts/seed-kb.js --agent resersnik --dir "${a.out}" --token-file ~/.lexislocal/api_token`);
+}
+
+// --- NALUS ------------------------------------------------------------------------
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', bdquo: '„', ldquo: '“', rdquo: '”', sect: '§', hellip: '…' };
+function htmlToText(h) {
+    return String(h || '')
+        .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|li|tr|h\d|td|th)>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
+        .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+        .replace(/&([a-z]+);/gi, (m, n) => (ENT[n.toLowerCase()] !== undefined ? ENT[n.toLowerCase()] : m))
+        .replace(/[ \t ]+/g, ' ')
+        .replace(/ *\n */g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function spanText(html, id) {
+    const m = new RegExp(`<span[^>]*id="${id}"[^>]*>([\\s\\S]*?)</span>`, 'i').exec(html);
+    return m ? htmlToText(m[1]) : '';
+}
+
+/** „ze dne 31. 8. 2026" → „31.08.2026". */
+function nalusDate(s) {
+    const m = /(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/.exec(String(s || ''));
+    return m ? `${m[1].padStart(2, '0')}.${m[2].padStart(2, '0')}.${m[3]}` : '';
+}
+
+/** sz „2-1155-26_1" + rok rozhodnutí → ECLI „ECLI:CZ:US:2026:2.US.1155.26.1". */
+function ecliFromSz(sz, rok) {
+    const m = /^(Pl|St|[1-4])-(\d+)-(\d+)_(\d+)$/i.exec(String(sz || ''));
+    if (!m || !rok) return '';
+    const sen = /^pl$/i.test(m[1]) ? 'Pl.US' : /^st$/i.test(m[1]) ? 'Pl.US-st' : `${m[1]}.US`;
+    return `ECLI:CZ:US:${rok}:${sen}.${m[2]}.${m[3]}.${m[4]}`;
+}
+
+/** HTML stránky GetText.aspx → { spisZn, datum, typ, popularniNazev, text }. */
+function parseNalusText(html, url) {
+    const reg = spanText(html, 'lblRegistrySign'); // „II.ÚS 1155/26 ze dne 31. 8. 2026"
+    const spisZn = formatSpZn(reg.replace(/\s+ze dne.*$/i, ''));
+    const datum = nalusDate(reg);
+    const form = spanText(html, 'lblDecisionForm');
+    const typ = form ? form.charAt(0) + form.slice(1).toLowerCase() : '';
+    // Text rozhodnutí = buňka DocContent až po spodní tlačítko „Tisk" (horní má id btnPrint2).
+    const i = html.search(/class="DocContent"/i);
+    let end;
+    if (i >= 0) {
+        const j = html.slice(i).search(/id="btnPrint"/i);
+        if (j >= 0) end = html.lastIndexOf('<', i + j); // začátek tagu tlačítka
+    }
+    const text = i >= 0 ? htmlToText(html.slice(i + 'class="DocContent"'.length + 1, end)) : '';
+    const sz = (/[?&]sz=([^&#]+)/.exec(String(url || '')) || [])[1] || '';
+    const rok = parseInt(datum.slice(-4), 10) || 0;
+    return { spisZn, datum, typ, popularniNazev: spanText(html, 'lblPopularName'), text, ecli: ecliFromSz(sz, rok), rok, url };
+}
+
+/** Odkazy na rozhodnutí (GetText.aspx?sz=…) ve výsledcích vyhledávání. */
+function resultLinks(html) {
+    const out = new Set();
+    for (const m of String(html || '').matchAll(/GetText\.aspx\?sz=([A-Za-z0-9_-]+)/g)) out.add(m[1]);
+    return [...out];
+}
+
+function hiddenFields(html) {
+    const o = {};
+    for (const m of String(html || '').matchAll(/<input[^>]*type="hidden"[^>]*>/gi)) {
+        const n = /name="([^"]+)"/.exec(m[0]); const v = /value="([^"]*)"/.exec(m[0]);
+        if (n) o[n[1]] = v ? v[1].replace(/&amp;/g, '&') : '';
+    }
+    return o;
+}
+
+function curl(args) {
+    return execFileSync('curl', ['-sS', '-L', '--fail', '--max-time', '90', '-A', UA, ...args],
+        { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+}
+
+async function nalusProbe(a) {
+    const od = a.od || '01.01.2024';
+    const jar = path.join(os.tmpdir(), `nalus_${process.pid}.cookies`);
+    const outDir = path.join(process.cwd(), 'scratch');
+    fs.mkdirSync(outDir, { recursive: true });
+    try {
+        const form = curl(['-c', jar, '-b', jar, `${NALUS}/Search/Search.aspx`]);
+        const fields = Object.assign(hiddenFields(form), {
+            'ctl00$MainContent$nalezy': 'on',
+            'ctl00$MainContent$stanoviska_plena': 'on',
+            'ctl00$MainContent$decidedFrom': od,
+            'ctl00$MainContent$razeni': '3',
+            'ctl00$MainContent$resultsPageSize': '80',
+            'ctl00$MainContent$but_search': 'Vyhledat',
+        });
+        const data = [];
+        for (const [k, v] of Object.entries(fields)) data.push('--data-urlencode', `${k}=${v}`);
+        await new Promise(r => setTimeout(r, a.delay));
+        const res = curl(['-c', jar, '-b', jar, ...data, `${NALUS}/Search/Search.aspx`]);
+        fs.writeFileSync(path.join(outDir, 'nalus_results.html'), res);
+        const links = resultLinks(res);
+        const pocet = (/(?:Nalezeno|Počet)[^0-9]{0,40}(\d[\d\s]*)/i.exec(htmlToText(res)) || [])[1];
+        console.log(`Výsledky uloženy do scratch/nalus_results.html — odkazů na rozhodnutí: ${links.length}${pocet ? `, hlášený počet: ${pocet.trim()}` : ''}`);
+        console.log(links.slice(0, 5).map(s => `  ${NALUS}/Search/GetText.aspx?sz=${s}`).join('\n'));
+        if (links.length) {
+            await new Promise(r => setTimeout(r, a.delay));
+            const url = `${NALUS}/Search/GetText.aspx?sz=${links[0]}`;
+            const d = parseNalusText(curl(['-b', jar, url]), url);
+            console.log('UKÁZKA:', JSON.stringify({ ...d, text: d.text.slice(0, 200) + '…', textLen: d.text.length }, null, 2));
+        }
+        console.log('\n→ Pošli mi zprávu, podle scratch/nalus_results.html doladím stránkování a stahování.');
+    } finally {
+        try { fs.unlinkSync(jar); } catch (e) { /* best-effort */ }
+    }
+}
+
+async function main() {
+    const a = parseArgs(process.argv);
+    if (a.help || (!a.ccc && !a.nalusProbe)) { console.log(fs.readFileSync(__filename, 'utf8').split('*/')[0]); process.exit(a.help ? 0 : 1); }
+    if (a.nalusProbe) return nalusProbe(a);
+    return importCcc(a);
+}
+
+if (require.main === module) main().catch(e => { console.error('❌ ' + e.message); process.exit(1); });
+
+module.exports = {
+    CsvParser, parseCsv, readCsv, rVector, formatSpZn, czDate, metaFromRow, matches, header, cleanText,
+    fileNameFor, spZnFromEcli, pojmenujPredpis, parseNalusText, resultLinks, hiddenFields, ecliFromSz, nalusDate, importCcc,
+};

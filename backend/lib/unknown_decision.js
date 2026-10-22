@@ -17,7 +17,6 @@ const RE_ASKS = /shr[nň]|shrnut|popi[šs]|z[aá]v[eě]r|co\s+(?:v\s+n[eě]m\s+)
 const TTL_MS = 10 * 60 * 1000;
 let _cache = null, _at = 0;
 
-const norm = s => String(s || '').replace(/\s+/g, ' ').replace(/\s*\/\s*/g, '/').trim().toLowerCase();
 
 function extractDecisions(text) {
     const out = [];
@@ -26,21 +25,48 @@ function extractDecisions(text) {
     return out;
 }
 
-/** Znormalizovaný text celé báze (zákony + judikatura), cache 10 min. */
-function kbText() {
+/**
+ * Klíč rozhodnutí pro porovnání: agenda + číslo/rok (rok vždy čtyřmístně), u pléna ÚS
+ * s předponou „pl". Senát se nebere v potaz — čísla jsou v rámci agendy a roku jedinečná
+ * a zápis senátu se liší („III.ÚS" vs. „III. ÚS"), takže by porovnání zbytečně selhávalo.
+ *   „III. ÚS 2498/23" → „ús 2498/2023";  „Pl.ÚS 43/23" → „plús 43/2023";
+ *   „21 Cdo 1234/2019" → „cdo 1234/2019".
+ */
+function decisionKey(z) {
+    const m = /(Pl\.\s*)?(ÚS|Cdo|Tdo|Odo|Afs|As|Ads|Azs|Ao|Aps|Ncu|Nd|Konf|Cdon|Tz)\s+(\d+)\/(\d{2,4})\b/i.exec(String(z || ''));
+    if (!m) return null;
+    const y = parseInt(m[4], 10);
+    const year = m[4].length === 2 ? (y > 50 ? 1900 + y : 2000 + y) : y;
+    return `${m[1] ? 'pl' : ''}${m[2].toLowerCase()} ${parseInt(m[3], 10)}/${year}`;
+}
+
+/** Klíče všech rozhodnutí zmíněných v textu. */
+function keysOf(text, into) {
+    const set = into || new Set();
+    RE_DECISION.lastIndex = 0; let m;
+    const s = String(text || '');
+    while ((m = RE_DECISION.exec(s))) { const k = decisionKey(m[0]); if (k) set.add(k); }
+    return set;
+}
+
+/**
+ * Klíče rozhodnutí zmíněných kdekoli v bázi (zákony + judikatura), cache 10 min.
+ * Dřív se celá báze slévala do JEDNOHO řetězce — s judikaturou NS a ÚS (~450 mil. znaků)
+ * to naráží na limit délky řetězce ve V8; výjimka se tiše spolkla a program pak tvrdil,
+ * že nemá ani rozhodnutí, která v bázi jsou. Množina klíčů je malá a roste lineárně.
+ */
+function kbKeys() {
     if (_cache != null && Date.now() - _at < TTL_MS) return _cache;
-    let t = '';
+    const keys = new Set();
     try {
         const rag = require('./rag');
-        const parts = [];
         for (const scope of rag.listKbScopes()) {
             const p = rag.loadPartition(scope);
-            for (const c of (p && p.chunks) || []) parts.push(c.text);
+            for (const c of (p && p.chunks) || []) keysOf(c.text, keys);
         }
-        t = norm(parts.join('\n'));
-    } catch (e) { t = ''; }
-    _cache = t; _at = Date.now();
-    return t;
+    } catch (e) { /* bez báze: nic nemáme — rozhodnutí se pak hlásí jako neznámá */ }
+    _cache = keys; _at = Date.now();
+    return keys;
 }
 function _reset() { _cache = null; _at = 0; }
 
@@ -61,9 +87,9 @@ function check(prompt, opts) {
     const decisions = extractDecisions(prompt);
     if (!decisions.length) return null;
     const thisYear = (opts.now || new Date()).getFullYear();
-    const hay = norm(opts.context || '') + '\n' + (opts.kb != null ? norm(opts.kb) : kbText());
+    const known = keysOf(opts.context || '', new Set(opts.kb != null ? keysOf(opts.kb) : kbKeys()));
     const future = decisions.filter(z => { const y = yearOf(z); return y != null && y > thisYear; });
-    const unknown = decisions.filter(z => !future.includes(z) && !hay.includes(norm(z)));
+    const unknown = decisions.filter(z => !future.includes(z) && !known.has(decisionKey(z)));
     if (!future.length && !unknown.length) return null;
     const asks = RE_ASKS.test(prompt);
     const missing = future.concat(unknown);
@@ -77,4 +103,4 @@ function check(prompt, opts) {
     return { future, unknown, asks, direct, text, notice };
 }
 
-module.exports = { check, extractDecisions, yearOf, _reset };
+module.exports = { check, extractDecisions, yearOf, decisionKey, _reset };

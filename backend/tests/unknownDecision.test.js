@@ -58,3 +58,18 @@ describe('route', () => {
         expect(r.body.response).toMatch(/^⚠️ Rozhodnutí sp\. zn\. 21 Cdo 1234\/2019 nemám k dispozici/);
     });
 });
+
+describe('klíč rozhodnutí (báze judikatury NS + ÚS)', () => {
+    test('zápis senátu, mezery a dvoumístný rok nehrají roli; plénum ÚS se odlišuje', () => {
+        expect(U.decisionKey('III. ÚS 2498/23')).toBe('ús 2498/2023');
+        expect(U.decisionKey('III.ÚS 2498/2023')).toBe('ús 2498/2023');
+        expect(U.decisionKey('Pl.ÚS 43/23')).toBe('plús 43/2023');
+        expect(U.decisionKey('Pl. ÚS 43/23')).not.toBe(U.decisionKey('II. ÚS 43/23'));
+        expect(U.decisionKey('21 Cdo 1234/2019')).toBe('cdo 1234/2019');
+    });
+    test('nález ÚS v bázi zapsaný jinak než v dotazu se najde', () => {
+        const kb = 'Nález Ústavního soudu ze dne 29.11.2023, sp. zn. III.ÚS 2498/23\nSp. zn.: III. ÚS 2498/23';
+        expect(U.check('Shrň nález III. ÚS 2498/23.', { kb, now: NOW })).toBeNull();
+        expect(U.check('Shrň nález Pl. ÚS 2498/23.', { kb, now: NOW }).unknown).toEqual(['Pl. ÚS 2498/23']);
+    });
+});
