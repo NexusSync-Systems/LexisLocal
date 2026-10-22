@@ -138,3 +138,58 @@ describe('NALUS', () => {
         expect(US.hiddenFields(HTML).__VIEWSTATE).toBe('abc&d');
     });
 });
+
+describe('NALUS — tabulka výsledků', () => {
+    const ROW = fs.readFileSync(path.join(__dirname, 'fixtures', 'nalus_result_row.html'), 'utf8');
+    const PAGE = `<td>Výsledky 1 - 80 z celkem 665;&nbsp;stránky:</td><table>${ROW}</table>`;
+
+    test('řádek výsledku → metadata pro hlavičku', () => {
+        const { total, items } = US.parseResultsPage(PAGE);
+        expect(total).toBe(665);
+        expect(items).toHaveLength(1);
+        const it = items[0];
+        expect(it.spisZn).toBe('IV. ÚS 729/23');
+        expect(it.sz).toBe('4-729-23_1');
+        expect(it.ecli).toBe('ECLI:CZ:US:2024:4.US.729.23.1');
+        expect(it.sbnu).toBe('N 3/122 SbNU 34');
+        expect(it.soudceZpravodaj).toBe('Daniela Zemanová');
+        expect(it.datum).toBe('09.01.2024');
+        expect(it.datumVyhlaseni).toBe('17.01.2024');
+        expect(it.typ).toBe('Nález');
+        expect(it.vyznam).toBe(3);
+        expect(it.vyrok).toEqual(['vyhověno']);
+        const h = US.header(US.nalusMeta(it, 'https://nalus.usoud.cz/Search/GetText.aspx?sz=' + it.sz));
+        expect(h).toContain('Sbírka nálezů a usnesení: N 3/122 SbNU 34');
+        expect(h).toContain('nejde o autentické znění');
+        expect(h).not.toContain('CC BY'); // z NALUS, ne z datasetu
+        expect(US.fileNameFor(it)).toBe('US_IV._ÚS_729_23_1.txt');
+    });
+
+    test('sz z NALUS sp. zn. (senát, plénum, stanovisko)', () => {
+        expect(US.szFromNalusZn('IV.ÚS 2206/23 #2')).toBe('4-2206-23_2');
+        expect(US.szFromNalusZn('Pl.ÚS 5/24 #1')).toBe('Pl-5-24_1');
+        expect(US.szFromNalusZn('Pl.ÚS-st. 60/24 #1')).toBe('St-60-24_1');
+        expect(US.szFromNalusZn('I. ÚS 12/25')).toBe('1-12-25_1');
+        expect(US.szFromNalusZn('nesmysl')).toBe('');
+    });
+});
+
+describe('NALUS — okrajové případy výsledků', () => {
+    const ROW = fs.readFileSync(path.join(__dirname, 'fixtures', 'nalus_result_row.html'), 'utf8')
+        .replace('STĚŽOVATEL - FO<br /><br />', 'STĚŽOVATEL - PO<br />STĚŽOVATEL - FO<br /><br />')
+        .replace('N 3/122 SbNU 34', '101/2024 Sb.');
+    test('víc navrhovatelů se nepřilepí k populárnímu názvu; nález ve Sbírce zákonů', () => {
+        const { items } = US.parseResultsPage(`z celkem 1<table>${ROW}</table>`);
+        expect(items[0].navrhovatel).toBe('STĚŽOVATEL - PO; STĚŽOVATEL - FO');
+        expect(items[0].popularniNazev).toBe('Nárok na náhradu cestovních výdajů a náhradu za promeškaný čas');
+        expect(US.header(US.nalusMeta(items[0], 'u'))).toContain('Vyhlášeno ve Sbírce zákonů: 101/2024 Sb.');
+    });
+});
+
+test('NALUS: řádek výsledku bez tříd u buněk se taky rozpozná', () => {
+    const ROW = fs.readFileSync(path.join(__dirname, 'fixtures', 'nalus_result_row.html'), 'utf8')
+        .replace(/<td\s+class='resultData[01]'/g, '<td ');
+    const { items } = US.parseResultsPage(`z celkem 1<table>${ROW}</table>`);
+    expect(items).toHaveLength(1);
+    expect(items[0].spisZn).toBe('IV. ÚS 729/23');
+});

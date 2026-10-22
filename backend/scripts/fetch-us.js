@@ -10,8 +10,12 @@
  *     Zenodo 11618008, CC BY 4.0) — metadata a plné texty 1993–2023 vytažené z NALUS.
  *     Čte se přímo ze staženého ZIPu (přes `unzip -p`, nic se nerozbaluje na disk)
  *     nebo z rozbalené složky s ccc_metadata.csv a ccc_texts.csv.
- *  2) --nalus-probe  Uloží výsledek vyhledávání v NALUS (nálezy a stanoviska od data),
- *     z něhož se doladí doplňování novějších rozhodnutí. NALUS nemá robots.txt;
+ *  2) --nalus  Doplní novější rozhodnutí přímo z NALUS (dataset končí rokem 2023):
+ *     vyhledá nálezy a stanoviska pléna od data --od (výchozí 1. 1. 2024), projde stránky
+ *     výsledků (metadata bere z tabulky výsledků) a stáhne text každého rozhodnutí.
+ *     Slušně: jeden požadavek najednou, pauza --delay (výchozí 2 s), už stažené přeskočí.
+ *     --prepsat stáhne a přepíše i už uložené soubory z NALUS (po opravě parseru).
+ *     --nalus-probe uloží jen první stránku výsledků do scratch/ (ladění). NALUS nemá robots.txt;
  *     podmínky webu dovolují další užití s uvedením zdroje, bezplatnosti a toho, že
  *     nejde o autentické znění — to nese hlavička každého souboru.
  *
@@ -20,7 +24,7 @@
  * Příklady:
  *   node backend/scripts/fetch-us.js --ccc ~/Downloads/ccc_database.zip --out ./judikatura-us
  *   node backend/scripts/fetch-us.js --ccc ~/Downloads/ccc_database.zip --out ./us --od-roku 2010 --limit 50
- *   node backend/scripts/fetch-us.js --nalus-probe --od 01.01.2024
+ *   node backend/scripts/fetch-us.js --nalus --od 01.01.2024 --out ./judikatura-us
  * Pak: node backend/scripts/seed-kb.js --agent resersnik --dir ./judikatura-us --token-file ~/.lexislocal/api_token
  *
  * Přepínače: --typy "Nález,Stanovisko pléna" (lze přidat Usnesení)  --od-roku RRRR
@@ -52,6 +56,9 @@ function parseArgs(argv) {
         else if (k === '--limit') a.limit = parseInt(next(), 10) || 0;
         else if (k === '--vyznam') a.vyznam = parseInt(next(), 10) || 0;
         else if (k === '--nalus-probe') a.nalusProbe = true;
+        else if (k === '--nalus') a.nalus = true;
+        else if (k === '--do') a.do = next();
+        else if (k === '--prepsat') a.prepsat = true;
         else if (k === '--od') a.od = next();
         else if (k === '--delay') a.delay = Math.max(1000, parseInt(next(), 10) || 2000);
         else if (k === '--help' || k === '-h') a.help = true;
@@ -270,6 +277,7 @@ function header(m) {
     L.push('Datum vydání: ' + (m.datum || '?'));
     if (m.datumVyhlaseni) L.push('Datum vyhlášení: ' + m.datumVyhlaseni);
     if (m.ecli) L.push('ECLI: ' + m.ecli);
+    if (m.sbnu) L.push((/SbNU/.test(m.sbnu) ? 'Sbírka nálezů a usnesení: ' : 'Vyhlášeno ve Sbírce zákonů: ') + m.sbnu);
     L.push('Typ rozhodnutí: ' + typ);
     if (m.popularniNazev) L.push('Populární název: ' + m.popularniNazev);
     if (m.formace) L.push('Rozhodl: ' + m.formace);
@@ -416,6 +424,172 @@ function curl(args) {
         { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
 
+// --- Výsledky vyhledávání NALUS ------------------------------------------------------
+function _cells(rowHtml) {
+    // Buňky datového řádku mají class='resultData0|1', některé řádky ale nemají třídu vůbec
+    // (nález I. ÚS 1937/24 na 3. stránce výsledků) — bereme každé <td> kromě tlačítek akcí.
+    return [...String(rowHtml).matchAll(/<td\b(?![^>]*resultActions)[^>]*>([\s\S]*?)<\/td>/g)].map(m => m[1]);
+}
+function _parts(cellHtml) {
+    return String(cellHtml || '').split(/<br\s*\/?>/i).map(p => htmlToText(p)).filter(Boolean);
+}
+const RIMSKE = { I: 1, II: 2, III: 3, IV: 4 };
+/** „IV.ÚS 729/23 #1" → sz „4-729-23_1"; „Pl.ÚS 5/24 #1" → „Pl-5-24_1"; „Pl.ÚS-st. 60/24 #1" → „St-60-24_1". */
+function szFromNalusZn(zn) {
+    const m = /^(I{1,3}|IV|Pl)\.\s*ÚS(-st\.?)?\s+(\d+)\/(\d+)(?:\s*#(\d+))?/i.exec(String(zn || '').trim());
+    if (!m) return '';
+    const pre = m[2] ? 'St' : (/^pl$/i.test(m[1]) ? 'Pl' : RIMSKE[m[1].toUpperCase()]);
+    return `${pre}-${m[3]}-${m[4]}_${m[5] || 1}`;
+}
+/** „Zemanová Daniela" → „Daniela Zemanová" (NALUS řadí příjmení napřed). */
+function jmenoSoudce(s) {
+    const w = String(s || '').trim().split(/\s+/);
+    return w.length === 2 ? `${w[1]} ${w[0]}` : w.join(' ');
+}
+
+/**
+ * Stránka výsledků NALUS → { total, items }. Metadata jsou v tabulce výsledků
+ * (sp. zn., SbNU, ECLI, soudce zpravodaj, navrhovatel, populární název, data,
+ * předpisy, forma + význam, výrok, předmět a rejstřík).
+ */
+function parseResultsPage(html) {
+    const h = String(html || '');
+    const total = parseInt((/z celkem\s+(\d+)/.exec(htmlToText(h)) || [])[1], 10) || 0;
+    const items = [];
+    for (const row of h.matchAll(/<tr class='resultData[01]'>([\s\S]*?)<\/tr>/g)) {
+        const c = _cells(row[1]);
+        if (c.length < 7 || !/ResultDetail\.aspx/.test(c[1])) continue;
+        const id = _parts(c[1]);
+        const znRaw = id[0] || '';
+        const ecli = id.find(p => /^ECLI:/.test(p)) || '';
+        const sbnu = id.find(p => /SbNU|\bSb\./.test(p) && !/^ECLI:/.test(p)) || '';
+        const soudce = id.slice(1).filter(p => p !== ecli && p !== sbnu).pop() || '';
+        // Navrhovatelé a populární název odděluje prázdný řádek (<br /><br />); navrhovatelů může být víc.
+        const [navHtml, ...nazevHtml] = String(c[2] || '').split(/<br\s*\/?>\s*<br\s*\/?>/i);
+        const dates = _parts(c[3]);
+        const forma = _parts(c[5]);
+        const zn = znRaw.replace(/\s*#\d+\s*$/, '');
+        const zEcli = spZnFromEcli(ecli);
+        items.push({
+            spisZn: formatSpZn(zn) || (zEcli ? zEcli.spisZn : ''),
+            poradi: (/#(\d+)/.exec(znRaw) || [])[1] || (zEcli ? zEcli.poradi : '1'),
+            sz: szFromNalusZn(znRaw),
+            sbnu,
+            ecli,
+            soudceZpravodaj: jmenoSoudce(soudce),
+            navrhovatel: _parts(navHtml).join('; '),
+            popularniNazev: _parts(nazevHtml.join('<br/>')).join(' '),
+            datum: nalusDate(dates[0]),
+            datumVyhlaseni: nalusDate((dates.find(d => /^\(/.test(d)) || '')),
+            rok: parseInt(nalusDate(dates[0]).slice(-4), 10) || 0,
+            predpisy: _parts(c[4]).map(pojmenujPredpis),
+            typ: forma[0] || '',
+            vyznam: parseInt(forma[1], 10) || 0,
+            vyrok: _parts(c[6]),
+            rejstrik: c[8] ? _parts(c[8]) : [],
+        });
+    }
+    return { total, items };
+}
+
+/** Metadata z výsledků + text ze stránky rozhodnutí → objekt pro header(). */
+function nalusMeta(it, url) {
+    return {
+        ecli: it.ecli, spisZn: it.spisZn, poradi: it.poradi, typ: it.typ, popularniNazev: it.popularniNazev,
+        datum: it.datum, rok: it.rok, datumVyhlaseni: it.datumVyhlaseni, vyznam: it.vyznam, typRizeni: '',
+        soudceZpravodaj: it.soudceZpravodaj, formace: /^Pl/.test(it.spisZn) ? 'plénum' : (/^([IV]+)\./.exec(it.spisZn) || [])[1] ? `${/^([IV]+)\./.exec(it.spisZn)[1]}. senát` : '',
+        vyrok: it.vyrok, napadenyAkt: [], ustavniPredpisy: [], predpisy: it.predpisy, predmet: [],
+        rejstrik: it.rejstrik, odlisneStanovisko: [], sbnu: it.sbnu, url, zdrojDat: 'nalus',
+    };
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/** Odešle vyhledávací formulář (nálezy + stanoviska pléna od data) a vrátí HTML 1. stránky výsledků. */
+async function nalusSearch(a, jar) {
+    const form = curl(['-c', jar, '-b', jar, `${NALUS}/Search/Search.aspx`]);
+    const fields = Object.assign(hiddenFields(form), {
+        'ctl00$MainContent$nalezy': 'on',
+        'ctl00$MainContent$stanoviska_plena': 'on',
+        'ctl00$MainContent$decidedFrom': a.od || '01.01.2024',
+        'ctl00$MainContent$razeni': '3',
+        'ctl00$MainContent$resultsPageSize': '80',
+        'ctl00$MainContent$but_search': 'Vyhledat',
+    });
+    if (a.do) fields['ctl00$MainContent$decidedTo'] = a.do;
+    const data = [];
+    for (const [k, v] of Object.entries(fields)) data.push('--data-urlencode', `${k}=${v}`);
+    await sleep(a.delay);
+    return curl(['-c', jar, '-b', jar, ...data, `${NALUS}/Search/Search.aspx`]);
+}
+
+/** Soubor vznikl z NALUS (ne z datasetu) — jen takové smí --prepsat přepsat. */
+function _zNalus(file) {
+    try { return !/^Data: /m.test(fs.readFileSync(file, 'utf8').slice(0, 8000)); } catch (e) { return false; }
+}
+
+async function importNalus(a) {
+    const jar = path.join(os.tmpdir(), `nalus_${process.pid}.cookies`);
+    fs.mkdirSync(a.out, { recursive: true });
+    const existing = new Set(fs.readdirSync(a.out));
+    let saved = 0, already = 0, failed = 0, filtered = 0;
+    try {
+        console.log(`🔎 NALUS: nálezy a stanoviska pléna od ${a.od || '01.01.2024'}${a.do ? ` do ${a.do}` : ''}…`);
+        const prvni = await nalusSearch(a, jar);
+        let page = Object.assign(parseResultsPage(prvni), { html: prvni });
+        const total = page.total;
+        console.log(`   nalezeno ${total}`);
+        const items = page.items.slice();
+        const zkontroluj = (html, p, n) => {
+            // Každý výsledek má odkaz ResultDetail.aspx; když jich je víc než rozpoznaných řádků,
+            // uložíme stránku pro ladění parseru (scratch/nalus_page_<p>.html).
+            const odkazu = (String(html).match(/ResultDetail\.aspx\?id=/g) || []).length;
+            if (odkazu > n) {
+                fs.mkdirSync('scratch', { recursive: true });
+                fs.writeFileSync(path.join('scratch', `nalus_page_${p}.html`), html);
+                console.log(`  ⚠️ stránka ${p + 1}: rozpoznáno ${n} z ${odkazu} výsledků → scratch/nalus_page_${p}.html`);
+            }
+        };
+        zkontroluj(page.html, 0, page.items.length);
+        for (let p = 1; items.length < total && p < 1000; p++) {
+            await sleep(a.delay);
+            const html = curl(['-c', jar, '-b', jar, `${NALUS}/Search/Results.aspx?page=${p}`]);
+            page = parseResultsPage(html);
+            zkontroluj(html, p, page.items.length);
+            if (!page.items.length) break;
+            items.push(...page.items);
+        }
+        console.log(`   metadata ${items.length}/${total}`);
+        for (const it of items) {
+            if (a.limit && saved >= a.limit) break;
+            if (!it.spisZn || !it.sz) { failed++; continue; }
+            if (a.typy && a.typy.length && !a.typy.includes(it.typ)) { filtered++; continue; }
+            const name = fileNameFor(it);
+            if (existing.has(name) && !(a.prepsat && _zNalus(path.join(a.out, name)))) { already++; continue; }
+            const url = `${NALUS}/Search/GetText.aspx?sz=${it.sz}`;
+            await sleep(a.delay);
+            let d;
+            try { d = parseNalusText(curl(['-b', jar, url]), url); }
+            catch (e) {
+                await sleep(a.delay * 5); // jedno opakování po delší pauze (výpadek / přetížení)
+                try { d = parseNalusText(curl(['-b', jar, url]), url); }
+                catch (e2) { console.log(`  ⚠️ ${it.spisZn}: ${String(e2.stderr || e2.message).trim().split('\n')[0]}`); failed++; continue; }
+            }
+            if (!d.text || d.text.length < 200) { failed++; continue; }
+            const m = nalusMeta(it, url);
+            if (!m.ecli) m.ecli = d.ecli;
+            fs.writeFileSync(path.join(a.out, name), header(m) + d.text + '\n');
+            existing.add(name);
+            saved++;
+            if (saved % 25 === 0) console.log(`  … ${saved} uloženo`);
+        }
+    } finally {
+        try { fs.unlinkSync(jar); } catch (e) { /* best-effort */ }
+    }
+    console.log(`✅ Uloženo ${saved}, už staženo ${already}, mimo filtr ${filtered}, selhalo ${failed} → ${a.out}`);
+    console.log(`   Další krok: node backend/scripts/seed-kb.js --agent resersnik --dir "${a.out}" --token-file ~/.lexislocal/api_token`);
+}
+
 async function nalusProbe(a) {
     const od = a.od || '01.01.2024';
     const jar = path.join(os.tmpdir(), `nalus_${process.pid}.cookies`);
@@ -454,8 +628,9 @@ async function nalusProbe(a) {
 
 async function main() {
     const a = parseArgs(process.argv);
-    if (a.help || (!a.ccc && !a.nalusProbe)) { console.log(fs.readFileSync(__filename, 'utf8').split('*/')[0]); process.exit(a.help ? 0 : 1); }
+    if (a.help || (!a.ccc && !a.nalusProbe && !a.nalus)) { console.log(fs.readFileSync(__filename, 'utf8').split('*/')[0]); process.exit(a.help ? 0 : 1); }
     if (a.nalusProbe) return nalusProbe(a);
+    if (a.nalus) return importNalus(a);
     return importCcc(a);
 }
 
@@ -463,5 +638,5 @@ if (require.main === module) main().catch(e => { console.error('❌ ' + e.messag
 
 module.exports = {
     CsvParser, parseCsv, readCsv, rVector, formatSpZn, czDate, metaFromRow, matches, header, cleanText,
-    fileNameFor, spZnFromEcli, pojmenujPredpis, parseNalusText, resultLinks, hiddenFields, ecliFromSz, nalusDate, importCcc,
+    fileNameFor, spZnFromEcli, parseResultsPage, szFromNalusZn, jmenoSoudce, nalusMeta, pojmenujPredpis, parseNalusText, resultLinks, hiddenFields, ecliFromSz, nalusDate, importCcc,
 };
