@@ -81,3 +81,14 @@ describe('fetch-nss-sbirka', () => {
         expect(nss).toMatch(/^Usnesení – Nejvyšší správní soud/);
     });
 });
+
+test('rozhodnutí publikované jen právní větou (bez odůvodnění) se nezahodí', () => {
+    const html = `<div CLASS="jud"><div CLASS="nadpis1">Ej 48/2005</div>
+<div CLASS="pravni-veta-nadpis">Řízení před soudem: doručení zásilky</div>
+<div CLASS="pravni-veta">Převzala-li zásilku osoba žijící s adresátem ve společné domácnosti, nemůže stěžovatel namítat vadné doručení.</div>
+<div CLASS="p"><div CLASS="kurziva">(Podle rozsudku Nejvyššího správního soudu ze dne 5. 1. 2005, čj. 3 Azs 403/2004-61)</div></div>
+</div><hr>`;
+    const dec = N.parseDecision(html);
+    expect(dec.pravniVeta).toMatch(/^Převzala-li zásilku/);
+    expect(dec.text).toBe('(Podle rozsudku Nejvyššího správního soudu ze dne 5. 1. 2005, čj. 3 Azs 403/2004-61)');
+});

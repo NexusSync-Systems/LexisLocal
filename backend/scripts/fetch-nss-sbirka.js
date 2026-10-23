@@ -228,8 +228,10 @@ async function main() {
             let dec;
             try { dec = parseDecision(await getText(d.url)); }
             catch (e) { console.log(`  ⚠️ ${d.cislo || d.url}: ${e.message}`); failed++; continue; }
-            if (!dec.text || dec.text.length < 200) { console.log(`  ⚠️ ${d.cislo}: prázdný text (${d.url})`); failed++; continue; }
-            fs.writeFileSync(path.join(a.out, fileNameFor(d)), header(d, dec) + dec.text + '\n');
+            // Část rozhodnutí (např. 2007, 2008, 2011, 2012) Sbírka publikuje jen jako právní větu
+            // s odkazem „(Podle rozsudku …)" bez odůvodnění — i to je plnohodnotný záznam.
+            if (!dec.pravniVeta && (!dec.text || dec.text.length < 200)) { console.log(`  ⚠️ ${d.cislo}: prázdný text (${d.url})`); failed++; continue; }
+            fs.writeFileSync(path.join(a.out, fileNameFor(d)), header(d, dec) + (dec.text || '') + '\n');
             done.add(prefixFor(d));
             saved++;
             if (saved % 50 === 0) console.log(`  … ${saved} uloženo (${issue.replace(BASE + '/cz/', '')})`);
