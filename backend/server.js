@@ -390,6 +390,8 @@ if (require.main === module) {
             console.log(`🚀 LexisLocal AI backend běží na http://${BIND_HOST}:${PORT}`);
         });
     }
+    // Znalostní báze (zákony + judikatura) do paměti hned po startu, ne až při prvním dotazu.
+    require('./lib/rag').warmKnowledgeBases().catch(e => console.warn('⚠️ RAG: předehřátí bází selhalo:', e.message));
 }
 
 module.exports = app;

@@ -50,7 +50,8 @@ function _centroidFor(scope) {
         const chunks = rag.loadPartition(scope).chunks || [];
         let dim = 0, n = 0, sum = null;
         for (const c of chunks) {
-            const v = c && c.vector;
+            // Int8 vektory (kompaktní partition) mají škálu na kousek — pro průměr je potřeba skutečná hodnota.
+            const v = c && (typeof rag.floatVector === 'function' ? rag.floatVector(c) : c.vector);
             // Pole i Float32Array (vektory načtené z disku jsou typované pole, viz rag.isVector).
             if (!(Array.isArray(v) || ArrayBuffer.isView(v)) || !v.length) continue;
             if (!sum) { dim = v.length; sum = new Array(dim).fill(0); }

@@ -47,6 +47,67 @@ function _hybridAlpha() {
 // robustní default (silný zásah v kterémkoliv žebříčku táhne dokument nahoru, škály skóre
 // nevadí). Zapíná RAG_RRF=1; konstanta K přes RAG_RRF_K (default 60). Má přednost před
 // lineárním hybridem.
+// Hybrid nad velkou bází: lexikální skóre (tokenizace textu každého kousku) stojí ~0,06 ms
+// na kousek — u báze s judikaturou NS/ÚS/NSS (~300 tis. kousků) to bylo ~10–20 s na dotaz,
+// sémantika přitom ~1 s. Lexikální složka se proto počítá jen pro POOL nejlepších kandidátů
+// podle sémantiky (výchozí 400; α=0.8 = lexikální složka hlavně přeřazuje špičku). Ostatní
+// kousky by s α·sem stejně skončily pod nimi. RAG_HYBRID_POOL=0 = počítat vše (staré chování).
+function _hybridPool(opts) {
+    if (opts && Number.isInteger(opts.hybridPool) && opts.hybridPool >= 0) return opts.hybridPool;
+    const n = parseInt(process.env.RAG_HYBRID_POOL, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 400;
+}
+// --- Zákony vs. judikatura ve znalostní bázi ----------------------------------------
+// Báze rešeršníka má ~10 tis. kousků zákonů a ~290 tis. kousků judikatury (NS, ÚS, NSS).
+// Měření 23. 10. 2026 (kb_regression.js, 124 dotazů na paragraf): po nahrání judikatury
+// spadl správný paragraf v top 3 z 82 % na 51 % — judikatura zabrala 66 % míst, protože
+// rozhodnutí citují tytéž paragrafy a je jich třicetkrát víc. Agent ale potřebuje OBOJÍ:
+// znění zákona i výklad soudů. Proto:
+//  • pool kandidátů hybridu se bere zvlášť ze zákonů (RAG_HYBRID_POOL_LAWS, výchozí 100),
+//    aby zákony nevypadly už před přeřazením,
+//  • výsledky agenta (dedupeKb) se skládají z podílu zákonů RAG_KB_LAW_SHARE (výchozí 0.6
+//    → u k=3 dva paragrafy a jedno rozhodnutí, u k=5 tři a dvě); chybí-li jeden druh,
+//    doplní se druhým. Pořadí mezi vybranými zůstává podle skóre. RAG_KB_LAW_SHARE=0 = vypnuto.
+// Judikaturu poznáme podle scope (`_kb_judikatura`, `_kb_obor_*`) nebo názvu souboru
+// z fetch skriptů (NS_…, US_…, NSS_…); RAG_KB_JUD_RE ho umí přepsat.
+function _judRe() {
+    try { return new RegExp(process.env.RAG_KB_JUD_RE || '^(NS|NSS|US)_'); } catch (e) { return /^(NS|NSS|US)_/; }
+}
+function isJudikaturaChunk(c) {
+    if (!c || typeof c.scope !== 'string' || c.scope.indexOf(KB_PREFIX) !== 0) return false;
+    if (c.scope === '_kb_judikatura' || c.scope.indexOf('_kb_obor_') === 0) return true;
+    return _judRe().test(String(c.fileName || ''));
+}
+function isLawChunk(c) {
+    return !!c && typeof c.scope === 'string' && c.scope.indexOf(KB_PREFIX) === 0 && !isJudikaturaChunk(c);
+}
+function _lawShare(opts) {
+    if (opts && typeof opts.kbLawShare === 'number') return opts.kbLawShare;
+    const v = parseFloat(process.env.RAG_KB_LAW_SHARE);
+    return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.6;
+}
+function _lawPool() {
+    const n = parseInt(process.env.RAG_HYBRID_POOL_LAWS, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 100;
+}
+/**
+ * Z setříděných výsledků vybere `limit` tak, aby zákony měly ceil(limit·share) míst
+ * (pokud jsou k dispozici), zbytek nejlepší ostatní (judikatura, klientské spisy).
+ * Pořadí vybraných zachová. Čistá funkce.
+ */
+function mixKbResults(sorted, limit, share) {
+    if (!(share > 0) || !Array.isArray(sorted) || sorted.length <= limit) return sorted;
+    const laws = sorted.filter(r => typeof r.scope === 'string' && r.scope.indexOf(KB_PREFIX) === 0 && !isJudikaturaChunk(r));
+    if (!laws.length || laws.length === sorted.length) return sorted;
+    const lawSlots = Math.min(laws.length, Math.ceil(limit * share));
+    const lawSet = new Set(laws);
+    const chosen = new Set(laws.slice(0, lawSlots));
+    for (const r of sorted) { if (chosen.size >= limit) break; if (!chosen.has(r) && !lawSet.has(r)) chosen.add(r); }
+    for (const r of laws) { if (chosen.size >= limit) break; chosen.add(r); } // málo ostatních → doplnit zákony
+    const picked = sorted.filter(r => chosen.has(r));
+    return picked.concat(sorted.filter(r => !chosen.has(r)));
+}
+
 function _rrfEnabled() {
     const v = String(process.env.RAG_RRF == null ? '' : process.env.RAG_RRF).trim().toLowerCase();
     return v === '1' || v === 'true' || v === 'yes' || v === 'on';
@@ -140,6 +201,9 @@ function _b64ToVec(b64) {
     const n = Math.floor(buf.byteLength / 4);
     // Kopie do vlastního (zarovnaného) bufferu — Buffer z poolu nemusí být zarovnaný na 4 B
     // a sdílený pool by držel v paměti víc, než je potřeba.
+    // Vlastní (nesdílený, zarovnaný) buffer → pohled bez kopie. Malé buffery z poolu se kopírují,
+    // aby vektor nedržel v paměti celý sdílený slab.
+    if (buf.byteOffset % 4 === 0 && buf.buffer.byteLength === buf.byteLength) return new Float32Array(buf.buffer, buf.byteOffset, n);
     const out = new Float32Array(n);
     out.set(new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + n * 4)));
     return out;
@@ -158,11 +222,94 @@ function _dedupChunks(chunks) {
     }
     return out;
 }
+// --- Kompaktní podoba velkých partitionů v paměti -----------------------------------
+// Měření 24. 10. 2026: báze rešeršníka (297 tis. kousků) zabírala ~2,8 GB haldy + vektory
+// mimo haldu (RSS ~8 GB) a Mac ji odkládal do swapu — hledání trvalo 10–20 s místo ~1 s.
+// Partition s aspoň RAG_COMPACT_MIN kousky (výchozí 2000) se proto po načtení uloží úsporně:
+//  • texty v jednom UTF-8 bufferu na shard (české texty jsou v JS po 2 B/znak), `text` je
+//    getter, který úsek dekóduje až při přístupu (pool hybridu, výsledky — jednotky stovek),
+//  • vektory v jednom souvislém bloku na shard jako Int8 se škálou na kousek (RAG_VEC_INT8=0 →
+//    Float32). Kosinová podobnost na škále nezávisí, takže `cosineSimilarity(dotaz, int8)` dává
+//    stejné pořadí; skutečné hodnoty vrací floatVector(c) (zápis na disk, centroidy oborů).
+// Na disku se nic nemění: _encodeChunkForDisk zapisuje float32 a plný text jako dřív.
+const TXT_BUF = Symbol('txtBuf'), TXT_OFF = Symbol('txtOff'), TXT_LEN = Symbol('txtLen'), TXT_OWN = Symbol('txtOwn');
+const TEXT_COMPACT = Symbol('textCompact');
+class KbChunk {
+    constructor(src, buf, off, len) {
+        for (const k of Object.keys(src)) { if (k !== 'text') this[k] = src[k]; }
+        this[TXT_BUF] = buf; this[TXT_OFF] = off; this[TXT_LEN] = len;
+    }
+    get text() { return this[TXT_BUF] ? this[TXT_BUF].toString('utf8', this[TXT_OFF], this[TXT_OFF] + this[TXT_LEN]) : this[TXT_OWN]; }
+    set text(v) { this[TXT_BUF] = null; this[TXT_OWN] = v; }
+}
+function _compactMin() {
+    const n = parseInt(process.env.RAG_COMPACT_MIN, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 2000; // 0 = vypnuto
+}
+function _int8Enabled() { return String(process.env.RAG_VEC_INT8 == null ? '1' : process.env.RAG_VEC_INT8).trim() !== '0'; }
+
+/** Skutečné (float) hodnoty vektoru — u Int8 přenásobí škálou kousku. */
+function floatVector(c) {
+    const v = c && c.vector;
+    if (v instanceof Int8Array) {
+        const s = Number(c.vecScale) || 1;
+        const out = new Float32Array(v.length);
+        for (let i = 0; i < v.length; i++) out[i] = v[i] * s;
+        return out;
+    }
+    return v;
+}
+/** Značka textu pro porovnání shardů bez dekódování: nezměněný kompaktní text = konstanta. */
+function _textTag(c) { return c instanceof KbChunk && c[TXT_BUF] ? TEXT_COMPACT : c.text; }
+
+/** Pole kousků (dekódovaných z disku) → kompaktní KbChunk se sdíleným bufferem textů a vektorů. */
+function _compactChunks(chunks) {
+    const n = chunks.length;
+    if (!n) return chunks;
+    const texts = new Array(n);
+    let total = 0;
+    for (let i = 0; i < n; i++) { const t = chunks[i].text; texts[i] = typeof t === 'string' ? t : ''; total += Buffer.byteLength(texts[i]); }
+    const buf = Buffer.allocUnsafeSlow(total);
+    let dim = 0;
+    for (const c of chunks) { if (isVector(c.vector)) { dim = c.vector.length; break; } }
+    const int8 = _int8Enabled();
+    const vbuf = dim ? (int8 ? new Int8Array(n * dim) : new Float32Array(n * dim)) : null;
+    const out = new Array(n);
+    let off = 0;
+    for (let i = 0; i < n; i++) {
+        const c = chunks[i];
+        const len = buf.write(texts[i], off, 'utf8');
+        const k = new KbChunk(c, buf, off, len);
+        off += len;
+        const v = c.vector;
+        if (vbuf && isVector(v) && v.length === dim) {
+            const view = vbuf.subarray(i * dim, (i + 1) * dim);
+            if (int8) {
+                let max = 0;
+                for (let j = 0; j < dim; j++) { const a = Math.abs(v[j]); if (a > max) max = a; }
+                const sc = max > 0 ? max / 127 : 1;
+                for (let j = 0; j < dim; j++) view[j] = Math.round(v[j] / sc);
+                k.vecScale = sc;
+            } else {
+                view.set(v);
+            }
+            k.vector = view;
+            // Norma uloženého vektoru předem — hledání pak počítá jen skalární součin.
+            let nn = 0;
+            for (let j = 0; j < dim; j++) nn += view[j] * view[j];
+            k.vecNorm = Math.sqrt(nn);
+        }
+        out[i] = k;
+    }
+    return out;
+}
+
 // Chunk → diskový tvar: vektor jako base64 (`vec`), bez pole `vector`.
 function _encodeChunkForDisk(c) {
     const out = {};
-    for (const k of Object.keys(c)) { if (k !== 'vector' && k !== 'vec') out[k] = c[k]; }
-    const b64 = _vecToB64(c.vector);
+    for (const k of Object.keys(c)) { if (k !== 'vector' && k !== 'vec' && k !== 'vecScale' && k !== 'vecNorm') out[k] = c[k]; }
+    if (c instanceof KbChunk) out.text = c.text; // text je u kompaktního kousku getter (není vlastní klíč)
+    const b64 = _vecToB64(floatVector(c));
     if (b64) out.vec = b64;
     else out.vector = null; // neembedovaný chunk: zachovej explicitní null (ne undefined)
     return out;
@@ -243,13 +390,13 @@ function _diskSig(base, keyTag) {
     }
 }
 function _sliceSig(chunks) {
-    return chunks.map(c => ({ c, v: c.vector, e: c.embedded, t: c.text }));
+    return chunks.map(c => ({ c, v: c.vector, e: c.embedded, t: _textTag(c) }));
 }
 function _sameSlice(prev, cur) {
     if (!prev || prev.length !== cur.length) return false;
     for (let i = 0; i < cur.length; i++) {
         const p = prev[i], c = cur[i];
-        if (p.c !== c || p.v !== c.vector || p.e !== c.embedded || p.t !== c.text) return false;
+        if (p.c !== c || p.v !== c.vector || p.e !== c.embedded || p.t !== _textTag(c)) return false;
     }
     return true;
 }
@@ -372,19 +519,28 @@ function loadPartition(directoryName) {
         // → čtou se jako jeden shard (zpětná kompatibilita).
         const first = JSON.parse(secureCrypto.decrypt(key, JSON.parse(fs.readFileSync(shard0, 'utf8'))));
         const shardCount = (first && Number.isInteger(first._shards) && first._shards > 0) ? first._shards : 1;
-        const shardLens = [(first.chunks || []).length];
-        const allChunks = (first.chunks || []).slice();
+        // Velká partition se zhušťuje shard po shardu, aby v paměti nikdy neležela celá
+        // v původní (rozměrné) podobě — špička je kompaktní zbytek + jeden shard.
+        const min = _compactMin();
+        const compact = min > 0 && (shardCount > 1 ? shardCount * SHARD_MAX_CHUNKS : (first.chunks || []).length) >= min;
+        const prep = arr => {
+            const dec = arr.map(_decodeChunkFromDisk);
+            return compact ? _compactChunks(dec) : dec;
+        };
+        const firstChunks = prep(first.chunks || []);
+        const shardLens = [firstChunks.length];
+        const allChunks = firstChunks;
+        first.chunks = null;
         for (let s = 1; s < shardCount; s++) {
             const p = _shardPath(base, s);
             if (!fs.existsSync(p)) break;
             const obj = JSON.parse(secureCrypto.decrypt(key, JSON.parse(fs.readFileSync(p, 'utf8'))));
-            const arr = (obj && Array.isArray(obj.chunks)) ? obj.chunks : [];
+            const arr = prep((obj && Array.isArray(obj.chunks)) ? obj.chunks : []);
             for (const c of arr) allChunks.push(c); // bez push(...arr): velké shardy by přetekly zásobník
             shardLens.push(arr.length);
         }
-        const merged = Object.assign({}, first, { chunks: allChunks });
-        delete merged._shards;
-        const decoded = _decodeIndexFromDisk(merged);
+        const decoded = Object.assign({}, first, { chunks: allChunks });
+        delete decoded._shards;
 
         if (useCache && sigBefore && sigBefore === _diskSig(base, keyTag)) {
             const meta = Object.assign({}, decoded); delete meta.chunks;
@@ -842,7 +998,7 @@ async function reindexKnowledge(scope, onProgress, opts = {}) {
         const cur = c.vector;
         if (!force && targetDim && isVector(cur) && cur.length === targetDim) {
             // už embedováno správným modelem → recykluj, žádné volání ollamy
-            vectors[c.id] = cur;
+            vectors[c.id] = floatVector(c); // u Int8 vrátí skutečné hodnoty (jinak by se zapsala čísla bez škály)
             embedded++; reused++;
         } else {
             try {
@@ -903,6 +1059,32 @@ function listJudikaturaScopes() {
     return _listKbScopes().filter(sc => sc === '_kb_judikatura' || String(sc).indexOf('_kb_obor_') === 0);
 }
 
+/**
+ * Načte znalostní báze agentů do paměti hned po startu serveru (ne až při prvním dotazu).
+ * Báze s judikaturou se načítá ~1 min; bez toho by na ni čekal první advokát.
+ * Načítání je synchronní (dešifrování + JSON) — proto až chvíli po startu a s logem.
+ * Vypnutí: RAG_WARMUP=0. Vrací Promise s přehledem (pro testy a log).
+ */
+function warmKnowledgeBases(opts = {}) {
+    const off = String(process.env.RAG_WARMUP == null ? '1' : process.env.RAG_WARMUP).trim() === '0';
+    if (off) return Promise.resolve({ skipped: true });
+    const delayMs = Number.isFinite(opts.delayMs) ? opts.delayMs : 3000;
+    return new Promise(resolve => {
+        const t = setTimeout(async () => {
+            const out = [];
+            for (const scope of _listKbScopes()) {
+                await new Promise(r => setImmediate(r)); // mezi bázemi pustit čekající požadavky
+                const t0 = Date.now();
+                const n = (loadPartition(scope).chunks || []).length;
+                out.push({ scope, chunks: n, ms: Date.now() - t0 });
+                if (n) console.log(`🧠 RAG: báze ${scope} připravena (${n} kousků, ${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+            }
+            resolve({ scopes: out });
+        }, delayMs);
+        if (t.unref) t.unref();
+    });
+}
+
 /** Vypíše dokumenty ve znalostní bázi agenta (název + počet chunků). */
 function listKnowledge(scope) {
     const part = loadPartition(scope);
@@ -940,6 +1122,15 @@ async function deleteDocumentIndex(fileName) {
  */
 async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     if (!query || !query.trim()) return [];
+    // Volitelné měření fází (kb_regression.js): opts.timing = {} → doby jednotlivých kroků v ms.
+    const _T = opts && opts.timing && typeof opts.timing === 'object' ? opts.timing : null;
+    let _t0 = _T ? process.hrtime.bigint() : 0n;
+    const _mark = name => {
+        if (!_T) return;
+        const t = process.hrtime.bigint();
+        _T[name] = (_T[name] || 0) + Number(t - _t0) / 1e6;
+        _t0 = t;
+    };
 
     // Fallback je OPT-IN: přísné volání (bez opts) při výpadku modelu vyhodí chybu
     // (fail-closed) — kritické pro conflicts.js, kde „nemožnost prověřit" ≠ „bez
@@ -950,6 +1141,7 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     let embeddingFailed = false;
     try {
         queryVector = await getEmbedding(query);
+        _mark('embedding');
     } catch (e) {
         if (!allowLexicalFallback) {
             console.error(`❌ RAG: Vyhledávání selhalo, model nedostupný:`, e.message);
@@ -1010,11 +1202,14 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     if (filters && Array.isArray(filters.scopes) && filters.scopes.length > 0) {
         for (const scope of filters.scopes) {
             if (typeof scope === 'string' && scope.indexOf(KB_PREFIX) === 0) {
-                for (const c of (loadPartition(scope).chunks || [])) chunks.push(c);
+                // opts.kbFilter: jen pro měření (např. „jen zákony" vs. plná báze), produkce ho nepoužívá.
+                const keep = opts && typeof opts.kbFilter === 'function' ? opts.kbFilter : null;
+                for (const c of (loadPartition(scope).chunks || [])) if (!keep || keep(c)) chunks.push(c);
             }
         }
     }
 
+    _mark('kandidati');
     // Sémantický režim: kosinová podobnost vektorů (chunky bez vektoru → 0, jako dřív).
     // Lexikální fallback: kosinová podobnost term-frekvencí nad textem chunku.
     // Hybrid: blend obou. withComponents: vrátí i dílčí skóre (sem/lex) — pro sweep,
@@ -1025,9 +1220,45 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     const withComponents = !!(opts && opts.withComponents);
     const needLex = embeddingFailed || hybrid || withComponents || rrf;
     const qTokens = needLex ? _lexTokens(query) : null;
+    // Hybrid s poolem: nejdřív sémantika pro všechny, lexikální složka jen pro nejlepší kandidáty.
+    const pool = _hybridPool(opts);
+    // Platí i pro čistou sémantiku: pořadí podle skóre = pořadí podle sémantiky, takže top pool
+    // je přesný — a výsledky (s textem) se nevyrábějí pro všechny kousky báze.
+    if ((hybrid || !needLex) && !withComponents && pool > 0 && chunks.length > pool) {
+        const sems = new Float64Array(chunks.length);
+        const q = Float32Array.from(queryVector);
+        let qn = 0;
+        for (let j = 0; j < q.length; j++) qn += q[j] * q[j];
+        qn = Math.sqrt(qn);
+        for (let i = 0; i < chunks.length; i++) {
+            const c = chunks[i], v = c.vector;
+            // Rychlá cesta pro kompaktní kousky (předpočítaná norma); jinak obecný výpočet.
+            if (c.vecNorm > 0 && qn > 0 && v && v.length === q.length) {
+                let dot = 0;
+                for (let j = 0; j < q.length; j++) dot += q[j] * v[j];
+                sems[i] = dot / (qn * c.vecNorm);
+            } else {
+                sems[i] = cosineSimilarity(queryVector, v);
+            }
+        }
+        const order = Array.from({ length: chunks.length }, (_, i) => i).sort((a, b) => sems[b] - sems[a]);
+        const idx = order.slice(0, pool);
+        // Zákony mají vlastní pool, aby je převaha judikatury nevytlačila už tady.
+        const lawPool = _lawPool();
+        if (lawPool > 0) {
+            const inPool = new Set(idx);
+            let added = 0;
+            for (const i of order) { if (added >= lawPool) break; if (isLawChunk(chunks[i])) { if (!inPool.has(i)) idx.push(i); added++; } }
+        }
+        const semOf = new Map(idx.map(i => [chunks[i], sems[i]]));
+        chunks = idx.map(i => chunks[i]);
+        opts = Object.assign({}, opts, { _semOf: semOf });
+    }
+    _mark('semantika+pool');
+    const semCache = opts && opts._semOf;
     const results = chunks.map(chunk => {
         const txt = chunk.text || '';
-        const sem = embeddingFailed ? 0 : cosineSimilarity(queryVector, chunk.vector);
+        const sem = embeddingFailed ? 0 : (semCache && semCache.has(chunk) ? semCache.get(chunk) : cosineSimilarity(queryVector, chunk.vector));
         const lex = needLex ? lexicalScore(qTokens, txt) : 0;
         let score, method;
         if (embeddingFailed) { score = lex; method = 'lexical'; }
@@ -1036,7 +1267,7 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
         else { score = sem; method = 'semantic'; }
         const r = {
             fileName: chunk.fileName,
-            text: chunk.text,
+            text: txt,
             score: score,
             method: method,
             degraded: embeddingFailed,
@@ -1049,12 +1280,14 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     });
 
     // RRF: fúze pořadí ze sémantického a lexikálního žebříčku (r.semantic/r.lexical).
+    _mark('skore');
     if (rrf && results.length) _applyRrf(results, _rrfK());
 
     results.sort((a, b) => b.score - a.score);
     // dedupeKb: z téhož souboru ZNALOSTNÍ BÁZE (např. „§ 204“) max. 1 úsek — dlouhý
     // paragraf jinak zabere víc míst v top-k a vytlačí další relevantní ustanovení.
     // Klientské spisy se nededuplikují (u dlouhé smlouvy chceme víc jejích částí).
+    _mark('razeni');
     let ranked = opts && opts.dedupeKb ? dedupeKbResults(results) : results;
     // Volitelný reranker (lib/rerank_service.js): jen když o něj volající požádá (opts.rerank)
     // A je zapnutý v env (RAG_RERANK=1; služba RAG_RERANK_URL, jinak ONNX v procesu). Mění POŘADÍ top-K, ne `score` —
@@ -1062,6 +1295,9 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     if (opts && opts.rerank && !embeddingFailed && rerankService.rerankEnabled()) {
         ranked = await rerankService.rerankResults(query, ranked);
     }
+    // Agent (dedupeKb) dostane zákony i judikaturu v daném poměru — viz mixKbResults.
+    if (opts && opts.dedupeKb && opts.kbMix !== false) ranked = mixKbResults(ranked, limit, _lawShare(opts));
+    _mark('dedup+mix');
     return ranked.slice(0, limit);
 }
 
@@ -1127,5 +1363,9 @@ module.exports = {
     decodeChunkFromDisk: _decodeChunkFromDisk,
     applyRrf: _applyRrf,
     isVector,
+    floatVector,
+    warmKnowledgeBases,
+    isJudikaturaChunk,
+    mixKbResults,
     _resetPartitionCache
 };
