@@ -45,8 +45,22 @@ describe('task-runner — schválené úlohy', () => {
 
     test('příkazy jsou pevné (node / npx / git), nikdy z požadavku', () => {
         for (const u of Object.keys(R.ULOHY)) {
-            const c = R.sestav({ uloha: u, parametry: u === 'seed_kb' ? { dir: 'judikatura-ns' } : {}, cmd: 'sh', args: ['-c', 'x'] });
-            expect([process.execPath, 'npx', 'git']).toContain(c.cmd);
+            const c = R.sestav({ uloha: u, parametry: u === 'seed_kb' ? { dir: 'judikatura-ns' } : u === 'aws_vysledky' ? { beh: '2026-10-24_1623_remote_judikatura' } : {}, cmd: 'sh', args: ['-c', 'x'] });
+            expect([process.execPath, 'npx', 'git', 'aws']).toContain(c.cmd);
+        }
+    });
+
+    test('aws_vysledky: jen platný název běhu, pevný bucket, bez _connect.txt; AWS jen čte', () => {
+        const c = R.sestav({ uloha: 'aws_vysledky', parametry: { beh: '2026-10-24_1623_remote_judikatura' } });
+        expect(c.cmd).toBe('aws');
+        expect(c.args.slice(0, 4)).toEqual(['s3', 'sync', 's3://lexislocal-bench-results-485237569555/2026-10-24_1623_remote_judikatura/', 'scratch/aws-vysledky/2026-10-24_1623_remote_judikatura/']);
+        expect(c.args).toContain('_connect.txt');
+        for (const zly of ['../x', '_kb', '2026-10-24_1623_remote/../../', '2026-10-24_1623_x y', '', undefined, 's3://jiny']) {
+            expect(() => R.sestav({ uloha: 'aws_vysledky', parametry: { beh: zly } })).toThrow(/běhu/);
+        }
+        for (const u of ['aws_stav', 'aws_behy', 'aws_vysledky']) {
+            const a = R.sestav({ uloha: u, parametry: { beh: '2026-10-24_1623_remote' } }).args;
+            expect(['ec2 describe-instances', 's3 ls', 's3 sync']).toContain(a.slice(0, 2).join(' '));
         }
     });
 });

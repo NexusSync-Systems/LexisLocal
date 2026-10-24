@@ -392,6 +392,10 @@ if (require.main === module) {
     }
     // Znalostní báze (zákony + judikatura) do paměti hned po startu, ne až při prvním dotazu.
     require('./lib/rag').warmKnowledgeBases().catch(e => console.warn('⚠️ RAG: předehřátí bází selhalo:', e.message));
+    // Odložené zápisy bází (RAG_KB_SAVE_DEBOUNCE_MS) zapsat i při zastavení služby (systemd → SIGTERM, Ctrl+C).
+    for (const sig of ['SIGTERM', 'SIGINT']) {
+        process.once(sig, () => { try { require('./lib/rag').flushPendingSaves(); } catch (e) { /* best-effort */ } process.exit(0); });
+    }
 }
 
 module.exports = app;

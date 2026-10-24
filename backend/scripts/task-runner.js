@@ -14,6 +14,8 @@
  *  • Token API se nepředává v požadavku — seed-kb ho čte ze souboru jako dosud.
  *  • Nic nemaže, necommituje, nic neposílá ven (kromě úloh, které stahují veřejné zdroje
  *    a dělají to i ručně: NALUS, Sbírka NSS).
+ *  • AWS (aws_stav, aws_behy, aws_vysledky) jen čte — přes AWS CLI s přihlášením na Macu;
+ *    pevný region a bucket, _connect.txt s tokenem se nestahuje.
  *  • Jedna úloha najednou. Zastavení: požadavek {"uloha":"stop"} nebo Ctrl+C v terminálu.
  *
  * Spuštění (z kořene projektu, nechte běžet v samostatném okně terminálu):
@@ -67,6 +69,17 @@ function vzorTestu(v) {
     return [s];
 }
 
+/** Název běhu serverového testu v S3 (např. 2026-10-24_1623_remote_judikatura). */
+function behTestu(v) {
+    const s = String(v || '');
+    if (!/^\d{4}-\d{2}-\d{2}_\d{4}_[a-z0-9_-]{1,40}$/.test(s)) throw new Error(`nepovolený název běhu „${s}"`);
+    return s;
+}
+// AWS: jen ČTENÍ (stav instancí, seznam běhů, stažení výsledků) přes AWS CLI a přihlášení na Macu.
+// Nic se nespouští, nemaže ani nemění. _connect.txt (obsahuje token) se nestahuje.
+const AWS_REGION = 'eu-central-1';
+const AWS_BUCKET = 'lexislocal-bench-results-485237569555';
+
 // --- Schválené úlohy ----------------------------------------------------------------
 // Každá vrací { cmd, args, env? } — cmd je vždy pevný (node / npx), argumenty jako pole.
 const ULOHY = {
@@ -98,6 +111,22 @@ const ULOHY = {
         args: ['backend/scripts/fetch-ns-sbirka.js', '--out', './judikatura-ns',
             ...(p.odRoku ? ['--od-roku', String(int(p.odRoku, 1990, 2100))] : [])],
     }),
+    aws_stav: () => ({
+        cmd: 'aws',
+        args: ['ec2', 'describe-instances', '--region', AWS_REGION,
+            '--filters', 'Name=instance-state-name,Values=pending,running,stopping,shutting-down',
+            '--query', 'Reservations[].Instances[].[InstanceId,InstanceType,State.Name,LaunchTime,Tags[?Key==`Name`]|[0].Value]',
+            '--output', 'table'],
+    }),
+    aws_behy: () => ({ cmd: 'aws', args: ['s3', 'ls', `s3://${AWS_BUCKET}/`, '--region', AWS_REGION] }),
+    aws_vysledky: p => {
+        const beh = behTestu(p.beh);
+        return {
+            cmd: 'aws',
+            args: ['s3', 'sync', `s3://${AWS_BUCKET}/${beh}/`, `scratch/aws-vysledky/${beh}/`, '--region', AWS_REGION,
+                '--exclude', '_connect.txt', '--exclude', '*/_connect.txt', '--only-show-errors'],
+        };
+    },
     git_stav: () => ({ cmd: 'git', args: ['status', '--short', '--branch'] }),
     git_log: p => ({ cmd: 'git', args: ['log', '--oneline', '-n', String(int(p.n, 1, 50, 10))] }),
 };
@@ -176,4 +205,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { sestav, ULOHY, slozka, vzorTestu };
+module.exports = { sestav, ULOHY, slozka, vzorTestu, behTestu };

@@ -56,11 +56,13 @@ if [ "$PROFILE" = "kompletni" ]; then
   MAX_MINUTES=330; COMPARE_MODELS=""; SUITE_REPEAT="${SUITE_REPEAT:-3}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
 fi
 if [ "$PROFILE" = "judikatura" ]; then
-  MAX_MINUTES=420; COMPARE_MODELS=""; SKIP_PROBE=1; SUITE_REPEAT="${SUITE_REPEAT:-2}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
+  MAX_MINUTES=480; COMPARE_MODELS=""; SKIP_PROBE=1; SUITE_REPEAT="${SUITE_REPEAT:-2}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
   RERANK="${RERANK_JUD:-0}"; RAG_AGENT_K="${RAG_AGENT_K_JUD:-3}"      # jako pilot na Mac mini
   EMBED_MODEL_S3="${EMBED_MODEL_S3:-none}"                            # původní bge-m3 (jako na Macu)
   KB_ARCHIVE_S3="${KB_ARCHIVE_S3:-s3://$RESULTS_BUCKET/_kb/kb-1.2.0.tar.gz}"
   NODE_HEAP="${NODE_HEAP:-8192}"
+  KB_SAVE_DEBOUNCE="${KB_SAVE_DEBOUNCE:-3000}"   # odložený zápis báze při plnění (24. 10.: bez něj ~1 soubor/s)
+  MAX_MINUTES=480
 fi
 if [ "$PROFILE" = "integrace" ]; then
   # 3. 10. 2026: samotné nahrání OZ trvalo 43 min → 150 min nestačilo na celý suite.
@@ -261,6 +263,7 @@ if [ "$RERANK_OK" = "1" ]; then
   printf 'RAG_RERANK=1\nRAG_RERANK_URL=http://127.0.0.1:8081\nRAG_RERANK_K=20\nRAG_RERANK_WEIGHT=0.85\nRAG_RERANK_TIMEOUT_MS=8000\n' >> /opt/LexisLocal/.env
 fi
 
+[ -n "${KB_SAVE_DEBOUNCE:-}" ] && echo "RAG_KB_SAVE_DEBOUNCE_MS=$KB_SAVE_DEBOUNCE" >> /opt/LexisLocal/.env
 cat > /etc/systemd/system/lexislocal.service <<UNIT
 [Unit]
 Description=LexisLocal backend (remote test)

@@ -410,7 +410,64 @@ function _resetPartitionCache() {
     _shardState.clear();
 }
 
+// --- Odložené ukládání znalostních bází (hromadné plnění) ---------------------------
+// Server 24. 10. 2026: seed-kb nahrával judikaturu ~1 soubor/s a zpomaloval — po KAŽDÉM
+// souboru se znovu zašifroval a zapsal shard 0 (až 6000 kousků s vektory, desítky MB).
+// S RAG_KB_SAVE_DEBOUNCE_MS > 0 se zápis báze agenta (_kb_*) odloží: změna je hned vidět
+// v paměti (cache partitionů → hledání i další nahrávání ji vidí), na disk se zapíše po
+// chvíli klidu, nejpozději po RAG_KB_SAVE_MAX_MS, a při ukončení procesu (exit).
+// Při tvrdém pádu se ztratí nejvýš nahrávání z posledního okna (seed-kb je pak přeskočí
+// jako chybějící a nahraje znovu). Výchozí stav: vypnuto (0) = zápis hned jako dosud.
+const _pendingSaves = new Map(); // base → { directoryName, index, timer, since }
+function _saveDebounceMs() {
+    const n = parseInt(process.env.RAG_KB_SAVE_DEBOUNCE_MS || '0', 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function _saveMaxMs() {
+    const n = parseInt(process.env.RAG_KB_SAVE_MAX_MS || '', 10);
+    return Number.isFinite(n) && n > 0 ? n : 30000;
+}
+function _flushPending(base) {
+    const p = _pendingSaves.get(base);
+    if (!p) return;
+    _pendingSaves.delete(base);
+    if (p.timer) clearTimeout(p.timer);
+    _savePartitionNow(p.directoryName, p.index);
+}
+/** Zapíše všechny odložené báze na disk (synchronně). Volá se i při ukončení procesu. */
+function flushPendingSaves() {
+    for (const base of Array.from(_pendingSaves.keys())) _flushPending(base);
+}
+let _exitHook = false;
+function _deferSave(directoryName, index) {
+    const base = _partitionBase(directoryName);
+    const key = getPartitionKey(directoryName);
+    const sig = _diskSig(base, _keyTag(key)); // disk se nemění → podpis zůstává platný
+    const meta = Object.assign({}, index); delete meta.chunks;
+    _partCache.set(base, { sig, chunks: (index && index.chunks) || [], meta });
+    const now = Date.now();
+    const prev = _pendingSaves.get(base);
+    if (prev && prev.timer) clearTimeout(prev.timer);
+    const since = prev ? prev.since : now;
+    const wait = Math.max(0, Math.min(_saveDebounceMs(), since + _saveMaxMs() - now));
+    const timer = setTimeout(() => {
+        ragMutex.acquire().then(() => { try { _flushPending(base); } finally { ragMutex.release(); } });
+    }, wait);
+    if (timer.unref) timer.unref();
+    _pendingSaves.set(base, { directoryName, index, timer, since });
+    if (!_exitHook) { _exitHook = true; process.on('exit', flushPendingSaves); }
+}
+
 function savePartition(directoryName, index) {
+    if (_saveDebounceMs() && _cacheEnabled() && String(directoryName).indexOf(KB_PREFIX) === 0) {
+        try { return _deferSave(directoryName, index); }
+        catch (e) { _flushPending(_partitionBase(directoryName)); /* bez odložení */ }
+    }
+    _pendingSaves.delete(_partitionBase(directoryName)); // přímý zápis přebíjí odložený
+    return _savePartitionNow(directoryName, index);
+}
+
+function _savePartitionNow(directoryName, index) {
     const base = _partitionBase(directoryName);
     try {
         const key = getPartitionKey(directoryName);
@@ -1331,6 +1388,7 @@ function _applyRrf(results, K = 60) {
 }
 
 module.exports = {
+    flushPendingSaves,
     agentRagK,
     dedupeKbResults,
     indexDocument,

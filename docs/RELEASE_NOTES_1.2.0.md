@@ -72,6 +72,10 @@ Verze v `package.json` zvýšena na 1.2.0 (24. 10. 2026).
   bází (texty UTF-8, vektory Int8), předehřátí po startu serveru. Nové proměnné: `RAG_HYBRID_POOL` (400),
   `RAG_HYBRID_POOL_LAWS` (100), `RAG_KB_LAW_SHARE` (0.6), `RAG_KB_JUD_RE`, `RAG_COMPACT_MIN` (2000),
   `RAG_VEC_INT8` (1), `RAG_WARMUP` (1), `RAG_PARTITION_CACHE` (1).
+- **Rychlejší hromadné plnění bází:** `RAG_KB_SAVE_DEBOUNCE_MS` (výchozí 0 = vypnuto) odloží zápis báze
+  agenta na disk na chvíli klidu (nejpozději `RAG_KB_SAVE_MAX_MS`, 30 s) a při zastavení serveru. Dřív se po
+  každém nahraném souboru znovu šifroval celý shard 0 (až 6000 kousků) → ~1 soubor/s. Cache vektorů
+  (`EMBED_CACHE_FILE`) čte velký soubor po kusech.
 - Paměť: s plnou judikaturou počítejte pro server ~1 GB na bázi navíc k jazykovému modelu; načtení po startu ~20 s.
 - Měření báze: `node backend/scripts/kb_regression.js` (kvalita zákonů vs. judikatury, latence, paměť).
 - Spouštěč schválených úloh pro práci na dálku: `node backend/scripts/task-runner.js` (jen pevný seznam úloh).
