@@ -34,6 +34,12 @@ BRANCH="release-prep"
 #               a záloha se zkouškou obnovy; bez srovnání modelů. Agenti 3× (SUITE_REPEAT) kvůli
 #               spolehlivosti; po dohrání výsledků se instance SAMA VYPNE (nečeká na limit).
 #               ~3,5 h, vypne se nejpozději po 5,5 h.
+#   judikatura — test verze 1.2.0 s PLNOU bází rešeršníka jako na Macu (23 zákonů + judikatura
+#               NS, ÚS, NSS; ~297 tis. pasáží) a s nastavením pilotu na Mac mini (bge-m3, bez
+#               rerankeru, agent K=3): kb_regression na serveru, studený start a paměť backendu
+#               (podklad pro velikost RAM Mac mini), pak celý server_suite. Báze se bere z archivu
+#               KB_ARCHIVE_S3 (jen veřejná data; nahrát z Macu, viz docs/SERVER_TEST_1.2.0.md).
+#               První běh ~4–5 h (vektory se počítají), další s cache z S3 výrazně kratší.
 PROFILE="${PROFILE:-plny}"
 # Reranker (cross-encoder) nad výsledky RAG — VÝCHOZÍ ZAPNUTÝ (vypnutí: export RERANK=0). Lokální služba
 # scripts/rerank_server.py na GPU, backend ho volá přes RAG_RERANK_URL (lib/rerank_service.js).
@@ -48,6 +54,13 @@ RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"   # levnější: cross-e
 RAG_AGENT_K="${RAG_AGENT_K:-5}"
 if [ "$PROFILE" = "kompletni" ]; then
   MAX_MINUTES=330; COMPARE_MODELS=""; SUITE_REPEAT="${SUITE_REPEAT:-3}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
+fi
+if [ "$PROFILE" = "judikatura" ]; then
+  MAX_MINUTES=420; COMPARE_MODELS=""; SKIP_PROBE=1; SUITE_REPEAT="${SUITE_REPEAT:-2}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
+  RERANK="${RERANK_JUD:-0}"; RAG_AGENT_K="${RAG_AGENT_K_JUD:-3}"      # jako pilot na Mac mini
+  EMBED_MODEL_S3="${EMBED_MODEL_S3:-none}"                            # původní bge-m3 (jako na Macu)
+  KB_ARCHIVE_S3="${KB_ARCHIVE_S3:-s3://$RESULTS_BUCKET/_kb/kb-1.2.0.tar.gz}"
+  NODE_HEAP="${NODE_HEAP:-8192}"
 fi
 if [ "$PROFILE" = "integrace" ]; then
   # 3. 10. 2026: samotné nahrání OZ trvalo 43 min → 150 min nestačilo na celý suite.
@@ -254,6 +267,7 @@ Description=LexisLocal backend (remote test)
 After=network-online.target ollama.service
 [Service]
 WorkingDirectory=/opt/LexisLocal
+Environment=NODE_OPTIONS=${NODE_HEAP:+--max-old-space-size=$NODE_HEAP}
 ExecStart=$(command -v node) backend/server.js
 Restart=on-failure
 [Install]
@@ -279,8 +293,16 @@ CONN
 upload
 
 # 5) Báze zákonů → znalostní báze rešeršníka (přes API, jako u skutečné instalace)
-mkdir -p /opt/zakony && tar -xzf "$KB" -C /opt/zakony
-for d in /opt/zakony/*/; do
+KB_LAWS=/opt/zakony
+if [ -n "${KB_ARCHIVE_S3:-}" ] && [ -n "$AWS" ]; then
+  # Plná báze z archivu (zakony/<zákon>/, judikatura-ns/, judikatura-us/, judikatura-nss/)
+  mkdir -p /opt/kb && "$AWS" s3 cp "$KB_ARCHIVE_S3" /opt/kb/kb.tar.gz --only-show-errors \
+    && tar -xzf /opt/kb/kb.tar.gz -C /opt/kb && rm -f /opt/kb/kb.tar.gz \
+    && KB_LAWS=/opt/kb/zakony && echo "=== báze z archivu $KB_ARCHIVE_S3: $(ls /opt/kb/zakony | wc -l) zákonů, $(find /opt/kb -name '*.txt' | wc -l) souborů" \
+    || echo "!! archiv báze $KB_ARCHIVE_S3 nejde stáhnout — jen zákony z repozitáře"
+fi
+[ "$KB_LAWS" = /opt/zakony ] && mkdir -p /opt/zakony && tar -xzf "$KB" -C /opt/zakony
+for d in "$KB_LAWS"/*/; do
   echo "=== seed $(basename "$d") $(date -Is)"
   NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --agent resersnik --dir "$d" \
     --api https://127.0.0.1 --token "$TOKEN" --delay 0 2>&1 | tail -n 3
@@ -292,6 +314,14 @@ if [ -f "$JUD" ]; then
   NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --root /opt/judikatura \
     --api https://127.0.0.1 --token "$TOKEN" --delay 0 2>&1 | tail -n 5
 fi
+# 5c) Judikatura NS, ÚS, NSS z archivu → báze rešeršníka (jako na Macu: seed-kb --dir ./judikatura-…)
+for d in /opt/kb/judikatura-ns /opt/kb/judikatura-us /opt/kb/judikatura-nss; do
+  [ -d "$d" ] || continue
+  echo "=== seed $(basename "$d") ($(ls "$d" | wc -l) souborů) $(date -Is)"
+  NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --agent resersnik --dir "$d" \
+    --api https://127.0.0.1 --token "$TOKEN" --delay 0 2>&1 | tail -n 3
+  upload
+done
 echo "=== báze naplněna $(date -Is)"
 EMB_AFTER=$( [ -f "$EMB_FILE" ] && wc -l < "$EMB_FILE" || echo 0)
 echo "=== cache vektorů: nově spočítáno $((EMB_AFTER - EMB_BEFORE)), celkem $EMB_AFTER"
@@ -302,6 +332,25 @@ if [ -n "$AWS" ] && [ "${EMBED_CACHE:-1}" = "1" ] && [ "$EMB_AFTER" -gt "$EMB_BE
 fi
 echo "Báze zákonů naplněna: $(date -Is)" >> "$OUT/_connect.txt"
 upload
+
+if [ "$PROFILE" = "judikatura" ]; then
+  # Studený start BEZ cache vektorů (ta drží ~300 tis. vektorů v paměti a zkreslila by měření):
+  # kolik paměti backend s plnou bází opravdu potřebuje → velikost RAM Mac mini.
+  mem() { local p; p=$(systemctl show -p MainPID --value lexislocal); { echo "== $(date -Is) $1"; free -m; echo "backend RSS MB: $(( $(ps -o rss= -p "$p" 2>/dev/null || echo 0) / 1024 ))"; } >> "$OUT/pamet.log"; }
+  mem "po naplnění (s cache vektorů)"
+  sed -i '/^EMBED_CACHE_FILE=/d' /opt/LexisLocal/.env
+  T0=$(date +%s); systemctl restart lexislocal
+  for i in $(seq 1 120); do curl -sfk -H "X-API-Token: $TOKEN" https://127.0.0.1/api/status >/dev/null && break; sleep 2; done
+  echo "=== studený start: API po $(( $(date +%s) - T0 )) s" | tee -a "$OUT/pamet.log"
+  sleep 120; mem "studený start + předehřátí báze (2 min)"
+  echo "=== kb_regression start $(date -Is)"
+  ( cd /opt/LexisLocal && EMBED_CACHE_FILE= NODE_OPTIONS=--max-old-space-size=8192 timeout 90m \
+      node backend/scripts/kb_regression.js --limit 0 --sample 30 --pool-compare 15 ) > "$OUT/kb_regression.log" 2>&1 \
+    || echo "!! kb_regression skončil s chybou (viz kb_regression.log)"
+  cp /opt/LexisLocal/bench-results/kb_regression_* "$OUT/" 2>/dev/null
+  tail -n 25 "$OUT/kb_regression.log"; mem "po kb_regression"
+  upload
+fi
 
 # 6) Základ bez sítě: stejný test přes loopback (pro srovnání se vzdáleným přístupem)
 # 5c) Dosah na státní systémy ze serveru (InfoJednání, ISIR na portu 8443) — jen HTTP kódy.
@@ -324,6 +373,7 @@ if [ "${RUN_SUITE:-1}" = "1" ] && [ -f backend/scripts/server_suite.js ]; then
   node backend/scripts/server_suite.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
     --label server-loopback --out "$OUT/suite" --repeat "${SUITE_REPEAT:-1}" 2>&1 | tail -n 60 || echo "!! server_suite skončil s chybou"
   echo "=== server_suite hotovo $(date -Is)"
+  [ "$PROFILE" = "judikatura" ] && mem "po server_suite"
   upload
 fi
 # 7b) Záloha + zkouška obnovy na serveru. Archiv obsahuje klíč k databázi → zůstává jen

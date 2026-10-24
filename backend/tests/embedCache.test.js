@@ -55,3 +55,20 @@ test('klíč závisí na modelu i textu; poškozený řádek se přeskočí', ()
     process.env.EMBED_CACHE_FILE = f;
     expect(ec.get('m', 't')).toEqual([1, 2]);
 });
+
+test('velký soubor se čte po kusech (řádek přes hranici kusu, víc než 16 MB)', () => {
+    const f = path.join(tmp, 'big.jsonl');
+    const fd = fs.openSync(f, 'w');
+    const vec = Array.from({ length: 1024 }, (_, i) => i / 1024);
+    const v = ec.encode(vec);
+    const N = 3500; // ~3500 × 5,5 kB ≈ 19 MB → aspoň jedna hranice kusu uprostřed řádku
+    for (let i = 0; i < N; i++) fs.writeSync(fd, JSON.stringify({ k: ec.keyOf('m', 't' + i), v }) + '\n');
+    fs.closeSync(fd);
+    expect(fs.statSync(f).size).toBeGreaterThan(16 * 1024 * 1024);
+    process.env.EMBED_CACHE_FILE = f;
+    const last = ec.get('m', 't' + (N - 1));
+    expect(ec.stats().loaded).toBe(N);
+    expect(last).toHaveLength(1024);
+    expect(last[1023]).toBeCloseTo(1023 / 1024, 6);
+    expect(ec.get('m', 't0')[5]).toBeCloseTo(5 / 1024, 6);
+});

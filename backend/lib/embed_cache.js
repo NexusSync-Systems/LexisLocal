@@ -25,7 +25,7 @@ const keyOf = (model, text) => crypto.createHash('sha256').update(String(model) 
 
 function encode(vec) { return Buffer.from(new Float32Array(vec).buffer).toString('base64'); }
 function decode(b64) {
-    const buf = Buffer.from(b64, 'base64');
+    const buf = Buffer.isBuffer(b64) ? b64 : Buffer.from(b64, 'base64');
     return Array.from(new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4)));
 }
 
@@ -35,10 +35,25 @@ function _load() {
     _map = new Map(); _file = f; _stats = { hits: 0, misses: 0, loaded: 0 };
     try {
         if (fs.existsSync(f)) {
-            for (const line of fs.readFileSync(f, 'utf8').split('\n')) {
-                if (!line) continue;
-                try { const o = JSON.parse(line); if (o && o.k && o.v) _map.set(o.k, o.v); } catch (e) { /* poškozený řádek přeskočit */ }
-            }
+            // Po kusech (ne readFileSync celého souboru): u báze s judikaturou má cache ~300 tis.
+            // řádků / ~1,6 GB a jeden řetězec by narazil na limit délky řetězce ve V8.
+            // Vektor se drží jako Buffer (4 B na číslo) místo base64 řetězce — o čtvrtinu méně paměti.
+            const fd = fs.openSync(f, 'r');
+            const chunk = Buffer.alloc(16 * 1024 * 1024);
+            let rest = '';
+            const line1 = line => {
+                if (!line) return;
+                try { const o = JSON.parse(line); if (o && o.k && o.v) _map.set(o.k, Buffer.from(o.v, 'base64')); } catch (e) { /* poškozený řádek přeskočit */ }
+            };
+            try {
+                let n;
+                while ((n = fs.readSync(fd, chunk, 0, chunk.length, null)) > 0) {
+                    const parts = (rest + chunk.toString('utf8', 0, n)).split('\n');
+                    rest = parts.pop();
+                    for (const line of parts) line1(line);
+                }
+                line1(rest);
+            } finally { fs.closeSync(fd); }
         }
     } catch (e) { console.warn('⚠️ Cache vektorů nejde načíst:', e.message); }
     _stats.loaded = _map.size;
@@ -61,7 +76,7 @@ function set(model, text, vec) {
     const m = _load(), k = keyOf(model, text);
     if (m.has(k)) return;
     const v = encode(vec);
-    m.set(k, v);
+    m.set(k, Buffer.from(v, 'base64'));
     try {
         fs.mkdirSync(path.dirname(_file), { recursive: true });
         fs.appendFileSync(_file, JSON.stringify({ k, v }) + '\n');
