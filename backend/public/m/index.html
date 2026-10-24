@@ -12682,7 +12682,7 @@ module.exports = __webpack_require__(63);
    const sel=q.getText(r.index,r.length);
    toast('LexisAI přepisuje…');
    const res=await askAgent('stylista','Přepiš následující pasáž právního podání do precizní, přesvědčivé advokátní češtiny. Zachovej význam, čísla, citace i spisové značky. Vrať pouze přepsaný text bez komentáře:', sel);
-   if(res.ok && res.text){ q.deleteText(r.index,r.length); q.insertText(r.index,res.text); q.setSelection(r.index,res.text.length); toast('Přepsáno'); }
+   if(res.ok && res.text){ q.deleteText(r.index,r.length); q.insertText(r.index,res.text); q.setSelection(r.index,res.text.length); toast('Přepsala AI — text zkontroluj'); }
    else{ toast(res.reason||'AI je nedostupná'); }
  }
  function openAudit(){ openSheet('sheet-audit'); }

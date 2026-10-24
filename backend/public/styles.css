@@ -938,6 +938,12 @@ body {
     margin-bottom: 8px;
 }
 
+.chat-ai-notice {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 6px 4px 0;
+}
+
 .chat-input-bar {
     display: flex;
     gap: 15px;

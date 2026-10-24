@@ -452,6 +452,8 @@ async function embedSpec(docxBuffer, spec) {
             zip.file(relsPath, rels);
         }
     }
+    // Strojově čitelné označení obsahu od AI (EU AI Act čl. 50 odst. 2) ve vlastnostech dokumentu.
+    if (spec && spec.aiDisclosure) await require('./ai_disclosure').addDocxCustomProps(zip, spec.aiDisclosure);
     return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 

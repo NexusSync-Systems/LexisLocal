@@ -28,6 +28,7 @@ const czProofread = require('../lib/cz_proofread');
 const { reviewInChunks } = require('../lib/chunked_review');
 const { guardInventedIdentifiers, fixLawNames, buildWarnings } = require('../lib/output_guard');
 const { agentNumCtx, isEmbeddingModel, isModelMissingError } = require('../lib/agent_options');
+const aiDisclosure = require('../lib/ai_disclosure');
 const demandLetter = require('../lib/demand_letter');
 const outputChecks = require('../lib/output_checks');
 const { selectExamples, examplesMessages } = require('../lib/agent_examples');
@@ -570,6 +571,7 @@ router.post('/:agentId', async (req, res) => {
             agent: agent.name,
             model: selectedModel,
             response: response.message.content,
+            ...aiDisclosure.forResponse(),
             draft,
             transparencyId: transparencyRecord.id,
             greenMetrics,
@@ -630,6 +632,7 @@ router.post('/:agentId', async (req, res) => {
             agent: agent.name,
             model: `${selectedModel} (Simulovaný)`,
             response: fallbackResponse,
+            ...aiDisclosure.forResponse(),
             transparencyId: transparencyRecord.id,
             greenMetrics,
             oborDetected: oborDetection,

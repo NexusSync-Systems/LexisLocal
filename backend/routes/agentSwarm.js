@@ -18,6 +18,7 @@ const ollama = require('../lib/ai_provider'); // Ollama | OpenAI | Anthropic (st
 const { generateAgentFallback } = require('../lib/agent_fallback');
 const { resolveRagFilters, buildRagScope } = require('../lib/rag_request');
 const ChiefOrchestrator = require('../lib/orchestrator');
+const aiDisclosure = require('../lib/ai_disclosure');
 const spisFolders = require('../lib/spisFolders');
 const spisy = require('../lib/spisy');
 const clauseScan = require('../lib/clause_scan');
@@ -173,6 +174,7 @@ router.post('/debate', async (req, res) => {
 
         res.json({
             success: true,
+            ...aiDisclosure.forResponse(),
             model: selectedModel,
             agent1: { id: agentId1, name: agent1.name, response: restore(answer1) },
             agent2: { id: agentId2, name: agent2.name, response: answer2 },
@@ -213,6 +215,7 @@ router.post('/debate', async (req, res) => {
 
         res.json({
             success: true,
+            ...aiDisclosure.forResponse(),
             model: `${selectedModel} (Simulovaný Swarm)`,
             agent1: { id: agentId1, name: agent1.name, response: answer1 },
             agent2: { id: agentId2, name: agent2.name, response: answer2 },

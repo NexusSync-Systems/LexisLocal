@@ -241,7 +241,7 @@ async function processEmailTask(input) {
         ? `\n\n⚠️ UPOZORNĚNÍ K ŠABLONĚ: ${templateWarnings.join(' ')}`
         : '';
     const stepsBlock = stepsSummary.length ? `\nPrůběh zpracování:\n- ${stepsSummary.join('\n- ')}\n` : '';
-    const fullReply = `Vážený pane doktore,\n\nk Vašemu zadání ze dne ${dateStr} („${subject.replace(/\[[^\]]+\]\s*/g, '')}") zasílám zpracovaný výstup.\n${stepsBlock}\nS úctou,\nVaše AI kancelář (LexisLocal)\n\n${'-'.repeat(80)}\nVÝSTUP:\n${'-'.repeat(80)}\n\n${output}${citationNote}${templateNote}${scheduleNote}${draftNote}`;
+    const fullReply = `Vážený pane doktore,\n\nk Vašemu zadání ze dne ${dateStr} („${subject.replace(/\[[^\]]+\]\s*/g, '')}") zasílám zpracovaný výstup.\n${stepsBlock}\nS úctou,\nVaše AI kancelář (LexisLocal)\n\n${'-'.repeat(80)}\nVÝSTUP:\n${'-'.repeat(80)}\n${require('./ai_disclosure').TEXT_NOTICE}\n\n${output}${citationNote}${templateNote}${scheduleNote}${draftNote}`;
 
     const createdTask = db.insert('email_tasks', {
         sender: String(sender).trim(), subject: String(subject).trim(), body: String(body).trim(),
