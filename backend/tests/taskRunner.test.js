@@ -63,4 +63,24 @@ describe('task-runner — schválené úlohy', () => {
             expect(['ec2 describe-instances', 's3 ls', 's3 sync']).toContain(a.slice(0, 2).join(' '));
         }
     });
+
+    test('aws_spust_test: pevný typ, disk, role, SG a user data; AMI jen ve tvaru ami-…', () => {
+        const a = R.sestav({ uloha: 'aws_spust_test' }).args;
+        const val = k => a[a.indexOf(k) + 1];
+        expect(a.slice(0, 2)).toEqual(['ec2', 'run-instances']);
+        expect(val('--instance-type')).toBe('g6.xlarge');
+        expect(val('--iam-instance-profile')).toBe('Name=lexis-bench-ec2');
+        expect(val('--security-group-ids')).toBe('sg-08da0035b6d9a171c');
+        expect(val('--instance-initiated-shutdown-behavior')).toBe('terminate');
+        expect(val('--user-data')).toBe('file://scripts/aws/bootstrap-judikatura.sh');
+        expect(JSON.parse(val('--block-device-mappings'))[0].Ebs.VolumeSize).toBe(200);
+        expect(R.sestav({ uloha: 'aws_spust_test', parametry: { ami: 'ami-0123456789abcdef0' } }).args).toContain('ami-0123456789abcdef0');
+        for (const zle of ['ami-x; rm', 'i-123', '--dry-run', 'ami-0123 --count 5']) {
+            expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { ami: zle } })).toThrow(/AMI/);
+        }
+        // typ ani počet z požadavku nejde změnit
+        const b = R.sestav({ uloha: 'aws_spust_test', parametry: { typ: 'p5.48xlarge', count: 10 } }).args;
+        expect(b[b.indexOf('--instance-type') + 1]).toBe('g6.xlarge');
+        expect(b[b.indexOf('--count') + 1]).toBe('1');
+    });
 });

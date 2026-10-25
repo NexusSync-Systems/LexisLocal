@@ -15,7 +15,8 @@
  *  • Nic nemaže, necommituje, nic neposílá ven (kromě úloh, které stahují veřejné zdroje
  *    a dělají to i ručně: NALUS, Sbírka NSS).
  *  • AWS (aws_stav, aws_behy, aws_vysledky) jen čte — přes AWS CLI s přihlášením na Macu;
- *    pevný region a bucket, _connect.txt s tokenem se nestahuje.
+ *    pevný region a bucket, _connect.txt s tokenem se nestahuje. aws_spust_test spustí
+ *    serverový test s pevnými parametry (stojí peníze — jen po souhlasu v chatu).
  *  • Jedna úloha najednou. Zastavení: požadavek {"uloha":"stop"} nebo Ctrl+C v terminálu.
  *
  * Spuštění (z kořene projektu, nechte běžet v samostatném okně terminálu):
@@ -79,6 +80,8 @@ function behTestu(v) {
 // Nic se nespouští, nemaže ani nemění. _connect.txt (obsahuje token) se nestahuje.
 const AWS_REGION = 'eu-central-1';
 const AWS_BUCKET = 'lexislocal-bench-results-485237569555';
+const AWS_TEST_AMI = 'ami-0bac4f1462de1bb51';   // Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04) 20261016
+const AWS_TEST_SG = 'sg-08da0035b6d9a171c';      // bez příchozích pravidel
 
 // --- Schválené úlohy ----------------------------------------------------------------
 // Každá vrací { cmd, args, env? } — cmd je vždy pevný (node / npx), argumenty jako pole.
@@ -125,6 +128,24 @@ const ULOHY = {
             cmd: 'aws',
             args: ['s3', 'sync', `s3://${AWS_BUCKET}/${beh}/`, `scratch/aws-vysledky/${beh}/`, '--region', AWS_REGION,
                 '--exclude', '_connect.txt', '--exclude', '*/_connect.txt', '--only-show-errors'],
+        };
+    },
+    // Spuštění serverového testu — STOJÍ PENÍZE (g6.xlarge ~1 USD/h, sama se vypne po testech,
+    // nejpozději po 8 h). Claude ji zařadí jen po výslovném souhlasu v chatu. Vše pevné: typ,
+    // disk, role, security group (bez příchozích pravidel), user data z repozitáře; jen AMI
+    // lze změnit (nová verze Deep Learning AMI). Oprávnění uživatele lexis-runner to vynucují i v AWS.
+    aws_spust_test: p => {
+        const ami = String(p.ami || AWS_TEST_AMI);
+        if (!/^ami-[0-9a-f]{8,17}$/.test(ami)) throw new Error(`nepovolené AMI „${ami}"`);
+        return {
+            cmd: 'aws',
+            args: ['ec2', 'run-instances', '--region', AWS_REGION, '--image-id', ami, '--instance-type', 'g6.xlarge', '--count', '1',
+                '--iam-instance-profile', 'Name=lexis-bench-ec2', '--security-group-ids', AWS_TEST_SG,
+                '--instance-initiated-shutdown-behavior', 'terminate',
+                '--block-device-mappings', '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":200,"VolumeType":"gp3","DeleteOnTermination":true}}]',
+                '--user-data', 'file://scripts/aws/bootstrap-judikatura.sh',
+                '--tag-specifications', 'ResourceType=instance,Tags=[{Key=Name,Value=lexis-test-1.2.0-judikatura}]',
+                '--query', 'Instances[0].[InstanceId,State.Name,LaunchTime]', '--output', 'text'],
         };
     },
     git_stav: () => ({ cmd: 'git', args: ['status', '--short', '--branch'] }),
