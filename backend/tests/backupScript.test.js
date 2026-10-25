@@ -57,3 +57,13 @@ test('poškozený archiv → zkouška obnovy selže', () => {
     fs.writeFileSync(bad, 'nic');
     expect(run(['--overit', bad]).status).toBe(1);
 });
+
+test('sha256File: počítá po kusech a shoduje se s hashem celého obsahu (soubor přes velikost kusu)', () => {
+    const fs2 = require('fs'), os2 = require('os'), path2 = require('path'), crypto2 = require('crypto');
+    const { sha256File } = require('../scripts/backup');
+    const f = path2.join(os2.tmpdir(), `lexis_sha_${Date.now()}.bin`);
+    const data = crypto2.randomBytes(9 * 1024 * 1024 + 123); // > 8 MB kus → dva kusy, druhý neúplný
+    fs2.writeFileSync(f, data);
+    try { expect(sha256File(f)).toBe(crypto2.createHash('sha256').update(data).digest('hex')); }
+    finally { fs2.unlinkSync(f); }
+});

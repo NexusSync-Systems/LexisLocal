@@ -70,6 +70,19 @@ function verifyDir(root) {
     };
 }
 
+/** SHA-256 souboru po kusech — archiv s plnou bází judikatury má přes 2 GB, což
+ *  fs.readFileSync nenačte (server 25. 10. 2026: „File size … is greater than 2 GiB"). */
+function sha256File(file) {
+    const h = crypto.createHash('sha256');
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(8 * 1024 * 1024);
+    try {
+        let n;
+        while ((n = fs.readSync(fd, buf, 0, buf.length, null)) > 0) h.update(n === buf.length ? buf : buf.subarray(0, n));
+    } finally { fs.closeSync(fd); }
+    return h.digest('hex');
+}
+
 function extract(file) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lexis-obnova-'));
     tar(['-xzf', path.resolve(file), '-C', tmp]);
@@ -100,7 +113,7 @@ function backup() {
     tar(['-czf', file, '.'], stage);
     fs.rmSync(stage, { recursive: true, force: true });
     try { fs.chmodSync(file, 0o600); } catch (e) { /* Windows */ }
-    const sha = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    const sha = sha256File(file);
     fs.writeFileSync(file + '.sha256', `${sha}  ${path.basename(file)}\n`);
     const tmp = extract(file);
     const v = verifyDir(tmp);
@@ -161,4 +174,4 @@ if (require.main === module) {
     process.exit(code);
 }
 
-module.exports = { verifyDir, copyDir };
+module.exports = { sha256File, verifyDir, copyDir };
