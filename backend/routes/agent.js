@@ -11,6 +11,7 @@ const router = express.Router();
 const crypto = require('crypto');
 const { loadAgents, agentTemperature } = require('../lib/agents');
 const { searchSimilar, agentRagK } = require('../lib/rag');
+const judCite = require('../lib/judikatura_cite');
 const { anonymizeText, pseudonymizeText, restorePseudonyms } = require('../lib/anonymizer');
 const injectionGuard = require('../lib/injection_guard');
 const { logEvent } = require('../lib/audit');
@@ -140,6 +141,7 @@ router.post('/:agentId', async (req, res) => {
         // Pasáže, které model skutečně dostal — kontrola citací je musí znát, jinak
         // označí za neověřené i § doslovně citované z báze zákonů.
         let ragContextChunks = [];
+        let kbJudMatches = []; // rozhodnutí v podkladech → seznam sp. zn. pod odpovědí (judikatura_cite)
         try {
             if (resolvedFilters) {
                 console.log(`🧠 RAG: Aktivní filtry pro vyhledávání: ${JSON.stringify(resolvedFilters)}`);
@@ -161,9 +163,11 @@ router.post('/:agentId', async (req, res) => {
                 const fmt = m => {
                     const passage = (redact && !m.scope) ? anonymizeText(m.text) : m.text;
                     ragContextChunks.push({ text: passage, fileName: m.fileName });
-                    return `[Zdroj: ${m.fileName}, Shoda: ${Math.round(m.score * 100)}%]:\n${passage}`;
+                    const jl = judCite.label(m); // u judikatury soud + sp. zn., ať ji model může citovat
+                    return `[Zdroj: ${jl ? jl + ' — ' : ''}${m.fileName}, Shoda: ${Math.round(m.score * 100)}%]:\n${passage}`;
                 };
                 const kbMatches = highConfidenceMatches.filter(isKb);
+                kbJudMatches = kbMatches.filter(m => judCite.cite(m));
                 const clientMatches = highConfidenceMatches.filter(m => !isKb(m));
                 // Zákony/judikatura z báze NESMÍ být podané jako „klientské spisy“ — model
                 // pak píše „podle zadaných spisů“ a s ustanoveními zachází volně (změřeno
@@ -554,6 +558,12 @@ router.post('/:agentId', async (req, res) => {
 
         if (unknownDecision && unknownDecision.notice && response && response.message && typeof response.message.content === 'string') {
             response.message.content = unknownDecision.notice + '\n\n' + response.message.content;
+        }
+
+        // Rozhodnutí z podkladů, která model necitoval, se doplní pod odpověď (ne do konceptů dopisů).
+        if (!wantDraft && kbJudMatches.length && response && response.message && typeof response.message.content === 'string') {
+            const sec = judCite.section(kbJudMatches, response.message.content);
+            if (sec) response.message.content = response.message.content.replace(/\s+$/, '') + '\n\n' + sec;
         }
 
         let draft = null;
