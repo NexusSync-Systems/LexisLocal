@@ -54,7 +54,7 @@ const FIXTURES = path.join(SUITE_DIR, 'fixtures');
 // ─── argumenty ───────────────────────────────────────────────────────────────
 function parseArgs(argv) {
     const o = { base: null, token: process.env.LEXIS_API_TOKEN || '', insecure: false, only: null, out: path.join(SUITE_DIR, 'reports'),
-        label: '', baseline: null, cleanup: false, repeat: 1, model: '', cases: path.join(SUITE_DIR, 'cases.json') };
+        label: '', baseline: null, cleanup: false, repeat: 1, model: '', cases: path.join(SUITE_DIR, 'cases.json'), judikatura: false };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i], n = () => argv[++i];
         if (a === '--base') o.base = String(n()).replace(/\/+$/, '');
@@ -68,6 +68,7 @@ function parseArgs(argv) {
         else if (a === '--repeat') o.repeat = Math.max(1, parseInt(n(), 10) || 1);
         else if (a === '--model') o.model = n();
         else if (a === '--cases') o.cases = n();
+        else if (a === '--judikatura') o.judikatura = true; // báze má judikaturu NS/ÚS/NSS → i úlohy s requires: judikatura
     }
     return o;
 }
@@ -427,6 +428,7 @@ async function phaseE() {
     console.log('\nE — agenti (eval sada)');
     const spec = JSON.parse(fs.readFileSync(O.cases, 'utf8'));
     for (const c of spec.cases) {
+        if (c.requires === 'judikatura' && !O.judikatura) continue; // jen se serverovou bází judikatury (--judikatura)
         const n = Math.max(c.repeat || 1, O.repeat);
         const runs = [];
         for (let i = 0; i < n; i++) runs.push(await runCase(c, i + 1));

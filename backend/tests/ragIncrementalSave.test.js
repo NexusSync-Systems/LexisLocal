@@ -76,6 +76,34 @@ describe('přírůstkový zápis partitionů (RAG_SHARD_MAX_CHUNKS=3)', () => {
         expect(disk.chunks.map(c => c.id)).toEqual(['c_0', 'c_1', 'c_2', 'c_3', 'c_4', 'c_5', 'c_6', 'c_7']);
     });
 
+    test('přibude-li shard, přepíše se jen nový shard a shard 0 (ne celá báze)', () => {
+        const chunks = Array.from({ length: 9 }, (_, i) => mkChunk(100 + i)); // 3 plné shardy
+        rag.savePartition(SCOPE, { chunks });
+        writeSpy.mockClear();
+        const kept = rag.loadPartition(SCOPE).chunks;
+        kept.push(mkChunk(200));                                               // → 4. shard
+        rag.savePartition(SCOPE, { chunks: kept });
+        const written = shardWrites(writeSpy).sort();
+        expect(written).toHaveLength(2);
+        expect(written.some(f => /\.p3\.json$/.test(f))).toBe(true);
+        expect(written.some(f => /^\.rag_[0-9a-f]+\.json$/.test(f))).toBe(true);
+        expect(loadFromDisk(SCOPE).chunks).toHaveLength(10);
+    });
+
+    test('loadPartitionAsync: stejný výsledek jako loadPartition a mezi shardy pustí jiné úlohy', async () => {
+        rag.savePartition(SCOPE, { chunks: Array.from({ length: 10 }, (_, i) => mkChunk(300 + i)) }); // 4 shardy
+        rag._resetPartitionCache();
+        let tiky = 0;
+        const tik = () => { tiky++; if (tiky < 50) setImmediate(tik); };
+        setImmediate(tik);
+        const a = await rag.loadPartitionAsync(SCOPE);
+        const tikyBehemNacteni = tiky;
+        rag._resetPartitionCache();
+        const b = rag.loadPartition(SCOPE);
+        expect(a.chunks.map(c => c.id)).toEqual(b.chunks.map(c => c.id));
+        expect(tikyBehemNacteni).toBeGreaterThanOrEqual(3); // 3 přestávky (po shardech 1–3)
+    });
+
     test('uložení beze změny nezapíše nic', () => {
         rag.savePartition(SCOPE, { chunks: Array.from({ length: 5 }, (_, i) => mkChunk(i)) });
         writeSpy.mockClear();

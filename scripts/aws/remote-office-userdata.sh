@@ -379,7 +379,7 @@ fi
 if [ "${RUN_SUITE:-1}" = "1" ] && [ -f backend/scripts/server_suite.js ]; then
   echo "=== server_suite start $(date -Is)"
   node backend/scripts/server_suite.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
-    --label server-loopback --out "$OUT/suite" --repeat "${SUITE_REPEAT:-1}" 2>&1 | tail -n 60 || echo "!! server_suite skončil s chybou"
+    --label server-loopback --out "$OUT/suite" --repeat "${SUITE_REPEAT:-1}" $([ "$PROFILE" = "judikatura" ] && echo --judikatura) 2>&1 | tail -n 60 || echo "!! server_suite skončil s chybou"
   echo "=== server_suite hotovo $(date -Is)"
   [ "$PROFILE" = "judikatura" ] && mem "po server_suite"
   upload

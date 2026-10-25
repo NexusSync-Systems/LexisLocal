@@ -17,6 +17,10 @@ describe('task-runner — schválené úlohy', () => {
         expect(c.args).toEqual(['backend/scripts/kb_regression.js', '--limit', '40', '--sample', '5', '--pool-compare', '0']);
         expect(c.env.NODE_OPTIONS).toMatch(/max-old-space-size/);
         expect(R.sestav({ uloha: 'kb_regression', parametry: { int8: false } }).env.RAG_VEC_INT8).toBe('0');
+        const e = R.sestav({ uloha: 'kb_regression', parametry: { agentK: 4, lawShare: 0.75 } }).env;
+        expect(e).toMatchObject({ RAG_AGENT_K: '4', RAG_KB_LAW_SHARE: '0.75' });
+        expect(() => R.sestav({ uloha: 'kb_regression', parametry: { lawShare: 2 } })).toThrow(/podíl/);
+        expect(() => R.sestav({ uloha: 'kb_regression', parametry: { agentK: '3; x' } })).toThrow();
         expect(() => R.sestav({ uloha: 'kb_regression', parametry: { limit: '40; rm -rf /' } })).toThrow(/číslo/);
         expect(() => R.sestav({ uloha: 'kb_regression', parametry: { limit: 1e9 } })).toThrow(/rozsah/);
     });

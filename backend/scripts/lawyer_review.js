@@ -28,7 +28,7 @@ const CRITERIA = [
 const CAT_LABEL = {
     kontrola_smluv: 'Kontrola smluv', bezpecnost_ai: 'Bezpečnost AI', dlouhy_kontext: 'Dlouhý dokument',
     lhuty: 'Lhůty', reserse: 'Rešerše', negativni: 'Neexistující zdroj (nesmí vymýšlet)', cizi_jazyk: 'Cizí jazyk',
-    navrh_podani: 'Návrh podání', osobni_udaje: 'Osobní údaje', styl: 'Styl'
+    navrh_podani: 'Návrh podání', osobni_udaje: 'Osobní údaje', styl: 'Styl', reserse_judikatura: 'Rešerše judikatury'
 };
 
 function _e(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }

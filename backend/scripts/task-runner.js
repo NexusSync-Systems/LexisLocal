@@ -53,6 +53,12 @@ function datum(v, def) {
     if (!/^\d{2}\.\d{2}\.\d{4}$/.test(String(v))) throw new Error(`datum musí být DD.MM.RRRR: ${v}`);
     return String(v);
 }
+/** Podíl 0–1 (např. RAG_KB_LAW_SHARE). */
+function podil(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0 || n > 1) throw new Error(`podíl musí být 0–1: ${v}`);
+    return n;
+}
 /** Relativní složka projektu ze schváleného seznamu (žádné .., žádné absolutní cesty). */
 const SLOZKY = /^(judikatura-(us|ns|nss)|judikatura(\/[\p{L}\p{N} ,_-]+)?|zakony(\/[\p{L}\p{N} _-]+)?)$/u;
 function slozka(v, def) {
@@ -93,7 +99,9 @@ const ULOHY = {
             '--limit', String(int(p.limit, 0, 1000, 40)),
             '--sample', String(int(p.sample, 0, 200, 0)),
             '--pool-compare', String(int(p.poolCompare, 0, 100, 0))],
-        env: Object.assign({ NODE_OPTIONS: '--max-old-space-size=8192' }, p.int8 === false ? { RAG_VEC_INT8: '0' } : {}),
+        env: Object.assign({ NODE_OPTIONS: '--max-old-space-size=8192' }, p.int8 === false ? { RAG_VEC_INT8: '0' } : {},
+            p.agentK != null ? { RAG_AGENT_K: String(int(p.agentK, 1, 10)) } : {},
+            p.lawShare != null ? { RAG_KB_LAW_SHARE: String(podil(p.lawShare)) } : {}),
     }),
     seed_kb: p => ({
         cmd: NODE,

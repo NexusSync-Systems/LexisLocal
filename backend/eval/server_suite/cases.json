@@ -354,6 +354,53 @@
       ],
       "negative": true,
       "severity": "critical"
+    },
+    {
+      "id": "J1",
+      "category": "reserse_judikatura",
+      "requires": "judikatura",
+      "agent": "resersnik",
+      "prompt": "Klient chce po dodavateli smluvní pokutu, dodavatel tvrdí, že je nepřiměřeně vysoká. Podle čeho soud posuzuje přiměřenost smluvní pokuty a může ji snížit? Uveď relevantní judikaturu Nejvyššího soudu se spisovou značkou.",
+      "must": [
+        "2051"
+      ],
+      "anyOf": [
+        "\\d+\\s?Cdo\\s?\\d+/\\d{4}"
+      ],
+      "severity": "medium",
+      "_pozn": "V bázi je NS 31 Cdo 2273/2022 (přiměřenost se posuzuje u konkrétního nároku, ne u ujednání)."
+    },
+    {
+      "id": "J2",
+      "category": "reserse_judikatura",
+      "requires": "judikatura",
+      "agent": "resersnik",
+      "prompt": "Povinný zaplatil dluh dobrovolně hned po zahájení exekuce, ještě než exekutor cokoli vymohl. Má exekutor nárok na plnou odměnu? Uveď relevantní nález Ústavního soudu.",
+      "must": [
+        "[ÚU]stavn[ií]\\s+soud|[ÚU]S"
+      ],
+      "anyOf": [
+        "3335/11",
+        "dobrovoln"
+      ],
+      "severity": "medium",
+      "_pozn": "V bázi je nález II. ÚS 3335/11 „Odměna exekutora v případě dobrovolného plnění povinným“."
+    },
+    {
+      "id": "J3",
+      "category": "reserse_judikatura",
+      "requires": "judikatura",
+      "agent": "resersnik",
+      "prompt": "Lze požádat o zrušení vyvlastnění i mnoho let po vyvlastnění? Je na to nějaká lhůta? Uveď judikaturu Nejvyššího správního soudu.",
+      "must": [
+        "26"
+      ],
+      "anyOf": [
+        "8 As 29/2021",
+        "(ž[aá]dn[aáo]u?|nen[ií]|nestanov[ií])[^.\\n]{0,60}lh[ůu]t"
+      ],
+      "severity": "medium",
+      "_pozn": "V bázi je NSS 8 As 29/2021-36: § 26 odst. 1 zák. 184/2006 Sb. žádnou lhůtu nestanoví."
     }
   ]
 }

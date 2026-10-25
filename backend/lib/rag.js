@@ -488,9 +488,14 @@ function _savePartitionNow(directoryName, index) {
         // známe (nikdo jiný ho mezitím nepřepsal) a klíč se nezměnil.
         let prev = useCache ? _shardState.get(base) : null;
         if (prev && prev.sig !== _diskSig(base, keyTag)) prev = null;
-        const sameLayout = !!prev && prev.count === shardCount && prev.metaJson === metaJson;
+        // Shard se přepisuje, jen když se změnil. Přibyl-li shard (báze přerostla další
+        // SHARD_MAX_CHUNKS), staré shardy zůstávají — dřív se tím přepsala celá báze
+        // (server 25. 10.: 50 shardů, zastavení serveru 54 s). Shard 0 nese `_shards`,
+        // takže se při změně počtu přepíše vždy (níž).
+        const sameMeta = !!prev && prev.metaJson === metaJson;
 
-        const changed = slices.map((slice, s) => !sameLayout || !_sameSlice(prev.shards[s], slice));
+        const changed = slices.map((slice, s) => !sameMeta || s >= prev.count || !_sameSlice(prev.shards[s], slice));
+        if (prev && prev.count !== shardCount) changed[0] = true;
         if (changed.some(Boolean)) changed[0] = true; // shard 0 = meta + podpis změny
         // Shardy se zapisují od posledního k prvnímu: shard 0 (podpis) je poslední,
         // takže při pádu uprostřed zápisu se neshoduje se stavem a příště se přepíše vše.
@@ -542,7 +547,13 @@ function partitionStat(directoryName) {
 /**
  * Loads and decrypts a partition index file.
  */
-function loadPartition(directoryName) {
+/**
+ * Načtení partition jako generátor: po každém dalším shardu `yield`. loadPartition ho
+ * proběhne naráz (synchronně, jako dřív), loadPartitionAsync mezi shardy pustí smyčku
+ * událostí — předehřátí plné báze (50 shardů, ~40 s) pak neblokuje server
+ * (server 25. 10.: po startu 42 s bez odpovědi).
+ */
+function* _loadPartitionSteps(directoryName) {
     const base = _partitionBase(directoryName);
     const shard0 = _shardPath(base, 0);
 
@@ -603,6 +614,7 @@ function loadPartition(directoryName) {
             const arr = prep((obj && Array.isArray(obj.chunks)) ? obj.chunks : []);
             for (const c of arr) allChunks.push(c); // bez push(...arr): velké shardy by přetekly zásobník
             shardLens.push(arr.length);
+            yield s;
         }
         const decoded = Object.assign({}, first, { chunks: allChunks });
         delete decoded._shards;
@@ -622,6 +634,21 @@ function loadPartition(directoryName) {
         console.error(`⚠️ RAG: Nepodařilo se dešifrovat partition pro ${directoryName}:`, e.message);
         return { chunks: [] };
     }
+}
+
+function loadPartition(directoryName) {
+    const it = _loadPartitionSteps(directoryName);
+    let r;
+    while (!(r = it.next()).done) { /* synchronně naráz */ }
+    return r.value;
+}
+
+/** Jako loadPartition, ale mezi shardy uvolní smyčku událostí (server mezitím odpovídá). */
+async function loadPartitionAsync(directoryName) {
+    const it = _loadPartitionSteps(directoryName);
+    let r;
+    while (!(r = it.next()).done) await new Promise(res => setImmediate(res));
+    return r.value;
 }
 
 /**
@@ -1140,7 +1167,7 @@ function warmKnowledgeBases(opts = {}) {
             for (const scope of _listKbScopes()) {
                 await new Promise(r => setImmediate(r)); // mezi bázemi pustit čekající požadavky
                 const t0 = Date.now();
-                const n = (loadPartition(scope).chunks || []).length;
+                const n = ((await loadPartitionAsync(scope)).chunks || []).length;
                 out.push({ scope, chunks: n, ms: Date.now() - t0 });
                 if (n) console.log(`🧠 RAG: báze ${scope} připravena (${n} kousků, ${((Date.now() - t0) / 1000).toFixed(1)} s)`);
             }
@@ -1396,6 +1423,7 @@ function _applyRrf(results, K = 60) {
 }
 
 module.exports = {
+    loadPartitionAsync,
     flushPendingSaves,
     agentRagK,
     dedupeKbResults,
