@@ -61,7 +61,7 @@ Verze v `package.json` zvýšena na 1.2.0 (24. 10. 2026).
   Kaskádové mazání zatím **není** — viz `docs/PRIVACY-MAP.md`.
 - Nové proměnné: `AUDIT_READS` (audit čtení; výchozí zapnuto ve firemním režimu), `AUDIT_READ_WINDOW_MIN` (15),
   `AUDIT_LOG_CAP` (1000 záznamů v aktivním logu, zbytek do šifrovaného archivu `.audit_archiv/`),
-  `RAG_AGENT_K` (5 se zapnutým rerankerem, jinak 3), `RAG_RERANK`.
+  `RAG_AGENT_K` (5 se zapnutým rerankerem, jinak **4**; dřív 3), `RAG_RERANK`.
 - Nové API: `/api/client-updates` (návrh, fronta, schválení), `GET /api/spisy/:id/audit?format=json|csv|docx`.
 - Změna chování: `POST /api/email/send` vyžaduje oprávnění „approve“ (advokát/správce); `/api/managerial/*`
   a `GET /api/skartace/protokoly` jen správce.
@@ -70,7 +70,7 @@ Verze v `package.json` zvýšena na 1.2.0 (24. 10. 2026).
   `--import vyplneno.csv` → souhrn.
 - Báze znalostí (RAG): přírůstkový zápis (přepíše se jen změněný shard), cache v paměti, kompaktní podoba velkých
   bází (texty UTF-8, vektory Int8), předehřátí po startu serveru. Nové proměnné: `RAG_HYBRID_POOL` (400),
-  `RAG_HYBRID_POOL_LAWS` (100), `RAG_KB_LAW_SHARE` (0.6), `RAG_KB_JUD_RE`, `RAG_COMPACT_MIN` (2000),
+  `RAG_HYBRID_POOL_LAWS` (100), `RAG_KB_LAW_SHARE` (**0.75**; agent bez rerankeru dostane 3 zákony + 1 rozhodnutí — správný § mezi pasážemi 75,8 → 82,3 %), `RAG_KB_JUD_RE`, `RAG_COMPACT_MIN` (2000),
   `RAG_VEC_INT8` (1), `RAG_WARMUP` (1), `RAG_PARTITION_CACHE` (1).
 - **Rychlejší hromadné plnění bází:** `RAG_KB_SAVE_DEBOUNCE_MS` (výchozí 0 = vypnuto) odloží zápis báze
   agenta na disk na chvíli klidu (nejpozději `RAG_KB_SAVE_MAX_MS`, 30 s) a při zastavení serveru. Dřív se po

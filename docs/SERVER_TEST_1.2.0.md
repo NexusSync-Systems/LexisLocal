@@ -2,7 +2,7 @@
 
 Cíl: ověřit 1.2.0 na čistém stroji se **stejnou bází jako na Macu** (23 zákonů + judikatura
 NS, ÚS, NSS; ~297 tis. pasáží) a s nastavením pilotu na Mac mini (bge-m3, bez rerankeru,
-agent K=3). Výsledky:
+agent K=4 (3 zákony + 1 rozhodnutí)). Výsledky:
 
 - `kb_regression` na serveru (hit@1/3/5 zákonů, podíl judikatury v top 3, latence hledání),
 - studený start a **paměť backendu s plnou bází** → podklad pro velikost RAM Mac mini (`pamet.log`),

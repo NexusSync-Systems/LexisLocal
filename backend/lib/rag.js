@@ -65,7 +65,7 @@ function _hybridPool(opts) {
 // znění zákona i výklad soudů. Proto:
 //  • pool kandidátů hybridu se bere zvlášť ze zákonů (RAG_HYBRID_POOL_LAWS, výchozí 100),
 //    aby zákony nevypadly už před přeřazením,
-//  • výsledky agenta (dedupeKb) se skládají z podílu zákonů RAG_KB_LAW_SHARE (výchozí 0.6
+//  • výsledky agenta (dedupeKb) se skládají z podílu zákonů RAG_KB_LAW_SHARE (výchozí 0.75
 //    → u k=3 dva paragrafy a jedno rozhodnutí, u k=5 tři a dvě); chybí-li jeden druh,
 //    doplní se druhým. Pořadí mezi vybranými zůstává podle skóre. RAG_KB_LAW_SHARE=0 = vypnuto.
 // Judikaturu poznáme podle scope (`_kb_judikatura`, `_kb_obor_*`) nebo názvu souboru
@@ -84,7 +84,7 @@ function isLawChunk(c) {
 function _lawShare(opts) {
     if (opts && typeof opts.kbLawShare === 'number') return opts.kbLawShare;
     const v = parseFloat(process.env.RAG_KB_LAW_SHARE);
-    return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.6;
+    return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.75; // 25. 10.: 4 pasáže = 3 zákony + 1 rozhodnutí
 }
 function _lawPool() {
     const n = parseInt(process.env.RAG_HYBRID_POOL_LAWS, 10);
@@ -126,7 +126,9 @@ function _rrfK() {
 function agentRagK() {
     const k = parseInt(process.env.RAG_AGENT_K, 10);
     if (Number.isFinite(k) && k >= 1 && k <= 10) return k;
-    try { return rerankService.rerankEnabled() ? 5 : 3; } catch (e) { return 3; }
+    // Bez rerankeru 4 (= 3 zákony + 1 rozhodnutí při RAG_KB_LAW_SHARE 0.75). Měření 25. 10. 2026
+    // (plná báze, 124 dotazů): správný § mezi pasážemi agenta 75,8 % (3 pasáže) → 82,3 % (4).
+    try { return rerankService.rerankEnabled() ? 5 : 4; } catch (e) { return 4; }
 }
 
 function blendScore(semantic, lexical, alpha) {

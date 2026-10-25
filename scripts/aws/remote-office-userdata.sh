@@ -36,7 +36,7 @@ BRANCH="release-prep"
 #               ~3,5 h, vypne se nejpozději po 5,5 h.
 #   judikatura — test verze 1.2.0 s PLNOU bází rešeršníka jako na Macu (23 zákonů + judikatura
 #               NS, ÚS, NSS; ~297 tis. pasáží) a s nastavením pilotu na Mac mini (bge-m3, bez
-#               rerankeru, agent K=3): kb_regression na serveru, studený start a paměť backendu
+#               rerankeru, agent K=4 (3 zákony + 1 rozhodnutí)): kb_regression na serveru, studený start a paměť backendu
 #               (podklad pro velikost RAM Mac mini), pak celý server_suite. Báze se bere z archivu
 #               KB_ARCHIVE_S3 (jen veřejná data; nahrát z Macu, viz docs/SERVER_TEST_1.2.0.md).
 #               První běh ~4–5 h (vektory se počítají), další s cache z S3 výrazně kratší.
@@ -57,7 +57,7 @@ if [ "$PROFILE" = "kompletni" ]; then
 fi
 if [ "$PROFILE" = "judikatura" ]; then
   MAX_MINUTES=480; COMPARE_MODELS=""; SKIP_PROBE=1; SUITE_REPEAT="${SUITE_REPEAT:-2}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
-  RERANK="${RERANK_JUD:-0}"; RAG_AGENT_K="${RAG_AGENT_K_JUD:-3}"      # jako pilot na Mac mini
+  RERANK="${RERANK_JUD:-0}"; RAG_AGENT_K="${RAG_AGENT_K_JUD:-4}"      # jako pilot na Mac mini
   EMBED_MODEL_S3="${EMBED_MODEL_S3:-none}"                            # původní bge-m3 (jako na Macu)
   KB_ARCHIVE_S3="${KB_ARCHIVE_S3:-s3://$RESULTS_BUCKET/_kb/kb-1.2.0.tar.gz}"
   NODE_HEAP="${NODE_HEAP:-8192}"
