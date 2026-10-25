@@ -546,6 +546,14 @@ function loadPartition(directoryName) {
     const base = _partitionBase(directoryName);
     const shard0 = _shardPath(base, 0);
 
+    // Odložený (ještě nezapsaný) stav báze má přednost před diskem — i u NOVÉ báze, která
+    // shard 0 na disku ještě nemá (jinak se vracela prázdná a každé nahrání ji přepsalo).
+    const pend = _cacheEnabled() ? _pendingSaves.get(base) : null; // odklad jde jen s cache
+    if (pend) {
+        const meta = Object.assign({}, pend.index); delete meta.chunks;
+        return Object.assign(meta, { chunks: ((pend.index && pend.index.chunks) || []).slice() });
+    }
+
     if (!fs.existsSync(shard0)) {
         const RAG_INDEX_PATH = dataPath('.rag_index.json');
         if (fs.existsSync(RAG_INDEX_PATH)) {

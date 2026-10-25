@@ -351,6 +351,11 @@ if [ "$PROFILE" = "judikatura" ]; then
       node backend/scripts/kb_regression.js --limit 0 --sample 30 --pool-compare 15 ) > "$OUT/kb_regression.log" 2>&1 \
     || echo "!! kb_regression skončil s chybou (viz kb_regression.log)"
   cp /opt/LexisLocal/bench-results/kb_regression_* "$OUT/" 2>/dev/null
+  # Kontrola úplnosti: kolik dokumentů seed-kb nahrál vs. kolik jich je v bázi (24. 10.: chybělo 1021).
+  NAHRANO=$(grep -h '^Hotovo:' /var/log/lexis-remote.log | grep -o '✅ [0-9]* nahráno' | awk '{s+=$2} END {print s+0}')
+  V_BAZI=$(node -e "const f=require('fs'),d='/opt/LexisLocal/bench-results';const j=f.readdirSync(d).filter(x=>/^kb_regression_.*\.json$/.test(x)).sort().pop();console.log(j?JSON.parse(f.readFileSync(d+'/'+j,'utf8')).baze.dokumentu:0)" 2>/dev/null)
+  if [ "${V_BAZI:-0}" = "$NAHRANO" ]; then echo "=== báze úplná: $V_BAZI dokumentů (nahráno $NAHRANO)"
+  else echo "!! báze NEÚPLNÁ: v bázi ${V_BAZI:-?} dokumentů, nahráno $NAHRANO"; fi
   tail -n 25 "$OUT/kb_regression.log"; mem "po kb_regression"
   upload
 fi
