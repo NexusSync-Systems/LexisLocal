@@ -478,6 +478,9 @@ router.post('/:agentId', async (req, res) => {
                 instructions: [systemPromptText]
             });
             modelText = lg.text;
+            // Řádky, které model zopakoval (J1 25. 10.: 5× stejný řádek), se odstraní (lib/repeat_guard.js).
+            const rep = require('../lib/repeat_guard').collapseRepeats(modelText);
+            modelText = rep.text;
             let oppRedacted = [];
             if (profile.kind === 'opponent_letter') {
                 const rr = redactForOpponent(modelText, sourceText);
@@ -513,7 +516,7 @@ router.post('/:agentId', async (req, res) => {
             const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), oppLine, dwLine, ...scLines, (revisionCheck && revisionCheck.newParties) ? `• V novém znění jsou strany/osoby, které v konceptu ani v připomínkách nebyly — ověřte: ${revisionCheck.newParties.join(', ')}.` : ''] });
             response.message.content = body + warn;
             draftBody = body; draftWarn = warn;
-            outputGuard = { replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
+            outputGuard = { repeatsRemoved: rep.removed, replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
                 clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx, proceduralAppended: !!procApx,
                 taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted, promptLeakBlocked: lg.promptLeak, secretsRedacted: lg.redacted, deadlineWordingFixed: dw.fixed, filingCourtFixed: fc.fixed,
                 chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null, selfCheck, revisionCheck };
