@@ -75,11 +75,20 @@ const LABELS = ['Soud', 'Rozhodl', 'Sp\\. zn\\.', 'Datum vydání', 'Datum vyhl�
 function queryFromHeader(text) {
     const next = '(?=\\s+(?:' + LABELS.join('|') + '):|\\n|$)';
     const line = label => ((new RegExp(label + ':\\s*([\\s\\S]+?)' + next).exec(text) || [])[1] || '').trim();
-    let q = line('Populární název') || line('Klíčová slova');
+    // Pořadí: populární název (ÚS) → první věta právní věty → klíčová slova. Klíčová slova NS
+    // („Insolvence, Konkurs, Zástavní právo") sdílí stovky rozhodnutí, takže jedno konkrétní
+    // podle nich dohledat nejde (server 24. 10.: NS hit@5 21 % jen kvůli tomu) — jsou až poslední.
+    let q = line('Populární název');
     if (!q) {
-        const pv = /Právní věta:\s*([\s\S]{20,400}?)(?:\.|\n)/.exec(text);
-        q = pv ? pv[1] : '';
+        // Začátek právní věty (~200 znaků, celá slova). Ne „do první tečky": zkratky
+        // („§ 26 odst. 1") větu useknou a dlouhé věty tečku v dosahu nemají.
+        const pv = /Právní věta:\s*([\s\S]{20,})/.exec(text);
+        if (pv) {
+            const t = pv[1].replace(/\s+/g, ' ').trim();
+            q = t.length > 200 ? t.slice(0, 200).replace(/\s+\S*$/, '') : t;
+        }
     }
+    if (!q) q = line('Klíčová slova');
     return q.replace(/\s+/g, ' ').slice(0, 220).trim();
 }
 
