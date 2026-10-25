@@ -145,7 +145,7 @@ Object.assign(LexisLocalApp.prototype, {
     },
 
     async deleteEmailTask(id) {
-        if (!confirm("Opravdu chcete tento e-mailový úkol smazat z historie?")) return;
+        if (!await LexisUI.confirm("Opravdu chcete tento e-mailový úkol smazat z historie?")) return;
         try {
             const res = await fetch(`${this.apiBase}/email/tasks/${id}`, {
                 method: 'DELETE',
@@ -197,22 +197,23 @@ Object.assign(LexisLocalApp.prototype, {
             tasksHtml = `
                 <div class="empty-state" style="padding: 40px 20px; border: 1px dashed var(--border-glass); border-radius: 12px;">
                     <div class="empty-icon" style="font-size: 2.5rem; margin-bottom: 10px;">📧</div>
-                    <h3 style="font-size: 1rem; margin-bottom: 5px; color: white;">Žádné e-mailové úkoly</h3>
+                    <h3 style="font-size: 1rem; margin-bottom: 5px; color: var(--text-primary);">Žádné e-mailové úkoly</h3>
                     <p style="font-size: 0.8rem; max-width: 320px; margin: auto; opacity: 0.7;">Pošlete e-mail na schránku asistentů nebo použijte simulátor v levém panelu.</p>
                 </div>
             `;
         } else {
             tasksHtml = this.emailTasks.map(task => {
                 const dateStr = new Date(task.createdAt).toLocaleString('cs-CZ');
-                const safeSubject = escapeHtml(task.subject).replace(/"/g, '&quot;');
-                const escapedResponse = escapeHtml(task.responseSent).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+                // Text/předmět jdou přes data-* (escapeHtml v JS řetězci v onclick nestačí: entity se v atributu dekódují).
+                const safeSubject = escapeHtml('Odpověd na email: ' + (task.subject || ''));
+                const escapedResponse = escapeHtml(task.responseSent);
                 
                 return `
                     <div class="glass email-task-card" style="border: 1px solid var(--border-glass); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; background: rgba(15, 23, 42, 0.35); transition: border-color 0.2s;">
                         <div style="display: flex; justify-content: space-between; align-items: start;">
                             <div>
                                 <span style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 2px;">Doručeno: ${dateStr}</span>
-                                <strong style="color: white; font-size: 0.95rem; font-family: 'Outfit', sans-serif;">${escapeHtml(task.subject)}</strong>
+                                <strong style="color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif;">${escapeHtml(task.subject)}</strong>
                                 <span style="font-size: 0.75rem; color: #94a3b8; display: block; margin-top: 2px;">Od: ${escapeHtml(task.sender)}</span>
                             </div>
                             <span style="background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.25); padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; color: #93c5fd; font-weight: 600; display: flex; align-items: center; gap: 4px;">
@@ -220,21 +221,21 @@ Object.assign(LexisLocalApp.prototype, {
                             </span>
                         </div>
                         
-                        <div style="background: rgba(0,0,0,0.2); padding: 10px 14px; border-radius: 8px; font-size: 0.82rem; color: #cbd5e1; border-left: 3px solid var(--accent-blue);">
-                            <strong style="color: white;">Zadání v e-mailu:</strong><br/>
+                        <div style="background: var(--sunken-1); padding: 10px 14px; border-radius: 8px; font-size: 0.82rem; color: var(--text-secondary); border-left: 3px solid var(--accent-blue);">
+                            <strong style="color: var(--text-primary);">Zadání v e-mailu:</strong><br/>
                             <span style="display: block; margin-top: 4px; line-height: 1.4;">${escapeHtml(task.body)}</span>
                         </div>
                         
                         <div style="margin-top: 5px;">
                             <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 5px;">Odpověď odeslaná advokátovi:</span>
-                            <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.06); padding: 12px; border-radius: 8px; font-family: 'Fira Code', 'Courier New', monospace; font-size: 0.78rem; color: #e2e8f0; max-height: 200px; overflow-y: auto; white-space: pre-wrap; line-height: 1.4; scrollbar-gutter: stable;">${escapeHtml(task.responseSent)}</div>
+                            <div style="background: var(--sunken-2); border: 1px solid var(--border-glass); padding: 12px; border-radius: 8px; font-family: 'Fira Code', 'Courier New', monospace; font-size: 0.78rem; color: var(--text-primary); max-height: 200px; overflow-y: auto; white-space: pre-wrap; line-height: 1.4; scrollbar-gutter: stable;">${escapeHtml(task.responseSent)}</div>
                         </div>
                         
-                        <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px; margin-top: 5px;">
-                            <button class="btn btn-secondary" onclick="window.appInstance.sendTextToLexisEditor('${escapedResponse}', 'Odpověd na email: ${safeSubject}')" style="font-size: 0.75rem; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); color: white;">
+                        <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border-glass); padding-top: 10px; margin-top: 5px;">
+                            <button class="btn btn-secondary" data-text="${escapedResponse}" data-title="${safeSubject}" onclick="window.appInstance.sendTextToLexisEditor(this.dataset.text, this.dataset.title)" style="font-size: 0.75rem; padding: 6px 12px; border: 1px solid var(--border-glass); background: var(--sf-02); color: var(--text-primary);">
                                 ✍️ Odeslat do Editoru
                             </button>
-                            <button class="btn btn-secondary" onclick="window.appInstance.deleteEmailTask('${task.id}')" style="font-size: 0.75rem; padding: 6px 12px; border: 1px solid rgba(239,68,68,0.2); background: rgba(239,68,68,0.02); color: #f87171;">
+                            <button class="btn btn-secondary" onclick="window.appInstance.deleteEmailTask('${safeId(task.id)}')" style="font-size: 0.75rem; padding: 6px 12px; border: 1px solid rgba(239,68,68,0.2); background: rgba(239,68,68,0.02); color: #f87171;">
                                 🗑️ Smazat
                             </button>
                         </div>
@@ -247,15 +248,15 @@ Object.assign(LexisLocalApp.prototype, {
             <div class="email-tasks-layout" style="display: grid; grid-template-columns: 1fr 1.8fr; gap: 25px; margin-top: 15px; align-items: start;">
                 <!-- Settings Panel -->
                 <div class="glass" style="border: 1px solid var(--border-glass); border-radius: 14px; padding: 20px; background: rgba(30, 41, 59, 0.25); backdrop-filter: blur(12px);">
-                    <h3 style="margin-top: 0; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; font-family: 'Outfit', sans-serif; font-size: 1.1rem; color: white;">
+                    <h3 style="margin-top: 0; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; font-family: 'Outfit', sans-serif; font-size: 1.1rem; color: var(--text-primary);">
                         <span>⚙️</span> E-mailové propojení
                     </h3>
                     <form id="form-email-settings" onsubmit="window.appInstance.saveEmailSettings(event)" style="display: flex; flex-direction: column; gap: 12px; font-size: 0.82rem;">
                         <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); border-radius: 8px; padding: 10px 12px;">
                             <strong style="color: var(--accent-blue); display: block; margin-bottom: 6px; font-size: 0.8rem;">⚡ Rychlé nastavení</strong>
                             <div style="opacity:0.75; font-size:0.72rem; margin-bottom:8px;">Zadejte svůj e-mail a heslo — servery se doplní automaticky.</div>
-                            <input type="email" id="em-quick-email" placeholder="vas@email.cz" style="width: 100%; padding: 8px; margin-bottom: 6px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
-                            <input type="password" id="em-quick-pass" placeholder="Heslo k e-mailu (u Gmailu/Outlooku heslo aplikace)" autocomplete="new-password" style="width: 100%; padding: 8px; margin-bottom: 8px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                            <input type="email" id="em-quick-email" placeholder="vas@email.cz" style="width: 100%; padding: 8px; margin-bottom: 6px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
+                            <input type="password" id="em-quick-pass" placeholder="Heslo k e-mailu (u Gmailu/Outlooku heslo aplikace)" autocomplete="new-password" style="width: 100%; padding: 8px; margin-bottom: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                             <button type="button" class="btn btn-secondary" onclick="window.appInstance.quickSetupEmail()" style="width:100%; justify-content:center; padding:8px; font-size:0.8rem; border:1px solid rgba(59,130,246,0.4); background:rgba(59,130,246,0.15); color:white;">Vyplnit podle e-mailu ✨</button>
                             <div id="em-quick-note" style="font-size:0.72rem; margin-top:6px; opacity:0.85;"></div>
                         </div>
@@ -263,41 +264,41 @@ Object.assign(LexisLocalApp.prototype, {
                             <summary style="cursor:pointer; opacity:0.8; padding:4px 0;">Ruční nastavení (pokročilé)</summary>
                         <div style="margin-top:8px;">
                             <label style="opacity: 0.8; display: block; margin-bottom: 4px; font-weight: 500;">Váš autorizovaný e-mail (Advokát)</label>
-                            <input type="email" id="em-auth-sender" required style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; outline: none;" />
+                            <input type="email" id="em-auth-sender" required style="width: 100%; padding: 8px 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); outline: none;" />
                         </div>
                         <div>
                             <label style="opacity: 0.8; display: block; margin-bottom: 4px; font-weight: 500;">Cílová adresa asistentů (filtr)</label>
-                            <input type="text" id="em-recip-filter" required style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; outline: none;" />
+                            <input type="text" id="em-recip-filter" required style="width: 100%; padding: 8px 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); outline: none;" />
                         </div>
                         
-                        <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px; margin-top: 5px;">
+                        <div style="border-top: 1px solid var(--border-glass); padding-top: 10px; margin-top: 5px;">
                             <strong style="color: var(--accent-blue); display: block; margin-bottom: 8px; font-size: 0.8rem;">Příchozí pošta (IMAP)</strong>
                             <div style="display: grid; grid-template-columns: 1.5fr 0.8fr; gap: 10px; margin-bottom: 8px;">
-                                <input type="text" id="em-imap-host" placeholder="imap.domain.cz" required style="width: 100%; padding: 8px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
-                                <input type="text" id="em-imap-port" placeholder="993" required style="width: 100%; padding: 8px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                                <input type="text" id="em-imap-host" placeholder="imap.domain.cz" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
+                                <input type="text" id="em-imap-port" placeholder="993" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                             </div>
                             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-                                <input type="text" id="em-imap-user" placeholder="Uživatel / Login" required style="flex: 1; padding: 8px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                                <input type="text" id="em-imap-user" placeholder="Uživatel / Login" required style="flex: 1; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                                 <div style="display: flex; align-items: center; gap: 5px; font-size: 0.72rem; white-space: nowrap; color: var(--text-secondary);">
                                     <input type="checkbox" id="em-imap-ssl" /> SSL/TLS
                                 </div>
                             </div>
-                            <input type="password" id="em-imap-pass" placeholder="Heslo k IMAP (pro příjem pošty)" autocomplete="new-password" style="width: 100%; padding: 8px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                            <input type="password" id="em-imap-pass" placeholder="Heslo k IMAP (pro příjem pošty)" autocomplete="new-password" style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                         </div>
 
-                        <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
+                        <div style="border-top: 1px solid var(--border-glass); padding-top: 10px;">
                             <strong style="color: var(--accent-yellow); display: block; margin-bottom: 8px; font-size: 0.8rem;">Odesílání odpovědí (SMTP)</strong>
                             <div style="display: grid; grid-template-columns: 1.5fr 0.8fr; gap: 10px; margin-bottom: 8px;">
-                                <input type="text" id="em-smtp-host" placeholder="smtp.domain.cz" required style="width: 100%; padding: 8px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
-                                <input type="text" id="em-smtp-port" placeholder="465" required style="width: 100%; padding: 8px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                                <input type="text" id="em-smtp-host" placeholder="smtp.domain.cz" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
+                                <input type="text" id="em-smtp-port" placeholder="465" required style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                             </div>
                             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-                                <input type="text" id="em-smtp-user" placeholder="Uživatel / Login" required style="flex: 1; padding: 8px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                                <input type="text" id="em-smtp-user" placeholder="Uživatel / Login" required style="flex: 1; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                                 <div style="display: flex; align-items: center; gap: 5px; font-size: 0.72rem; white-space: nowrap; color: var(--text-secondary);">
                                     <input type="checkbox" id="em-smtp-ssl" /> SSL/TLS
                                 </div>
                             </div>
-                            <input type="password" id="em-smtp-pass" placeholder="Heslo k SMTP (pro odesílání)" autocomplete="new-password" style="width: 100%; padding: 8px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-glass); border-radius: 6px; color: white; font-size: 0.8rem;" />
+                            <input type="password" id="em-smtp-pass" placeholder="Heslo k SMTP (pro odesílání)" autocomplete="new-password" style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;" />
                         </div>
                         </details>
                         
@@ -306,7 +307,7 @@ Object.assign(LexisLocalApp.prototype, {
                         </label>
                         <div style="display:flex; gap:8px; align-items:center; font-size:0.78rem; opacity:0.85;">
                             <span>Kontrolovat každých</span>
-                            <input type="number" id="em-poll-min" min="1" value="5" style="width:60px; padding:4px 6px; background:rgba(0,0,0,0.25); border:1px solid var(--border-glass); border-radius:6px; color:white;" />
+                            <input type="number" id="em-poll-min" min="1" value="5" style="width:60px; padding:4px 6px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:white;" />
                             <span>minut</span>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
@@ -314,11 +315,11 @@ Object.assign(LexisLocalApp.prototype, {
                                 Uložit nastavení 💾
                             </button>
                             <div style="display:flex; gap:8px;">
-                                <button type="button" class="btn btn-secondary" onclick="window.appInstance.testEmailConnection()" style="flex:1; justify-content:center; padding:8px; font-size:0.78rem; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.05); color:white;">Otestovat spojení 🔌</button>
-                                <button type="button" class="btn btn-secondary" onclick="window.appInstance.pollEmailNow()" style="flex:1; justify-content:center; padding:8px; font-size:0.78rem; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.05); color:white;">Vyzvednout teď 📥</button>
+                                <button type="button" class="btn btn-secondary" onclick="window.appInstance.testEmailConnection()" style="flex:1; justify-content:center; padding:8px; font-size:0.78rem; border:1px solid rgba(255,255,255,0.15); background:var(--sf-05); color:white;">Otestovat spojení 🔌</button>
+                                <button type="button" class="btn btn-secondary" onclick="window.appInstance.pollEmailNow()" style="flex:1; justify-content:center; padding:8px; font-size:0.78rem; border:1px solid rgba(255,255,255,0.15); background:var(--sf-05); color:white;">Vyzvednout teď 📥</button>
                             </div>
                             <div id="em-test-note" style="font-size:0.75rem; opacity:0.9;"></div>
-                            <button type="button" class="btn btn-secondary" onclick="window.appInstance.openEmailSimulationModal()" style="width: 100%; justify-content: center; padding: 10px; font-size: 0.82rem; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: white;">
+                            <button type="button" class="btn btn-secondary" onclick="window.appInstance.openEmailSimulationModal()" style="width: 100%; justify-content: center; padding: 10px; font-size: 0.82rem; border: 1px solid rgba(255,255,255,0.15); background: var(--sf-05); color: white;">
                                 Simulovat zaslání úkolu 🚀
                             </button>
                         </div>
@@ -327,7 +328,7 @@ Object.assign(LexisLocalApp.prototype, {
 
                 <!-- Tasks List -->
                 <div style="display: flex; flex-direction: column; gap: 15px;">
-                    <h3 style="margin-top: 0; margin-bottom: 5px; font-family: 'Outfit', sans-serif; font-size: 1.1rem; color: white;">
+                    <h3 style="margin-top: 0; margin-bottom: 5px; font-family: 'Outfit', sans-serif; font-size: 1.1rem; color: var(--text-primary);">
                         📥 Úkoly pro asistenty z e-mailu
                     </h3>
                     ${tasksHtml}
@@ -472,16 +473,16 @@ Object.assign(LexisLocalApp.prototype, {
                 const isApproved = entry.humanApproved === true;
                 const approveBtn = isApproved 
                     ? `<span style="color: var(--accent-green); font-weight: bold; font-size: 0.75rem;">✓ Schváleno</span>`
-                    : `<button class="btn btn-secondary" onclick="window.appInstance.approveTransparencyEntry('${entry.id}')" style="font-size: 0.7rem; padding: 3px 8px; border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.05);">Schválit</button>`;
+                    : `<button class="btn btn-secondary" onclick="window.appInstance.approveTransparencyEntry('${safeId(entry.id)}')" style="font-size: 0.7rem; padding: 3px 8px; border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, 0.05);">Schválit</button>`;
 
                 html += `
                     <div style="padding: 8px; border-bottom: 1px solid var(--border-glass); display: flex; justify-content: space-between; align-items: center; gap: 10px;">
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-weight: bold; display: flex; align-items: center; gap: 4px;">
-                                🤖 ${entry.agentName || 'AI'} <span style="font-weight: normal; color: var(--text-muted); font-size: 0.7rem;">(${entry.model})</span>
+                                🤖 ${escapeHtml(entry.agentName || 'AI')} <span style="font-weight: normal; color: var(--text-muted); font-size: 0.7rem;">(${escapeHtml(entry.model)})</span>
                             </div>
                             <div style="font-size: 0.7rem; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; margin-top: 2px;">
-                                Hash: ${entry.hash ? entry.hash.substring(0, 12) : 'N/A'}... | Prompt: "${entry.prompt}"
+                                Hash: ${entry.hash ? escapeHtml(entry.hash.substring(0, 12)) : 'N/A'}... | Prompt: "${escapeHtml(entry.prompt)}"
                             </div>
                         </div>
                         <div style="flex: 0 0 auto; text-align: right;">
@@ -519,7 +520,7 @@ Object.assign(LexisLocalApp.prototype, {
         if (!resultDiv) return;
 
         resultDiv.style.display = 'block';
-        resultDiv.style.background = 'rgba(255,255,255,0.05)';
+        resultDiv.style.background = 'var(--sf-05)';
         resultDiv.style.color = 'white';
         resultDiv.innerHTML = '⚙️ Ověřuji kryptografickou integritu ledgeru (Hash-Chaining)...';
 

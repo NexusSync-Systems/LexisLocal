@@ -1,0 +1,57 @@
+{
+  "_comment": "Rozšířený golden set (víc dotazů, víc relevantních judikátů na dotaz). Vytvořeno z labeling worksheetu. Spuštění: node backend/scripts/rag_eval_sweep.js backend/eval/rag_eval_expanded.json",
+  "k": 5,
+  "cases": [
+    {
+      "label": "insolvenční — neúčinné právní jednání",
+      "query": "Neúčinnost právních jednání dlužníka bez přiměřeného protiplnění a odporovatelnost.",
+      "relevant": [
+        "14_C_100_2022-83.txt",
+        "21_C_272_2022-91.txt",
+        "8_C_169_2020.txt",
+        "11_Co_92_2024-253.txt",
+        "13_C_208_2018-130.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_insolvencni_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "rodinné — popření otcovství",
+      "query": "Popření otcovství a lhůty k jeho uplatnění.",
+      "relevant": [
+        "21_C_47_2020-154.txt",
+        "41_C_76_2022-35.txt",
+        "25_CO_178_2022-139.txt",
+        "67_C_96_2023-18.txt",
+        "7_C_306_2020-112.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_rodinne_pravo"
+        ],
+        "clientAccess": false
+      }
+    },
+    {
+      "label": "spotřebitelské — neplatná rozhodčí doložka",
+      "query": "Neplatnost rozhodčí doložky sjednané ve spotřebitelské smlouvě.",
+      "relevant": [
+        "15_C_53_2022-109.txt",
+        "44_C_55_2022-84.txt",
+        "19_C_53_2023-41.txt",
+        "18_C_20_2024-186.txt",
+        "34_C_36_2012-1257.txt"
+      ],
+      "filters": {
+        "scopes": [
+          "_kb_obor_spotrebitelske_pravo"
+        ],
+        "clientAccess": false
+      }
+    }
+  ]
+}

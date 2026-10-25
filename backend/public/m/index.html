@@ -1,6 +1,11 @@
 <!DOCTYPE html><html lang="cs"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>LexisEditor Mobile — editace</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>/*!
  * Quill Editor v1.3.6
  * https://quilljs.com/
@@ -948,7 +953,7 @@
 }
 </style>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&display=swap');
+/* externí fonty záměrně ne (CSP 'self', žádné požadavky mimo kancelář) — systémové písmo */
 :root{
  --bg:#f7f5f1; --canvas:#edeae4; --surface:#fff; --surface2:#faf8f5; --border:#e4e0d8; --border2:#f0ece5; --strong:#dcd6cb;
  --ink:#2b2926; --t2:#5c574f; --muted:#77716a; --faint:#a09a92;
@@ -12659,7 +12664,7 @@ module.exports = __webpack_require__(63);
  function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.opacity=1;t.style.transform='translateX(-50%) translateY(0)';clearTimeout(t._h);t._h=setTimeout(()=>{t.style.opacity=0;t.style.transform='translateX(-50%) translateY(20px)';},1600);}
 
  // ── Napojení na LexisLocal AI ──
- const LL={ get base(){return (localStorage.getItem('ll_base')||(window.LEXIS_API_TOKEN?'':''));}, get token(){return window.LEXIS_API_TOKEN||localStorage.getItem('ll_token')||'';} };
+ const LL={ get base(){return (localStorage.getItem('ll_base')||(window.LEXIS_API_TOKEN?'':''));}, get token(){const t=localStorage.getItem('ll_token')||'';return (t.indexOf('llu_')===0?t:'')||window.LEXIS_API_TOKEN||t;} };
  async function askAgent(agentId, prompt, context){
    const base=(localStorage.getItem('ll_base')||'').replace(/\/$/,'');
    const token=LL.token;
@@ -12677,7 +12682,7 @@ module.exports = __webpack_require__(63);
    const sel=q.getText(r.index,r.length);
    toast('LexisAI přepisuje…');
    const res=await askAgent('stylista','Přepiš následující pasáž právního podání do precizní, přesvědčivé advokátní češtiny. Zachovej význam, čísla, citace i spisové značky. Vrať pouze přepsaný text bez komentáře:', sel);
-   if(res.ok && res.text){ q.deleteText(r.index,r.length); q.insertText(r.index,res.text); q.setSelection(r.index,res.text.length); toast('Přepsáno'); }
+   if(res.ok && res.text){ q.deleteText(r.index,r.length); q.insertText(r.index,res.text); q.setSelection(r.index,res.text.length); toast('Přepsala AI — text zkontroluj'); }
    else{ toast(res.reason||'AI je nedostupná'); }
  }
  function openAudit(){ openSheet('sheet-audit'); }

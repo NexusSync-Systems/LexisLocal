@@ -7,6 +7,51 @@
 const db = require('./database');
 const { searchSimilar } = require('./rag');
 
+
+// ── Deterministická kontrola proti spisové evidenci ──
+// Sémantické vyhledávání (embeddingy) u krátkých jmen často nedosáhne prahu → falešné
+// „bezpečné“. Spisy proto porovnáváme lexikálně: bez diakritiky, bez právní formy,
+// po slovech (všechna slova dotazu musí být ve jménu ve spisu), IČO přesně.
+const LEGAL_FORMS = new Set(['sro', 'spol', 'as', 'akc', 'ks', 'vos', 'zs', 'ops', 'se', 'zu', 'ou', 'gmbh', 'ltd', 'inc', 'llc', 'ag', 'sa', 'e2e']);
+function _norm(s) {
+    return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        .replace(/s\.\s*r\.\s*o\.?/g, ' sro ').replace(/a\.\s*s\.?/g, ' as ').replace(/v\.\s*o\.\s*s\.?/g, ' vos ');
+}
+function _tokens(s) {
+    return _norm(s).split(/[^a-z0-9]+/).filter(t => t.length >= 2 && !LEGAL_FORMS.has(t));
+}
+function _ico(s) { const m = String(s || '').match(/\b(\d{8})\b/); return m ? m[1] : null; }
+function _nameMatches(query, candidate) {
+    const q = _tokens(query); if (!q.length) return false;
+    const c = new Set(_tokens(candidate)); if (!c.size) return false;
+    return q.every(t => c.has(t));
+}
+// Střet zájmů se prověřuje napříč CELOU kanceláří (searchSimilar s aclBypass), ale
+// ve firemním režimu nesmí zpráva ukázat obsah spisu, ke kterému tazatel nemá přístup:
+// shoda se ohlásí, název souboru a úryvek se skryjí (nález 14. 10. 2026).
+function _hitView(hit) {
+    let readable = true;
+    try { readable = require('./file_acl').canReadChunkFile(hit.fileName); } catch (e) { readable = false; }
+    if (readable) return { fileName: hit.fileName, textSnippet: String(hit.text || '').substring(0, 180) + '...' };
+    return { fileName: null, restricted: true, textSnippet: 'Shoda ve spisu, ke kterému nemáte přístup — obraťte se na správce kanceláře.' };
+}
+function _spisLabel(sp) { return [sp.spisZn, sp.nazev].filter(Boolean).join(' — ') || sp.id; }
+function registryMatches(name, role) {
+    let spisy = [];
+    try { spisy = require('./spisy').listSpisy(); } catch (e) { return { ok: false, hits: [] }; }
+    const ico = _ico(name);
+    const hits = [];
+    for (const sp of spisy) {
+        if (!sp || sp.stav === 'smazano') continue;
+        const fields = role === 'klient' ? [sp.klient] : [sp.protistrana];
+        const icoHit = ico && role === 'klient' && sp.klientIco && String(sp.klientIco).replace(/\D/g, '') === ico;
+        if (icoHit || fields.some(f => f && _nameMatches(name, f))) {
+            hits.push({ spisId: sp.id, label: _spisLabel(sp), value: role === 'klient' ? sp.klient : sp.protistrana, stav: sp.stav });
+        }
+    }
+    return { ok: true, hits };
+}
+
 class ConflictDetector {
     /**
      * Runs conflict of interest analysis
@@ -30,14 +75,14 @@ class ConflictDetector {
         let clientSearchOk = true;
         let opponentSearchOk = true;
         try {
-            clientMatches = await searchSimilar(cleanClient, 3);
+            clientMatches = await searchSimilar(cleanClient, 3, null, { aclBypass: true });
         } catch (e) {
             clientSearchOk = false;
             console.warn("⚠️ Conflicts RAG: Selhalo vyhledávání pro klienta:", e.message);
         }
 
         try {
-            counterpartyMatches = await searchSimilar(cleanCounterparty, 3);
+            counterpartyMatches = await searchSimilar(cleanCounterparty, 3, null, { aclBypass: true });
         } catch (e) {
             opponentSearchOk = false;
             console.warn("⚠️ Conflicts RAG: Selhalo vyhledávání pro protistranu:", e.message);
@@ -61,9 +106,8 @@ class ConflictDetector {
                 conflictsFound.push({
                     type: 'counterparty_match',
                     subject: cleanCounterparty,
-                    fileName: hit.fileName,
                     score: hit.score,
-                    textSnippet: hit.text.substring(0, 180) + "..."
+                    ..._hitView(hit)
                 });
             });
         } else if (relevantClientHits.length > 0) {
@@ -75,11 +119,37 @@ class ConflictDetector {
                 conflictsFound.push({
                     type: 'client_match',
                     subject: cleanClient,
-                    fileName: hit.fileName,
                     score: hit.score,
-                    textSnippet: hit.text.substring(0, 180) + "..."
+                    ..._hitView(hit)
                 });
             });
+        }
+
+        // 2a. Spisová evidence (deterministicky) — má přednost před sémantickým indexem.
+        const oppWasClient = registryMatches(cleanCounterparty, 'klient');   // protistrana = náš (bývalý) klient
+        const clientWasOpp = registryMatches(cleanClient, 'protistrana');    // nový klient = dřívější protistrana
+        const clientExisting = registryMatches(cleanClient, 'klient');        // klient už je v agendě
+        const regHigh = [
+            ...oppWasClient.hits.map(h => ({ type: 'registry_counterparty_was_client', subject: cleanCounterparty, role: 'klient', ...h })),
+            ...clientWasOpp.hits.map(h => ({ type: 'registry_client_was_counterparty', subject: cleanClient, role: 'protistrana', ...h }))
+        ];
+        if (regHigh.length) {
+            const why = [];
+            if (oppWasClient.hits.length) why.push(`protistrana „${cleanCounterparty}“ je ve spisech vedena jako náš klient`);
+            if (clientWasOpp.hits.length) why.push(`klient „${cleanClient}“ je ve spisech veden jako protistrana`);
+            const regDesc = `Upozornění: ${why.join('; ')}. Existuje vážné riziko střetu zájmů.`;
+            description = riskLevel === 'high' ? regDesc + ' ' + description : regDesc;
+            riskLevel = 'high';
+            regHigh.forEach(h => conflictsFound.unshift(h));
+        } else if (clientExisting.hits.length && riskLevel === 'none') {
+            riskLevel = 'medium';
+            description = `Klient „${cleanClient}“ již figuruje ve spisové evidenci. Zkontrolujte, zda se nejedná o duplicitní zastupování nebo dřívější spory.`;
+        }
+        if (clientExisting.hits.length) {
+            clientExisting.hits.forEach(h => conflictsFound.push({ type: 'registry_client_existing', subject: cleanClient, role: 'klient', ...h }));
+        }
+        if (!oppWasClient.ok || !clientWasOpp.ok) {
+            clientSearchOk = false; // spisy nešlo prověřit → výsledek nesmí vypadat jako „bezpečné“
         }
 
         // 2b. Selhání vyhledávání NESMÍ vypadat jako „žádný konflikt / bezpečné".
@@ -120,3 +190,4 @@ class ConflictDetector {
 }
 
 module.exports = new ConflictDetector();
+module.exports._internals = { _tokens, _nameMatches, registryMatches };

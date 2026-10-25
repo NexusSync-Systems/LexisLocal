@@ -70,9 +70,8 @@ async function handlePaperlessWebhook(payload) {
                 if (registryData.inInsolvency) {
                     metadata.summary = `⚠️ POZOR: Subjekt ${registryData.name} je v INSOLVENCI (${registryData.insolvencyCase})! ` + metadata.summary;
                 }
-                if (metadata.defendant && (metadata.defendant.toLowerCase().includes("žalovaný") || metadata.defendant.length < 30)) {
-                    metadata.defendant = `${registryData.name} (IČO: ${registryData.ico}, sídlo: ${registryData.seat})`;
-                }
+                // IČO/sídlo z ARES jen k té straně, které subjekt odpovídá (nikdy chybový text).
+                Object.assign(metadata, require('./registries').enrichPartiesWithRegistry(metadata, registryData));
             }
         } catch (e) {
             console.warn("⚠️ Paperless: Chyba při automatickém ověření registrů:", e.message);
@@ -110,7 +109,7 @@ async function handlePaperlessWebhook(payload) {
         ico: metadata.ico || null,
         inInsolvency: registryData ? registryData.inInsolvency : false,
         insolvencyCase: registryData ? registryData.insolvencyCase : null,
-        verifiedSeat: registryData ? registryData.seat : null,
+        verifiedSeat: registryData && registryData.aresOk !== false ? registryData.seat || null : null,
         wasOcr: true,
         processedAt: new Date().toISOString()
     };

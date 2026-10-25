@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LexisLocal Hub — Právní AI pod kontrolou</title>
     <!-- Premium Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Žádné externí fonty: CSP povoluje jen 'self' a kancelářská data nemají opouštět síť (ani DNS/preconnect na Google). Písmo padá na systémové. -->
     <link rel="stylesheet" href="styles.css">
+    <script>/* motiv: světlý výchozí (Modernist), tmavý jen na přání — nastav co nejdřív, ať nebliká */(function(){try{if(localStorage.getItem('lexis-theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+    <style>body.lexis-dragging::after{content:'Pusťte soubory — nahrají se do doručené pošty';position:fixed;inset:12px;z-index:9998;display:flex;align-items:center;justify-content:center;border:3px dashed var(--accent-blue,#2563eb);border-radius:14px;background:rgba(37,99,235,.08);font-size:1.2rem;font-weight:600;color:var(--text-primary,#111);pointer-events:none;}</style>
 </head>
-<body class="dark-theme">
+<body>
     <!-- Sidebar mobile backdrop -->
     <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="window.appInstance.toggleMobileSidebar(false)"></div>
 
@@ -29,29 +29,37 @@
                     <span class="icon">🏠</span> Přehled
                 </button>
                 <button class="nav-btn" data-tab="inbox">
-                    <span class="icon">📥</span> Doručené Spisy
+                    <span class="icon">📥</span> Doručené spisy
                     <span class="badge" id="inbox-badge" style="display: none;">0</span>
+                </button>
+                <button class="nav-btn" data-tab="datovka">
+                    <span class="icon">📨</span> Datová schránka
+                    <span class="badge" id="datovka-badge" style="display: none;" title="Poslední pokus o stažení selhal">!</span>
+                </button>
+                <button class="nav-btn" data-tab="drafts">
+                    <span class="icon">📝</span> Koncepty
+                    <span class="badge" id="drafts-badge" style="display: none;" title="Koncepty čekající na kontrolu">0</span>
                 </button>
                 <button class="nav-btn" data-tab="registries">
                     <span class="icon">🔍</span> Lustrační centrum
                 </button>
                 <button class="nav-btn" data-tab="models">
-                    <span class="icon">🤖</span> Správce Modelů
+                    <span class="icon">🤖</span> Správce modelů
                 </button>
                 <button class="nav-btn" data-tab="agents">
-                    <span class="icon">🕵️‍♂️</span> AI Asistenti
+                    <span class="icon">🕵️‍♂️</span> AI asistenti
                 </button>
                 <button class="nav-btn" data-tab="chat">
                     <span class="icon">💬</span> Konzultace s AI
                 </button>
                 <button class="nav-btn" data-tab="workflow">
-                    <span class="icon">📅</span> Workflow & Lhůty
+                    <span class="icon">📅</span> Workflow & lhůty
                 </button>
                 <button class="nav-btn" data-tab="timetracking">
                     <span class="icon">🕒</span> Time-tracking
                 </button>
                 <button class="nav-btn" data-tab="risks">
-                    <span class="icon">🔍</span> Rizika & Judikatura
+                    <span class="icon">🔍</span> Rizika & judikatura
                 </button>
                 <button class="nav-btn" data-tab="spisova">
                     <span class="icon">🗂️</span> Spisová služba
@@ -60,18 +68,22 @@
                     <span class="icon">🪪</span> AML / Onboarding
                 </button>
                 <button class="nav-btn" data-tab="managerial">
-                    <span class="icon">📊</span> Manažerský Přehled
+                    <span class="icon">📊</span> Manažerský přehled
                 </button>
                 <button class="nav-btn" data-tab="audit">
                     <span class="icon">📜</span> Auditní logy
+                </button>
+                <button class="nav-btn" data-tab="users" id="nav-users" style="display:none;">
+                    <span class="icon">👥</span> Uživatelé
                 </button>
                 <button class="nav-btn" data-tab="manual">
                     <span class="icon">📖</span> Návod & Nápověda
                 </button>
             </nav>
             <div class="sidebar-footer">
-                <div class="status-indicator online">
-                    <span class="pulse"></span> Server aktivní (Port 4000)
+                <div class="status-indicator connecting" id="conn-status" role="status" aria-live="polite" title="Stav spojení se serverem LexisLocal">
+                    <span class="pulse"></span> <span id="conn-text">Připojuji…</span> <span style="opacity:0.75;">&middot; <span id="srv-addr"></span></span>
+                    <script>document.getElementById('srv-addr').textContent = location.host || 'lokálně';</script>
                 </div>
             </div>
         </aside>
@@ -92,16 +104,16 @@
                 </div>
                 <div class="header-actions">
                     <button class="btn btn-primary" id="btn-upload-file">
-                        📥 Nahrát spis
+                        <span class="btn-ic"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m8 7 4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg></span>Nahrát spis
                     </button>
-                    <input type="file" id="file-uploader" style="display: none;" accept=".pdf,.txt" />
+                    <input type="file" id="file-uploader" multiple style="display: none;" accept=".pdf,.txt,.docx,.html,.htm,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.zfo" />
                     
                     <button class="btn btn-secondary" id="btn-parse-test" title="Generuje náhodný demo spis pro vyzkoušení offline">
-                        🧪 Generovat demo
+                        <span class="btn-ic"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 4v3M19.5 5.5h-3"/></svg></span>Generovat demo
                     </button>
-                    <button class="btn btn-secondary" id="btn-pair-phone" title="Zobrazí QR pro spárování telefonu/tabletu s mobilním editorem (/m)" onclick="window.open('/pair','lexislink','width=520,height=760')">
-                        📱 Spárovat telefon
-                    </button>
+                    <span id="me-chip" class="me-chip" style="display:none;"></span>
+                    <span id="ai-mode-badge" title="" style="display:none;"></span>
+                    <button class="btn btn-secondary" id="btn-theme-toggle" title="Přepnout světlý / tmavý motiv" style="min-width:auto;">🌗</button>
                     <div class="system-time" id="system-time">09:00:00</div>
                 </div>
             </header>
@@ -114,6 +126,20 @@
                     <!-- Insolvency Alerts Banner (Flashing red warning, populated via JS) -->
                     <div id="insolvency-alerts-container" style="display: none; margin-bottom: 25px;"></div>
 
+                    <!-- PŘIPRAVENOST SYSTÉMU — checklist pro laika (naplněno přes /api/readiness) -->
+                    <div class="glass" id="readiness-panel" style="margin-bottom: 25px; padding: 18px 20px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <h3 style="margin: 0; font-size: 1.05rem;">✅ Připravenost systému</h3>
+                                <span id="readiness-summary" style="font-size: 0.75rem; color: var(--text-secondary);"></span>
+                            </div>
+                            <button class="btn btn-secondary btn-xs" id="btn-refresh-readiness" title="Zkontrolovat znovu" style="font-size: 0.72rem; padding: 5px 10px;">🔄 Zkontrolovat</button>
+                        </div>
+                        <div id="readiness-list" style="display: flex; flex-direction: column; gap: 8px;">
+                            <div style="opacity: 0.6; font-size: 0.85rem;">Kontroluji stav…</div>
+                        </div>
+                    </div>
+
                     <div class="stats-grid">
                         <div class="stat-card glass">
                             <div class="stat-header">
@@ -123,7 +149,7 @@
                             <div class="stat-body">
                                 <div class="status-badge secure">100% SOUKROMÍ</div>
                                 <p>Veškerá data jsou šifrována a zpracovávána lokálně na tomto počítači.</p>
-                                <button class="btn btn-secondary" onclick="window.appInstance.runManualInsolvencyCheck()" style="margin-top: 12px; font-size: 0.8rem; padding: 6px 12px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass);">
+                                <button class="btn btn-secondary" onclick="window.appInstance.runManualInsolvencyCheck()" style="margin-top: 12px; font-size: 0.8rem; padding: 6px 12px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--sf-05); border: 1px solid var(--border-glass);">
                                     <span>🔄</span> Spustit prověrku insolvencí
                                 </button>
                             </div>
@@ -180,7 +206,7 @@
                         </div>
                     </div>
 
-                    <h3 class="section-title">🤖 Tým specializovaných AI asistentů</h3>
+                    <h3 class="section-title">Tým specializovaných AI asistentů</h3>
                     <div class="agents-grid" id="agents-list">
                         <!-- Loaded dynamically -->
                     </div>
@@ -208,6 +234,47 @@
                     </div>
                 </section>
 
+                <!-- TAB: DATOVÁ SCHRÁNKA (dřív schované v Lustračním centru → Přístupy) -->
+                <section class="tab-pane" id="tab-datovka">
+                    <div class="glass" style="padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <h2 style="margin: 0; font-size: 1.1rem;">📨 Datová schránka kanceláře</h2>
+                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                <button type="button" class="btn btn-primary btn-sm" id="btn-isds-poll" onclick="window.appInstance.isdsPollNow()">Stáhnout teď</button>
+                                <label class="btn btn-secondary btn-sm" style="cursor: pointer; margin: 0;">Nahrát .zfo<input type="file" id="dsx-zfo-input" accept=".zfo" multiple style="display: none;" onchange="window.appInstance.datovkaUploadZfo(this)"></label>
+                            </div>
+                        </div>
+                        <div id="reg-cfg-isds-status" role="status" style="font-size: 0.82rem; color: var(--text-muted);"></div>
+                        <div id="dsx-zfo-status" role="status" style="font-size: 0.8rem; color: var(--text-muted);"></div>
+                    </div>
+
+                    <div class="glass" style="padding: 18px; margin-top: 16px;">
+                        <h3 style="margin: 0 0 10px; font-size: 0.95rem;">Přijaté zprávy</h3>
+                        <div id="dsx-messages" style="display: flex; flex-direction: column; gap: 8px; font-size: 0.82rem;">
+                            <div style="opacity: 0.6;">Načítám…</div>
+                        </div>
+                        <p style="font-size: 0.74rem; color: var(--text-muted); margin: 10px 0 0;">Zprávy stažené jinde (Datovka, web ISDS) nahrajte tlačítkem „Nahrát .zfo“ — přílohy se rozbalí do spisovny a lhůta se spočítá od data doručení ze zprávy. Systémové zprávy provozovatele ISDS lhůty nezakládají.</p>
+                    </div>
+
+                    <div class="glass" style="padding: 18px; margin-top: 16px; display: flex; flex-direction: column; gap: 10px;">
+                                <h4 style="margin: 0; font-size: 0.9rem;">⚙️ Připojení schránky</h4>
+                                <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0; line-height: 1.5;">Server bude každých 15 minut stahovat doručené zprávy, uloží je do spisovny (složka <code>datova-schranka</code>) a lhůty spočítá od <b>skutečného doručení</b>. <b style="color: #f59e0b;">Pozor: přihlášení serveru účtem, který smí číst zprávy, je přihlášení oprávněné osoby — zprávy se tím doručí a začnou běžet lhůty.</b> Heslo se ukládá jen lokálně a šifrovaně a nikdy se nezobrazuje zpět.</p>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <select id="reg-cfg-isds-url" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                        <option value="https://ws1.mojedatovaschranka.cz/DS/dx">Ostrý provoz (mojedatovaschranka.cz)</option>
+                                        <option value="https://ws1.czebox.cz/DS/dx">Testovací prostředí (czebox.cz)</option>
+                                    </select>
+                                    <input type="text" id="reg-cfg-isds-login" autocomplete="off" placeholder="Přihlašovací jméno (ne ID schránky)" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                    <input type="password" id="reg-cfg-isds-password" autocomplete="new-password" placeholder="Heslo (prázdné = beze změny)" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                    <label style="font-size: 0.8rem; display: flex; gap: 8px; align-items: center;"><input type="checkbox" id="reg-cfg-isds-inbox"> Stahovat doručené zprávy automaticky</label>
+                                </div>
+                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="window.appInstance.saveRegistryConfig('dsx-cfg-status')">Uložit připojení</button>
+                            <span id="dsx-cfg-status" role="status" style="font-size: 0.78rem; color: var(--text-muted);"></span>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- TAB: REGISTRIES -->
                 <section class="tab-pane" id="tab-registries">
                     <div class="search-section glass">
@@ -220,14 +287,16 @@
                             <button class="btn btn-primary" id="btn-registry-search">Prověřit subjekt</button>
                         </div>
                         <details id="registry-config" style="margin-top: 14px;" ontoggle="if(this.open){ window.appInstance.loadRegistryConfig(); }">
-                            <summary style="cursor: pointer; font-size: 0.82rem; color: var(--text-muted); user-select: none;">⚙️ Nastavení přístupu k CEE / Katastru (volitelné)</summary>
-                            <div style="margin-top: 12px; background: rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+                            <summary style="cursor: pointer; font-size: 0.82rem; color: var(--text-muted); user-select: none;">⚙️ Přístupy: CEE, Katastr</summary>
+                            <div style="margin-top: 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+                                <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0;">📨 Datová schránka kanceláře se nastavuje v záložce <a href="#" onclick="window.appInstance.switchTab('datovka'); return false;">Datová schránka</a>.</p>
+                                <h4 style="margin: 0; font-size: 0.85rem;">CEE a Katastr (volitelné)</h4>
                                 <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0; line-height: 1.5;">CEE (exekuce) a Katastr jsou <b>placené registrované služby</b>. Bez přístupu se nedotazují (žádná odhadovaná data). Klíč se ukládá <b>jen lokálně a šifrovaně</b> a nikdy se nezobrazuje zpět. URL musí obsahovat <code>{ico}</code>.</p>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                                    <input type="text" id="reg-cfg-cee-url" placeholder="CEE API URL (obsahuje {ico})" style="width:100%; padding:8px 10px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff; font-size:0.8rem;">
-                                    <input type="password" id="reg-cfg-cee-key" placeholder="CEE klíč (prázdné = beze změny)" style="width:100%; padding:8px 10px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff; font-size:0.8rem;">
-                                    <input type="text" id="reg-cfg-katastr-url" placeholder="Katastr API URL (obsahuje {ico})" style="width:100%; padding:8px 10px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff; font-size:0.8rem;">
-                                    <input type="password" id="reg-cfg-katastr-key" placeholder="Katastr klíč (prázdné = beze změny)" style="width:100%; padding:8px 10px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                    <input type="text" id="reg-cfg-cee-url" placeholder="CEE API URL (obsahuje {ico})" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                    <input type="password" id="reg-cfg-cee-key" placeholder="CEE klíč (prázdné = beze změny)" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                    <input type="text" id="reg-cfg-katastr-url" placeholder="Katastr API URL (obsahuje {ico})" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
+                                    <input type="password" id="reg-cfg-katastr-key" placeholder="Katastr klíč (prázdné = beze změny)" style="width:100%; padding:8px 10px; background:var(--sunken-1); border:1px solid var(--border-glass); border-radius:6px; color:#fff; font-size:0.8rem;">
                                 </div>
                                 <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                                     <button type="button" class="btn btn-secondary btn-sm" id="btn-registry-config-save" onclick="window.appInstance.saveRegistryConfig()" style="padding:6px 14px; font-size:0.8rem;">Uložit přístup</button>
@@ -276,7 +345,7 @@
                 <section class="tab-pane" id="tab-chat">
                     <div class="chat-wrapper glass">
                         <!-- Swarm Playbook Presets -->
-                        <div class="chat-playbook-bar" style="display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border-glass); overflow-x: auto;">
+                        <div class="chat-playbook-bar" style="display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: var(--sf-02); border-bottom: 1px solid var(--border-glass); overflow-x: auto;">
                             <span style="font-size: 0.78rem; font-weight: 800; color: var(--accent-blue); letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap; display: flex; align-items: center; gap: 4px;">
                                 👥 AI Scénáře:
                             </span>
@@ -351,10 +420,49 @@
                             <textarea id="chat-textarea" placeholder="Zeptejte se vybraného asistenta (stiskněte Enter pro odeslání)..." rows="1"></textarea>
                             <button class="btn btn-primary" id="btn-chat-send">Odeslat 🚀</button>
                         </div>
+                        <!-- EU AI Act čl. 50: uživatel musí vědět, že komunikuje s AI -->
+                        <p class="chat-ai-notice" role="note">🤖 Odpovědi vytváří umělá inteligence a mohou obsahovat chyby — před použitím je ověřte.</p>
                     </div>
                 </section>
 
                 <!-- TAB: MANUAL -->
+                <!-- TAB: USERS (jen správce) -->
+                <section class="tab-pane" id="tab-users">
+                    <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:22px;align-items:start;" class="users-grid">
+                        <div class="glass" style="padding:22px;border-radius:16px;border:1px solid var(--border-glass);">
+                            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px;">
+                                <h3 style="margin:0;">👥 Uživatelé kanceláře</h3>
+                                <button class="btn btn-secondary" id="btn-pair-phone" title="Zobrazí QR pro spárování telefonu/tabletu s mobilním editorem (/m)" onclick="window.open('/pair','lexislink','width=520,height=760')">
+                                    <span class="btn-ic"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></span>Spárovat telefon
+                                </button>
+                            </div>
+                            <div id="users-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+                        </div>
+                        <div class="glass" style="padding:22px;border-radius:16px;border:1px solid var(--border-glass);">
+                            <h3 style="margin:0 0 6px;">＋ Nový uživatel</h3>
+                            <p style="font-size:0.78rem;opacity:0.75;margin:0 0 14px;line-height:1.45;">Každý kolega má vlastní účet. Jeho úpravy konceptů, schválení a úkony v auditu se pak zobrazují pod jeho jménem. Každé zařízení (editor, telefon) má vlastní přístup, který jde zrušit zvlášť.</p>
+                            <form id="user-new-form" onsubmit="window.appInstance.createUser(event)" style="display:flex;flex-direction:column;gap:10px;">
+                                <label style="font-size:0.78rem;">Jméno a příjmení (s titulem)
+                                    <input id="user-new-name" required minlength="2" maxlength="80" placeholder="Např. Mgr. Jana Nováková" style="width:100%;padding:8px 10px;border-radius:8px;margin-top:4px;">
+                                </label>
+                                <label style="font-size:0.78rem;">Role
+                                    <select id="user-new-role" style="width:100%;padding:8px 10px;border-radius:8px;margin-top:4px;"></select>
+                                </label>
+                                <label style="font-size:0.78rem;">První zařízení
+                                    <input id="user-new-device" maxlength="60" value="LexisEditor" style="width:100%;padding:8px 10px;border-radius:8px;margin-top:4px;">
+                                </label>
+                                <button type="submit" class="btn btn-primary" style="justify-content:center;">Založit a spárovat</button>
+                            </form>
+                            <div style="font-size:0.74rem;opacity:0.7;margin-top:14px;line-height:1.5;">
+                                <b>Role:</b> Správce — vše vč. uživatelů a nastavení · Advokát — může schvalovat koncepty a výstupy AI · Koncipient, Asistent/ka — připravují, schvaluje advokát · Jen čtení — nahlížení.
+                            </div>
+                            <div id="firm-mode-card" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-glass);"></div>
+                            <div id="codexis-card" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-glass);"></div>
+                            <div id="profile-card" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-glass);"></div>
+                        </div>
+                    </div>
+                </section>
+
                 <section class="tab-pane" id="tab-manual">
                     <div class="glass manual-card">
                         <h3>📖 Manuál na zprovoznění lokální AI (Ollama & apfel)</h3>
@@ -366,8 +474,8 @@
                             <ol>
                                 <li>Stáhněte a nainstalujte Ollamu pro Váš systém z oficiálního webu: <a href="https://ollama.com" target="_blank" style="color:var(--accent-blue); text-decoration:none;">ollama.com</a>.</li>
                                 <li>Spusťte Ollamu (ikonka lamy se zobrazí v systémové liště).</li>
-                                <li>Otevřete macOS Terminál a stáhněte si doporučený model Llama 3 příkazem:
-                                    <pre><code>ollama run llama3</code></pre>
+                                <li>Otevřete macOS Terminál a stáhněte si doporučený model příkazem:
+                                    <pre><code>ollama pull qwen2.5:7b</code></pre>
                                 </li>
                             </ol>
                         </div>
@@ -446,7 +554,7 @@
                 <section class="tab-pane" id="tab-agents">
                     <div class="glass agents-container" style="display: flex; gap: 20px; height: calc(100vh - 200px); min-height: 550px;">
                         <!-- Left pane: Assistants List -->
-                        <div class="agents-sidebar" style="flex: 0 0 280px; display: flex; flex-direction: column; border-right: 1px solid rgba(255, 255, 255, 0.1); padding-right: 20px;">
+                        <div class="agents-sidebar" style="flex: 1; display: flex; flex-direction: column;">
                             <div class="sidebar-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                                 <h3 style="margin: 0; font-size: 1.1rem;">🤖 AI Asistenti</h3>
                                 <button class="btn btn-primary btn-sm" id="btn-add-agent" style="font-size: 0.8rem; padding: 5px 10px;">➕ Nová role</button>
@@ -455,35 +563,56 @@
                                 <!-- Dynamically loaded list of agents -->
                             </div>
                         </div>
-                        
-                        <!-- Right pane: Assistant Editor Form -->
-                        <div class="agents-editor" style="flex: 1; display: flex; flex-direction: column; justify-content: center; position: relative;">
-                            <div class="editor-placeholder" id="agent-editor-placeholder" style="text-align: center; opacity: 0.6; padding: 40px;">
-                                <span class="placeholder-icon" style="font-size: 3rem; display: block; margin-bottom: 15px;">🕵️‍♂️</span>
-                                <h4 style="margin: 0 0 10px 0;">Vyberte roli ze seznamu</h4>
-                                <p style="margin: 0; font-size: 0.9rem;">Zvolte stávajícího asistenta nebo přidejte novou specializaci pro Váš lokální právní tým.</p>
+
+                        <!-- Pravý sloupec: pokrytí judikatury po oborech -->
+                        <div class="obor-coverage-pane" style="flex: 0 0 320px; display: flex; flex-direction: column; border-left: 1px solid var(--border-glass); padding-left: 20px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                                <h3 style="margin:0; font-size:1.0rem;">⚖️ Pokrytí judikatury</h3>
+                                <button class="btn btn-secondary btn-sm" id="btn-refresh-obor-coverage" title="Načíst znovu" style="font-size:0.72rem; padding:4px 9px;">🔄</button>
                             </div>
-                            
-                            <form class="agent-form" id="agent-editor-form" style="display: none; flex-direction: column; gap: 15px; text-align: left; overflow-y: auto; padding-right: 5px;">
+                            <div id="obor-coverage-summary" style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:10px;"></div>
+                            <div id="obor-coverage-list" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:4px;">
+                                <div style="opacity:.6; font-size:0.8rem;">Načítám…</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Skrytý placeholder — zachován kvůli referencím v JS -->
+                    <div id="agent-editor-placeholder" style="display: none;"></div>
+
+                    <!-- Editor asistenta — modální dialog -->
+                    <dialog id="dialog-agent-editor" class="agent-dialog">
+                        <div class="agent-dialog-header">
+                            <div class="agent-dialog-title">
+                                <span id="agent-dialog-icon" class="agent-dialog-icon">👤</span>
+                                <div>
+                                    <div id="agent-dialog-heading" style="font-size: 1.05rem; font-weight: 600;">Úprava profilu asistenta</div>
+                                    <div style="font-size: 0.78rem; opacity: 0.65;">Konfigurace chování a oprávnění lokálního asistenta</div>
+                                </div>
+                            </div>
+                            <button type="button" id="btn-close-agent-dialog" class="agent-dialog-close" aria-label="Zavřít">✕</button>
+                        </div>
+                        <div class="agent-dialog-body">
+                            <form class="agent-form" id="agent-editor-form" style="display: none; flex-direction: column; gap: 15px; text-align: left;">
                                 <input type="hidden" id="agent-form-is-system" value="false">
                                 
                                 <div class="form-group" id="agent-form-id-group" style="display: none;">
                                     <label style="display: block; font-size: 0.85rem; margin-bottom: 5px; opacity: 0.9;">Kód specializace (pouze malá písmena a podtržítka, např. <code>financnik</code>)</label>
-                                    <input type="text" id="agent-form-id" class="form-control" placeholder="Např. financnik" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff;">
+                                    <input type="text" id="agent-form-id" class="form-control" placeholder="Např. financnik" style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: #fff;">
                                 </div>
  
                                 <div class="form-row" style="display: flex; gap: 15px; flex-wrap: wrap;">
                                     <div class="form-group" style="flex: 0 0 70px;">
                                         <label style="display: block; font-size: 0.85rem; margin-bottom: 5px; opacity: 0.9;">Emoji</label>
-                                        <input type="text" id="agent-form-emoji" class="form-control" placeholder="🤖" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; font-size: 1.3rem; text-align: center;">
+                                        <input type="text" id="agent-form-emoji" class="form-control" placeholder="🤖" required style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: #fff; font-size: 1.3rem; text-align: center;">
                                     </div>
                                     <div class="form-group" style="flex: 1.5; min-width: 180px;">
                                         <label style="display: block; font-size: 0.85rem; margin-bottom: 5px; opacity: 0.9;">Název asistenta / Specializace</label>
-                                        <input type="text" id="agent-form-name" class="form-control" placeholder="Např. Finanční Analytik" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff;">
+                                        <input type="text" id="agent-form-name" class="form-control" placeholder="Např. Finanční Analytik" required style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: #fff;">
                                     </div>
                                     <div class="form-group" style="flex: 1.2; min-width: 180px;">
                                         <label style="display: block; font-size: 0.85rem; margin-bottom: 5px; opacity: 0.9;">Doporučený AI model</label>
-                                        <select id="agent-form-model" class="glass-select" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; height: 41px; outline: none; cursor: pointer;">
+                                        <select id="agent-form-model" class="glass-select" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-glass); border-radius: 6px; color: #fff; height: 41px; outline: none; cursor: pointer;">
                                             <option value="llama3">Llama 3 (Doporučeno pro stylistiku)</option>
                                             <option value="mistral">Mistral (Doporučeno pro audit)</option>
                                             <option value="gemma">Gemma (Rychlé kratší texty)</option>
@@ -494,25 +623,28 @@
                                 
                                 <div class="form-group">
                                     <label style="display: block; font-size: 0.85rem; margin-bottom: 5px; opacity: 0.9;">Popis expertízy a úkolů</label>
-                                    <input type="text" id="agent-form-role" class="form-control" placeholder="Stručný popisek k čemu asistent slouží..." required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff;">
+                                    <input type="text" id="agent-form-role" class="form-control" placeholder="Stručný popisek k čemu asistent slouží..." required style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: #fff;">
                                 </div>
  
                                 <div class="form-group">
                                     <label style="display: block; font-size: 0.85rem; margin-bottom: 8px; opacity: 0.9;">Systémová oprávnění asistenta</label>
-                                    <div style="display: flex; gap: 20px; flex-wrap: wrap; background: rgba(0,0,0,0.2); padding: 12px 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
-                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 0.82rem; color: #e2e8f0; font-weight: 500;">
+                                    <div style="display: flex; gap: 20px; flex-wrap: wrap; background: var(--sunken-1); padding: 12px 15px; border-radius: 8px; border: 1px solid var(--border-glass);">
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 0.82rem; color: var(--text-primary); font-weight: 500;">
                                             📂 Přístup ke spisům:
-                                            <select id="agent-form-spis-access" style="padding: 4px 8px; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; font-size: 0.8rem; cursor: pointer;">
+                                            <select id="agent-form-spis-access" style="padding: 4px 8px; background: #0f172a; border: 1px solid var(--border-glass); border-radius: 6px; color: #fff; font-size: 0.8rem; cursor: pointer;">
                                                 <option value="full">Plný (čte spis)</option>
                                                 <option value="redacted">Anonymizovaný</option>
                                                 <option value="none">Žádný (jen vlastní báze)</option>
                                             </select>
                                         </label>
-                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 0.82rem; cursor: pointer; color: #e2e8f0; font-weight: 500;">
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 0.82rem; cursor: pointer; color: var(--text-primary); font-weight: 500;">
                                             <input type="checkbox" id="agent-form-perm-registries" style="width: 16px; height: 16px; accent-color: var(--accent-blue); cursor: pointer;"> 🔍 Dotazy do rejstříků
                                         </label>
-                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 0.82rem; cursor: pointer; color: #e2e8f0; font-weight: 500;">
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 0.82rem; cursor: pointer; color: var(--text-primary); font-weight: 500;">
                                             <input type="checkbox" id="agent-form-perm-desktop" style="width: 16px; height: 16px; accent-color: var(--accent-blue); cursor: pointer;"> 💻 Ukládání na plochu
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 0.82rem; cursor: pointer; color: var(--text-primary); font-weight: 500;">
+                                            <input type="checkbox" id="agent-form-perm-judikatura" style="width: 16px; height: 16px; accent-color: var(--accent-blue); cursor: pointer;"> ⚖️ Používat judikaturu
                                         </label>
                                     </div>
                                     <div style="font-size: 0.72rem; opacity: 0.6; margin-top: 6px; line-height: 1.4;">
@@ -523,18 +655,18 @@
                                 <!-- Per-agent RAG: vlastní znalostní báze asistenta (_kb_<id>) -->
                                 <div class="form-group" id="agent-kb-panel" style="display: none;">
                                     <label style="display: block; font-size: 0.85rem; margin-bottom: 8px; opacity: 0.9;">📚 Vlastní znalostní báze asistenta (per-agent RAG)</label>
-                                    <div style="background: rgba(0,0,0,0.2); padding: 12px 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                                    <div style="background: var(--sunken-1); padding: 12px 15px; border-radius: 8px; border: 1px solid var(--border-glass);">
                                         <div id="agent-kb-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; max-height: 160px; overflow-y: auto;"></div>
                                         <div style="display: flex; flex-direction: column; gap: 8px;">
-                                            <input type="text" id="agent-kb-filename" placeholder="Název dokumentu (např. judikatura_promlceni.txt)" style="width: 100%; padding: 8px 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; font-size: 0.82rem;">
-                                            <textarea id="agent-kb-text" placeholder="Vložte text (judikatura, vzor, checklist…), který má mít tento asistent ve své bázi. Uloží se odděleně od klientských spisů." rows="4" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #e2e8f0; font-size: 0.82rem; resize: vertical;"></textarea>
+                                            <input type="text" id="agent-kb-filename" placeholder="Název dokumentu (např. judikatura_promlceni.txt)" style="width: 100%; padding: 8px 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: #fff; font-size: 0.82rem;">
+                                            <textarea id="agent-kb-text" placeholder="Vložte text (judikatura, vzor, checklist…), který má mít tento asistent ve své bázi. Uloží se odděleně od klientských spisů." rows="4" style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.82rem; resize: vertical;"></textarea>
                                             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                                                 <button type="button" class="btn btn-primary btn-sm" onclick="window.appInstance.submitAgentKnowledge()" style="padding: 6px 14px; font-size: 0.8rem;">➕ Přidat do báze</button>
                                                 <button type="button" class="btn btn-secondary btn-sm" onclick="window.appInstance.reindexAgentKnowledge()" title="Přepočítá vektory báze — spusť po změně embedding modelu (nebo když byl přidán text bez běžícího modelu)." style="padding: 6px 12px; font-size: 0.78rem;">🔄 Přegenerovat vektory</button>
                                             </div>
-                                            <div style="border-top: 1px solid rgba(255,255,255,0.06); margin-top: 2px; padding-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                            <div style="border-top: 1px solid var(--border-glass); margin-top: 2px; padding-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                                                 <span style="font-size: 0.78rem; opacity: 0.7;">…nebo rovnou nahrajte soubor (text se vytáhne automaticky, u skenů OCR):</span>
-                                                <input type="file" id="agent-kb-file" accept=".pdf,.docx,.txt,.html,.htm,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.webp" style="display: none;" onchange="window.appInstance.uploadAgentKnowledgeFile(this)">
+                                                <input type="file" id="agent-kb-file" multiple accept=".pdf,.docx,.txt,.html,.htm,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.webp" style="display: none;" onchange="window.appInstance.uploadAgentKnowledgeFile(this)">
                                                 <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('agent-kb-file').click()" style="padding: 6px 12px; font-size: 0.78rem;">📎 Nahrát PDF / Word / TXT / sken…</button>
                                                 <span id="agent-kb-upload-status" style="font-size: 0.76rem; opacity: 0.8;"></span>
                                             </div>
@@ -542,9 +674,40 @@
                                     </div>
                                 </div>
 
+                                <!-- Vzorové výstupy (few-shot) asistenta — app-agent-examples.js -->
+                                <div class="form-group" id="agent-ex-panel" style="display: none;">
+                                    <label style="display: block; font-size: 0.85rem; margin-bottom: 8px; opacity: 0.9;">🧩 Vzorové výstupy (ukázky pro AI) <span id="agent-ex-count" style="opacity:0.6;font-size:0.76rem;"></span></label>
+                                    <div style="background: var(--sunken-1); padding: 12px 15px; border-radius: 8px; border: 1px solid var(--border-glass);">
+                                        <div style="font-size: 0.74rem; opacity: 0.7; line-height: 1.45; margin-bottom: 10px;">
+                                            Ukázka = zadání a výstup přesně ve formě a stylu, jaký chcete. Asistent dostane k dotazu nejvýše 2 nejpodobnější ukázky (a ty označené „vždy“).
+                                            Údaje z ukázek nepřebírá — program to hlídá. Používejte fiktivní jména nebo pole <code>[Doplnit – …]</code>.
+                                        </div>
+                                        <div id="agent-ex-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; max-height: 200px; overflow-y: auto;"></div>
+                                        <div id="agent-ex-editor" style="display: none; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-glass); padding-top: 10px;">
+                                            <input type="text" id="agent-ex-title" maxlength="120" placeholder="Název ukázky (např. Předžalobní výzva — náš styl)" style="width: 100%; padding: 8px 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.82rem;">
+                                            <textarea id="agent-ex-zadani" maxlength="2000" rows="3" placeholder="Zadání, jak by ho napsal advokát (např. Napiš předžalobní výzvu k zaplacení 54 300 Kč za dílo…)" style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.82rem; resize: vertical;"></textarea>
+                                            <textarea id="agent-ex-vystup" maxlength="8000" rows="9" placeholder="Vzorový výstup — celý text přesně tak, jak má vypadat." style="width: 100%; padding: 10px; background: var(--sunken-2); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.82rem; font-family: 'JetBrains Mono', monospace; resize: vertical;"></textarea>
+                                            <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem;">
+                                                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="agent-ex-enabled" checked style="accent-color: var(--accent-blue);"> Zapnuto</label>
+                                                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" title="Ukázka se přidá ke každému dotazu (např. obecný styl kanceláře). Zabírá místo v okně modelu."><input type="checkbox" id="agent-ex-always" style="accent-color: var(--accent-blue);"> Použít vždy</label>
+                                                <span id="agent-ex-len" style="opacity:0.55;font-size:0.74rem;"></span>
+                                            </div>
+                                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                                <button type="button" class="btn btn-primary btn-sm" onclick="window.appInstance.saveAgentExample()" style="padding: 6px 14px; font-size: 0.8rem;">💾 Uložit ukázku</button>
+                                                <button type="button" class="btn btn-secondary btn-sm" onclick="window.appInstance.closeAgentExampleEditor()" style="padding: 6px 12px; font-size: 0.8rem;">Zrušit</button>
+                                            </div>
+                                        </div>
+                                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px;">
+                                            <button type="button" class="btn btn-secondary btn-sm" id="agent-ex-add" onclick="window.appInstance.editAgentExample(-1)" style="padding: 6px 12px; font-size: 0.8rem;">➕ Nová ukázka</button>
+                                            <button type="button" class="btn btn-secondary btn-sm" id="agent-ex-reset" onclick="window.appInstance.resetAgentExamples()" style="display: none; padding: 6px 12px; font-size: 0.78rem;">↺ Výchozí ukázky</button>
+                                            <span id="agent-ex-status" role="status" style="font-size: 0.76rem; opacity: 0.85;"></span>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="form-group" style="flex: 1; display: flex; flex-direction: column; min-height: 200px;">
                                     <label style="display: block; font-size: 0.85rem; margin-bottom: 5px; opacity: 0.9;">Systémové instrukce chování (System Prompt)</label>
-                                    <textarea id="agent-form-prompt" class="form-control code-editor-style" placeholder="Popište přesně chování, styl, odborný tón a pravidla, jakými se má asistent řídit..." required style="flex: 1; width: 100%; min-height: 180px; padding: 12px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #a7f3d0; font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; line-height: 1.5; resize: vertical; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);"></textarea>
+                                    <textarea id="agent-form-prompt" class="form-control code-editor-style" placeholder="Popište přesně chování, styl, odborný tón a pravidla, jakými se má asistent řídit..." required style="flex: 1; width: 100%; min-height: 180px; padding: 12px; background: var(--sunken-2); border: 1px solid var(--border-glass); border-radius: 6px; color: #a7f3d0; font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; line-height: 1.5; resize: vertical; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);"></textarea>
                                 </div>
                                 
                                 <div class="form-actions" style="display: flex; gap: 10px; margin-top: 5px;">
@@ -554,7 +717,7 @@
                                 </div>
                             </form>
                         </div>
-                    </div>
+                    </dialog>
                 </section>
 
                 <!-- TAB: AUDIT LOG -->
@@ -569,8 +732,8 @@
                                 <button class="btn btn-secondary" id="btn-refresh-audit" style="display: flex; align-items: center; gap: 8px;">
                                     <span>🔄</span> Obnovit logy
                                 </button>
-                                <button class="btn btn-danger" id="btn-clear-audit" style="display: flex; align-items: center; gap: 8px; background: rgba(220, 53, 69, 0.2); border-color: rgba(220, 53, 69, 0.4); color: #ff6b6b;">
-                                    <span>🗑️</span> Vymazat logy
+                                <button class="btn btn-secondary" id="btn-clear-audit" title="Jen správce: log se archivuje a vyprázdní (potvrzení slovem SMAZAT)" style="display: flex; align-items: center; gap: 8px; margin-left: 24px; opacity: 0.75; font-size: 0.8rem;">
+                                    <span>🗄️</span> Archivovat a vyprázdnit…
                                 </button>
                             </div>
                         </div>
@@ -645,23 +808,23 @@
                                 <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem;">
                                     <div style="display: flex; justify-content: space-between;">
                                         <span style="color: var(--text-muted);">Procesor (CPU):</span>
-                                        <span id="sys-telemetry-cores" style="color: white; font-weight: bold;">--</span>
+                                        <span id="sys-telemetry-cores" style="color: var(--text-primary); font-weight: bold;">--</span>
                                     </div>
                                     <div style="display: flex; justify-content: space-between;">
                                         <span style="color: var(--text-muted);">Zatížení systému (Load):</span>
-                                        <span id="sys-telemetry-load" style="color: white; font-weight: bold;">--</span>
+                                        <span id="sys-telemetry-load" style="color: var(--text-primary); font-weight: bold;">--</span>
                                     </div>
                                     <div style="display: flex; justify-content: space-between;">
                                         <span style="color: var(--text-muted);">Využití RAM:</span>
-                                        <span id="sys-telemetry-ram" style="color: white; font-weight: bold;">--</span>
+                                        <span id="sys-telemetry-ram" style="color: var(--text-primary); font-weight: bold;">--</span>
                                     </div>
                                     <div style="display: flex; justify-content: space-between;">
                                         <span style="color: var(--text-muted);">Grafická paměť (odhad VRAM):</span>
-                                        <span id="sys-telemetry-vram" style="color: white; font-weight: bold;">--</span>
+                                        <span id="sys-telemetry-vram" style="color: var(--text-primary); font-weight: bold;">--</span>
                                     </div>
                                     <div style="display: flex; justify-content: space-between;">
                                         <span style="color: var(--text-muted);">Uptime systému:</span>
-                                        <span id="sys-telemetry-uptime" style="color: white; font-weight: bold;">--</span>
+                                        <span id="sys-telemetry-uptime" style="color: var(--text-primary); font-weight: bold;">--</span>
                                     </div>
                                 </div>
                             </div>
@@ -689,7 +852,7 @@
                                     <!-- Populate via JS -->
                                 </div>
 
-                                <div style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border-glass); border-radius: 8px; background: rgba(0,0,0,0.1); padding: 10px; font-size: 0.8rem;">
+                                <div style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border-glass); border-radius: 8px; background: var(--sunken-1); padding: 10px; font-size: 0.8rem;">
                                     <div id="ledger-entries-list" style="display: flex; flex-direction: column; gap: 8px;">
                                         <div style="text-align: center; padding: 20px; opacity: 0.6;">Načítám AI Act ledger...</div>
                                     </div>
@@ -709,9 +872,57 @@
                                 <span>📅</span> Aktivní procesní lhůty a úkoly
                             </h3>
                             <div id="workflow-alerts-list" style="display: flex; flex-direction: column; gap: 15px;">
-                                <!-- Populate via JS -->
-                                <div style="text-align: center; padding: 40px; opacity: 0.6;">Načítám procesní úkoly...</div>
+                                <!-- Kalendář lhůt a jednání (app-calendar.js: renderCalendar / renderAgenda) -->
+                                <div class="calendar-wrapper">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                        <button class="btn btn-secondary" onclick="window.appInstance.prevMonth()" style="padding: 4px 10px;" aria-label="Předchozí měsíc">‹</button>
+                                        <strong id="calendar-month-year" style="font-family: 'Outfit', sans-serif;">Načítám…</strong>
+                                        <div style="display: flex; gap: 6px;">
+                                            <button class="btn btn-secondary" onclick="window.appInstance.jumpToToday()" style="padding: 4px 10px; font-size: 0.75rem;">Dnes</button>
+                                            <button class="btn btn-secondary" onclick="window.appInstance.nextMonth()" style="padding: 4px 10px;" aria-label="Další měsíc">›</button>
+                                        </div>
+                                    </div>
+                                    <div class="calendar-weekdays"><span>Po</span><span>Út</span><span>St</span><span>Čt</span><span>Pá</span><span>So</span><span>Ne</span></div>
+                                    <div class="calendar-days" id="calendar-days-grid"></div>
+                                </div>
+                                <div>
+                                    <h4 style="margin: 6px 0 10px; font-size: 0.85rem; opacity: 0.8;">Agenda dne <span id="calendar-selected-date-label"></span></h4>
+                                    <div id="calendar-day-agenda" style="display: flex; flex-direction: column; gap: 8px;">
+                                        <div style="text-align: center; padding: 20px; opacity: 0.6;">Načítám procesní úkoly...</div>
+                                    </div>
+                                </div>
                             </div>
+
+                            <!-- Vyhledání jednání v InfoJednání + porovnání se spisy (app-calendar.js: hearingSearch*) -->
+                            <details id="hs-panel" style="margin-top: 20px; border-top: 1px solid var(--border-glass); padding-top: 14px;" ontoggle="if(this.open) window.appInstance.hearingSearchInit()">
+                                <summary style="cursor: pointer; font-family: 'Outfit', sans-serif; font-weight: 600;">🔎 Vyhledat jednání (InfoJednání) a insolvence (ISIR)</summary>
+                                <form id="hs-form" onsubmit="window.appInstance.hearingSearchRun(event)" style="display: grid; gap: 10px; margin-top: 12px;">
+                                    <div role="radiogroup" aria-label="Způsob hledání" style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.85rem;">
+                                        <label><input type="radio" name="hs-mode" value="spzn" checked onchange="window.appInstance.hearingSearchMode()"> Podle spisové značky</label>
+                                        <label><input type="radio" name="hs-mode" value="room" onchange="window.appInstance.hearingSearchMode()"> Podle jednací síně a data</label>
+                                        <label><input type="radio" name="hs-mode" value="isir" onchange="window.appInstance.hearingSearchMode()"> Insolvence (ISIR)</label>
+                                    </div>
+                                    <label id="hs-court-wrap" style="font-size: 0.8rem;">Soud
+                                        <select id="hs-court" required onchange="window.appInstance.hearingSearchLoadRooms()" style="width: 100%; padding: 8px; margin-top: 4px;"><option value="">Načítám soudy…</option></select>
+                                    </label>
+                                    <label id="hs-spzn-wrap" style="font-size: 0.8rem;">Spisová značka
+                                        <input id="hs-spzn" type="text" placeholder="např. 12 C 45/2026" autocomplete="off" style="width: 100%; padding: 8px; margin-top: 4px;" />
+                                    </label>
+                                    <div id="hs-room-wrap" style="display: none; gap: 10px; grid-template-columns: 1fr 160px;">
+                                        <label style="font-size: 0.8rem;">Jednací síň
+                                            <select id="hs-room" style="width: 100%; padding: 8px; margin-top: 4px;"><option value="">Nejdřív vyberte soud</option></select>
+                                        </label>
+                                        <label style="font-size: 0.8rem;">Datum
+                                            <input id="hs-date" type="date" style="width: 100%; padding: 8px; margin-top: 4px;" />
+                                        </label>
+                                    </div>
+                                    <div style="display: flex; gap: 10px; align-items: center;">
+                                        <button type="submit" class="btn btn-primary" id="hs-submit">Vyhledat</button>
+                                        <span id="hs-note" style="font-size: 0.75rem; opacity: 0.7;">Informativní zdroj (cca 30 dní dopředu). Závazné je předvolání z datové schránky.</span>
+                                    </div>
+                                </form>
+                                <div id="hs-results" aria-live="polite" style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;"></div>
+                            </details>
                         </div>
 
                         <!-- Workflow Rules -->
@@ -731,7 +942,7 @@
                             <form id="workflow-rule-form" style="display: flex; flex-direction: column; gap: 12px;" onsubmit="window.appInstance.saveWorkflowRule(event)">
                                 <div>
                                     <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Název pravidla</label>
-                                    <input type="text" id="wf-rule-name" placeholder="Např. Hlídání lhůty odvolání" required style="width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                                    <input type="text" id="wf-rule-name" placeholder="Např. Hlídání lhůty odvolání" required style="width: 100%; padding: 8px 12px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                                 </div>
                                 <div>
                                     <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Událost (Trigger)</label>
@@ -743,16 +954,16 @@
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                                     <div>
                                         <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Klíčové pole</label>
-                                        <input type="text" id="wf-rule-field" placeholder="Např. documentName" required style="width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                                        <input type="text" id="wf-rule-field" placeholder="Např. documentName" required style="width: 100%; padding: 8px 12px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                                     </div>
                                     <div>
                                         <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Obsahuje hodnotu</label>
-                                        <input type="text" id="wf-rule-value" placeholder="Např. rozsudek" required style="width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                                        <input type="text" id="wf-rule-value" placeholder="Např. rozsudek" required style="width: 100%; padding: 8px 12px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                                     </div>
                                 </div>
                                 <div>
                                     <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Vyvolaná akce (Úkol)</label>
-                                    <input type="text" id="wf-rule-action" placeholder="Např. Připravit odvolání do 15 dnů" required style="width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                                    <input type="text" id="wf-rule-action" placeholder="Např. Připravit odvolání do 15 dnů" required style="width: 100%; padding: 8px 12px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                                 </div>
                                 <button type="submit" class="btn btn-primary" style="margin-top: 5px;">Uložit recept 💾</button>
                             </form>
@@ -769,11 +980,11 @@
                                 <span>🕒</span> Dnešní aktivita a odpracovaný čas
                             </h3>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px;">
-                                <div class="glass" style="padding: 20px; border-radius: 12px; text-align: center; background: rgba(255,255,255,0.01);">
+                                <div class="glass" style="padding: 20px; border-radius: 12px; text-align: center; background: var(--sf-01);">
                                     <span style="font-size: 0.8rem; opacity: 0.7; display: block; margin-bottom: 5px;">Odpracovaný čas celkem</span>
                                     <strong id="time-stat-total" style="font-size: 2.2rem; font-family: 'Outfit', sans-serif; color: var(--accent-gold);">0.0 hod</strong>
                                 </div>
-                                <div class="glass" style="padding: 20px; border-radius: 12px; text-align: center; background: rgba(255,255,255,0.01);">
+                                <div class="glass" style="padding: 20px; border-radius: 12px; text-align: center; background: var(--sf-01);">
                                     <span style="font-size: 0.8rem; opacity: 0.7; display: block; margin-bottom: 5px;">Záznamů o změnách</span>
                                     <strong id="time-stat-count" style="font-size: 2.2rem; font-family: 'Outfit', sans-serif; color: var(--accent-blue);">0</strong>
                                 </div>
@@ -798,8 +1009,7 @@
                                 <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
                                     <label style="font-size: 0.85rem; opacity: 0.8;">Použít model pro výkaz:</label>
                                     <select id="timesheet-model-select" style="padding: 8px 12px; background: #0f172a; border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none; flex-grow: 1;">
-                                        <option value="llama3">Llama-3 (Doporučeno)</option>
-                                        <option value="mistral">Mistral (Analytický)</option>
+                                        <option value="">Výchozí model kanceláře</option>
                                     </select>
                                 </div>
                             </div>
@@ -841,17 +1051,17 @@
                                 <form id="conflict-check-form" style="display: flex; flex-direction: column; gap: 12px;" onsubmit="window.appInstance.runConflictCheck(event)">
                                     <div>
                                         <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Jméno nového klienta</label>
-                                        <input type="text" id="conflict-client-name" placeholder="Např. ACME Legal s.r.o." required style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                                        <input type="text" id="conflict-client-name" placeholder="Např. ACME Legal s.r.o." required style="width: 100%; padding: 10px 14px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                                     </div>
                                     <div>
                                         <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Jméno protistrany (Opponent)</label>
-                                        <input type="text" id="conflict-opponent-name" placeholder="Např. Jan Novák" required style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                                        <input type="text" id="conflict-opponent-name" placeholder="Např. Jan Novák" required style="width: 100%; padding: 10px 14px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                                     </div>
                                     <button type="submit" class="btn btn-primary" style="margin-top: 10px; padding: 12px;">Prověřit střet zájmů 🔍</button>
                                 </form>
                             </div>
 
-                            <div id="conflict-result-panel" class="glass" style="display: none; padding: 15px; border-radius: 12px; margin-top: 20px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass);">
+                            <div id="conflict-result-panel" class="glass" style="display: none; padding: 15px; border-radius: 12px; margin-top: 20px; background: var(--sf-02); border: 1px solid var(--border-glass);">
                                 <h4 style="margin-top: 0; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
                                     <span>Výsledek prověrky:</span>
                                     <span id="conflict-risk-badge" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 20px; font-weight: bold;">Žádné riziko</span>
@@ -872,18 +1082,18 @@
                             <form id="compliance-check-form" style="display: flex; flex-direction: column; gap: 12px;" onsubmit="window.appInstance.runComplianceCheck(event)">
                                 <div>
                                     <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Název smlouvy/konceptu</label>
-                                    <input type="text" id="compliance-doc-name" placeholder="Např. Nájemní smlouva - Vzor 2026" required style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                                    <input type="text" id="compliance-doc-name" placeholder="Např. Nájemní smlouva - Vzor 2026" required style="width: 100%; padding: 10px 14px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                                 </div>
                                 <div>
                                     <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Text konceptu k analýze</label>
-                                    <textarea id="compliance-doc-text" rows="5" placeholder="Vložte sem text doložky nebo smlouvy..." required style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none; resize: vertical; font-family: monospace; font-size: 0.8rem;"></textarea>
+                                    <textarea id="compliance-doc-text" rows="5" placeholder="Vložte sem text doložky nebo smlouvy..." required style="width: 100%; padding: 10px 14px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none; resize: vertical; font-family: monospace; font-size: 0.8rem;"></textarea>
                                 </div>
-                                <button type="submit" class="btn btn-secondary" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); padding: 12px; color: white;">
+                                <button type="submit" class="btn btn-secondary" style="background: var(--sf-05); border: 1px solid var(--border-glass); padding: 12px; color: white;">
                                     Analyzovat soulad s judikáty ⚖️
                                 </button>
                             </form>
 
-                            <div id="compliance-result-panel" class="glass" style="display: none; padding: 15px; border-radius: 12px; margin-top: 20px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass);">
+                            <div id="compliance-result-panel" class="glass" style="display: none; padding: 15px; border-radius: 12px; margin-top: 20px; background: var(--sf-02); border: 1px solid var(--border-glass);">
                                 <h4 style="margin-top: 0; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
                                     <span>Výsledek souladu:</span>
                                     <span id="compliance-status-badge" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 20px; font-weight: bold;">Plně vyhovující</span>
@@ -907,11 +1117,34 @@
                 </section>
 
                 <!-- TAB: MANAGERIAL INTELLIGENCE -->
+                <section class="tab-pane" id="tab-drafts">
+                    <div class="drafts-layout">
+                        <div class="glass drafts-col">
+                            <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+                                <button class="btn btn-primary" onclick="window.appInstance.newDraft()">➕ Nový koncept</button>
+                                <select id="drafts-filter" onchange="window.appInstance.loadDraftsTab()" style="padding:6px 8px;border:1px solid var(--border-glass);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);">
+                                    <option value="">Všechny</option>
+                                    <option value="ke_kontrole">Ke kontrole</option>
+                                    <option value="koncept">Koncept</option>
+                                    <option value="schvaleno">Schváleno</option>
+                                </select>
+                            </div>
+                            <div id="drafts-list" style="display:flex;flex-direction:column;gap:8px;">Načítám…</div>
+                        </div>
+                        <div class="glass drafts-col">
+                            <div id="draft-detail" style="opacity:0.7;">Vyberte koncept vlevo. Koncepty od AI agentů čekají „ke kontrole“ — schvaluje vždy advokát, podpis a odeslání zůstávají v LexisEditoru.</div>
+                        </div>
+                    </div>
+                </section>
+
                 <section class="tab-pane" id="tab-spisova">
                     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
                         <button class="btn btn-primary" onclick="window.appInstance.syncSpisy()">🔄 Synchronizovat z inboxu</button>
                         <button class="btn btn-secondary" onclick="window.appInstance.novySpis()">➕ Nový spis</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('ss-import-file').click()">📄 Import spisů z CSV</button>
+                        <input type="file" id="ss-import-file" accept=".csv,text/csv,.txt" hidden onchange="window.appInstance.importSpisyCsv(this)">
                     </div>
+                    <div id="ss-import-panel" hidden class="glass" style="padding:16px 20px;border-radius:16px;border:1px solid var(--border-glass);margin-bottom:16px;"></div>
                     <div style="display:grid;grid-template-columns:0.9fr 1.1fr;gap:20px;">
                         <div class="glass" style="padding:20px;border-radius:16px;border:1px solid var(--border-glass);">
                             <h3 style="margin-top:0;">📁 Spisy</h3>
@@ -974,11 +1207,11 @@
                                     <option value="FO">Fyzická osoba</option>
                                     <option value="PO">Právnická osoba</option>
                                 </select>
-                                <input id="aml-jmeno" placeholder="Jméno / název klienta" required style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
-                                <input id="aml-ico" placeholder="IČO (u právnické osoby)" style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
-                                <input id="aml-rc" placeholder="RČ / datum narození (u FO)" style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
-                                <input id="aml-adresa" placeholder="Adresa" style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
-                                <input id="aml-provedl" placeholder="Prověrku provedl (advokát)" style="padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
+                                <input id="aml-jmeno" placeholder="Jméno / název klienta" required style="padding:8px 12px;background:var(--sf-03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
+                                <input id="aml-ico" placeholder="IČO (u právnické osoby)" style="padding:8px 12px;background:var(--sf-03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
+                                <input id="aml-rc" placeholder="RČ / datum narození (u FO)" style="padding:8px 12px;background:var(--sf-03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
+                                <input id="aml-adresa" placeholder="Adresa" style="padding:8px 12px;background:var(--sf-03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
+                                <input id="aml-provedl" placeholder="Prověrku provedl (advokát)" style="padding:8px 12px;background:var(--sf-03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
                                 <button type="submit" class="btn btn-primary">Provést AML prověrku</button>
                             </form>
                             <p style="font-size:0.75rem;color:#eab308;margin-top:10px;">Ověří ARES/ISIR a lokální PEP/sankční seznam. Oficiální PEP a mezinárodní sankční seznamy (EU/OFAC) je nutné ověřit zvlášť.</p>
@@ -991,7 +1224,7 @@
                     <div class="glass" style="padding:20px;border-radius:16px;border:1px solid var(--border-glass);margin-top:20px;">
                         <h3 style="margin-top:0;">🚩 Lokální PEP / sankční seznam kanceláře</h3>
                         <form onsubmit="window.appInstance.amlAddWatch(event)" style="display:flex;gap:8px;flex-wrap:wrap;">
-                            <input id="aml-watch-name" placeholder="Jméno osoby / subjektu" style="flex:1;min-width:200px;padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
+                            <input id="aml-watch-name" placeholder="Jméno osoby / subjektu" style="flex:1;min-width:200px;padding:8px 12px;background:var(--sf-03);border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;" />
                             <select id="aml-watch-type" style="padding:8px 12px;background:#0f172a;border:1px solid var(--border-glass);border-radius:8px;color:white;outline:none;">
                                 <option value="PEP">PEP</option>
                                 <option value="SANKCE">SANKCE</option>
@@ -1007,12 +1240,12 @@
                         
                         <!-- Profitability Tracker -->
                         <div class="glass" style="padding: 25px; border-radius: 16px; border: 1px solid var(--border-glass);">
-                            <div class="glass" style="padding: 15px; border-radius: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); margin-bottom: 25px;">
-                                <h4 style="margin-top: 0; margin-bottom: 10px; font-family: 'Outfit', sans-serif; font-size: 0.9rem; color: white;">🏢 Globální hodinová sazba kanceláře</h4>
+                            <div class="glass" style="padding: 15px; border-radius: 12px; background: var(--sf-02); border: 1px solid var(--border-glass); margin-bottom: 25px;">
+                                <h4 style="margin-top: 0; margin-bottom: 10px; font-family: 'Outfit', sans-serif; font-size: 0.9rem; color: var(--text-primary);">🏢 Globální hodinová sazba kanceláře</h4>
                                 <form id="office-rate-form" style="display: flex; gap: 12px; align-items: flex-end;" onsubmit="window.appInstance.saveOfficeRate(event)">
                                     <div style="flex: 1;">
                                         <label style="font-size: 0.75rem; opacity: 0.8; display: block; margin-bottom: 5px;">Výchozí sazba pro spisy bez vlastního rozpočtu (Kč/hod)</label>
-                                        <input type="number" id="office-default-rate" placeholder="2500" required style="width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none; font-size: 0.85rem;" />
+                                        <input type="number" id="office-default-rate" placeholder="2500" required style="width: 100%; padding: 8px 12px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none; font-size: 0.85rem;" />
                                     </div>
                                     <button type="submit" class="btn btn-secondary" style="padding: 9px 16px; font-size: 0.85rem;">Uložit sazbu 🏢</button>
                                 </form>
@@ -1032,12 +1265,12 @@
 
                             <hr style="border: 0; border-top: 1px solid var(--border-glass); margin-bottom: 20px;" />
 
-                            <h4 style="margin-top: 0; margin-bottom: 15px; font-family: 'Outfit', sans-serif; color: white;">⚙️ Konfigurovat rozpočet a sazbu spisu</h4>
+                            <h4 style="margin-top: 0; margin-bottom: 15px; font-family: 'Outfit', sans-serif; color: var(--text-primary);">⚙️ Konfigurovat rozpočet a sazbu spisu</h4>
                             <form id="managerial-budget-form" style="display: flex; flex-direction: column; gap: 12px;" onsubmit="window.appInstance.saveBudget(event)">
                                 <div style="display: flex; gap: 12px;">
                                     <div style="flex: 1.5;">
                                         <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Název dokumentu / spisu</label>
-                                        <input type="text" id="budget-doc-name" placeholder="Např. Nájemní smlouva.docx" required style="width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                                        <input type="text" id="budget-doc-name" placeholder="Např. Nájemní smlouva.docx" required style="width: 100%; padding: 8px 12px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                                     </div>
                                     <div style="flex: 1;">
                                         <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Typ budgetu</label>
@@ -1050,11 +1283,11 @@
                                 <div style="display: flex; gap: 12px;">
                                     <div style="flex: 1;">
                                         <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Hodinový limit</label>
-                                        <input type="number" id="budget-hours" placeholder="10" required style="width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                                        <input type="number" id="budget-hours" placeholder="10" required style="width: 100%; padding: 8px 12px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                                     </div>
                                     <div style="flex: 1;">
                                         <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Sazba spisu (Kč/hod)</label>
-                                        <input type="number" id="budget-rate" placeholder="výchozí" style="width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                                        <input type="number" id="budget-rate" placeholder="výchozí" style="width: 100%; padding: 8px 12px; background: var(--sf-03); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                                     </div>
                                 </div>
                                 <button type="submit" class="btn btn-primary" style="padding: 10px 16px;">Uložit 💾</button>
@@ -1107,43 +1340,43 @@
     </div>
 
     <!-- Dialog for Quick Time Log -->
-    <dialog id="dialog-quick-timelog" class="glass" style="border: 1px solid var(--border-glass); border-radius: 16px; padding: 25px; max-width: 450px; width: 90%; color: white; background: rgba(19, 21, 26, 0.98); box-shadow: 0 10px 40px rgba(0,0,0,0.6); margin: auto; outline: none; border-color: rgba(245,158,11,0.35);">
+    <dialog id="dialog-quick-timelog" class="glass" style="border: 1px solid var(--border-glass); border-radius: 16px; padding: 25px; max-width: 450px; width: 90%; color: var(--text-primary); background: var(--modal-solid); box-shadow: 0 10px 40px rgba(0,0,0,0.6); margin: auto; outline: none; border-color: rgba(245,158,11,0.35);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h3 style="margin: 0; display: flex; align-items: center; gap: 8px; font-family: 'Outfit', sans-serif;">
                 <span>⏱️</span> Rychlý výkaz činnosti
             </h3>
-            <button onclick="document.getElementById('dialog-quick-timelog').close()" style="background: transparent; border: none; color: white; cursor: pointer; font-size: 1.2rem; opacity: 0.7;">✕</button>
+            <button onclick="document.getElementById('dialog-quick-timelog').close()" style="background: transparent; border: none; color: var(--text-primary); cursor: pointer; font-size: 1.2rem; opacity: 0.7;">✕</button>
         </div>
         <form id="form-quick-timelog" onsubmit="window.appInstance.saveQuickTimeLog(event)" style="display: flex; flex-direction: column; gap: 15px;">
             <div>
                 <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Název spisu / Klient</label>
-                <input type="text" id="qtl-case" placeholder="Např. Černý vs. Bílá (2026/001)" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                <input type="text" id="qtl-case" placeholder="Např. Černý vs. Bílá (2026/001)" required style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
             </div>
             <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 15px;">
                 <div>
                     <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Datum úkonu</label>
-                    <input type="date" id="qtl-date" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                    <input type="date" id="qtl-date" required style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                 </div>
                 <div>
                     <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Čas (hodiny)</label>
-                    <input type="number" id="qtl-hours" step="0.25" min="0.25" placeholder="Např. 1.5" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                    <input type="number" id="qtl-hours" step="0.25" min="0.25" placeholder="Např. 1.5" required style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
                 </div>
             </div>
             <div>
                 <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Popis provedené práce</label>
-                <textarea id="qtl-description" placeholder="Např. Studium soudního spisu, příprava podání k soudu..." required style="width: 100%; height: 80px; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none; resize: none; font-family: inherit; font-size: 0.85rem;"></textarea>
+                <textarea id="qtl-description" placeholder="Např. Studium soudního spisu, příprava podání k soudu..." required style="width: 100%; height: 80px; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none; resize: none; font-family: inherit; font-size: 0.85rem;"></textarea>
             </div>
             <button type="submit" class="btn btn-primary" style="background: var(--accent-yellow); color: black; font-weight: 700; width: 100%; justify-content: center; padding: 12px; margin-top: 5px; border: none;">Uložit úkon 💾</button>
         </form>
     </dialog>
 
     <!-- Dialog for Case Timeline & History (Backup modal) -->
-    <dialog id="dialog-case-timeline" class="glass" style="border: 1px solid var(--border-glass); border-radius: 16px; padding: 25px; max-width: 600px; width: 90%; color: white; background: rgba(19, 21, 26, 0.98); box-shadow: 0 10px 40px rgba(0,0,0,0.6); margin: auto; outline: none; border-color: rgba(59,130,246,0.35);">
+    <dialog id="dialog-case-timeline" class="glass" style="border: 1px solid var(--border-glass); border-radius: 16px; padding: 25px; max-width: 600px; width: 90%; color: var(--text-primary); background: var(--modal-solid); box-shadow: 0 10px 40px rgba(0,0,0,0.6); margin: auto; outline: none; border-color: rgba(59,130,246,0.35);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h3 style="margin: 0; display: flex; align-items: center; gap: 8px; font-family: 'Outfit', sans-serif;">
                 <span>⏱️</span> Časová osa spisu
             </h3>
-            <button onclick="document.getElementById('dialog-case-timeline').close()" style="background: transparent; border: none; color: white; cursor: pointer; font-size: 1.2rem; opacity: 0.7;">✕</button>
+            <button onclick="document.getElementById('dialog-case-timeline').close()" style="background: transparent; border: none; color: var(--text-primary); cursor: pointer; font-size: 1.2rem; opacity: 0.7;">✕</button>
         </div>
         <div style="margin-bottom: 15px;">
             <span style="font-size: 0.8rem; opacity: 0.6; display: block;">Spisová značka</span>
@@ -1156,25 +1389,25 @@
     </dialog>
 
     <!-- Dialog for Email Simulation -->
-    <dialog id="dialog-email-simulation" class="glass" style="border: 1px solid var(--border-glass); border-radius: 16px; padding: 25px; max-width: 500px; width: 90%; color: white; background: rgba(19, 21, 26, 0.98); box-shadow: 0 10px 40px rgba(0,0,0,0.6); margin: auto; outline: none; border-color: rgba(59,130,246,0.35);">
+    <dialog id="dialog-email-simulation" class="glass" style="border: 1px solid var(--border-glass); border-radius: 16px; padding: 25px; max-width: 500px; width: 90%; color: var(--text-primary); background: var(--modal-solid); box-shadow: 0 10px 40px rgba(0,0,0,0.6); margin: auto; outline: none; border-color: rgba(59,130,246,0.35);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h3 style="margin: 0; display: flex; align-items: center; gap: 8px; font-family: 'Outfit', sans-serif;">
                 <span>📧</span> Simulace e-mailu od Advokáta
             </h3>
-            <button onclick="document.getElementById('dialog-email-simulation').close()" style="background: transparent; border: none; color: white; cursor: pointer; font-size: 1.2rem; opacity: 0.7;">✕</button>
+            <button onclick="document.getElementById('dialog-email-simulation').close()" style="background: transparent; border: none; color: var(--text-primary); cursor: pointer; font-size: 1.2rem; opacity: 0.7;">✕</button>
         </div>
         <form id="form-email-simulation" onsubmit="window.appInstance.submitEmailSimulation(event)" style="display: flex; flex-direction: column; gap: 15px;">
             <div>
                 <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Odesílatel (Advokát)</label>
-                <input type="text" id="ems-sender" placeholder="advokat@dias.cz" value="advokat@dias.cz" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                <input type="text" id="ems-sender" placeholder="advokat@dias.cz" value="advokat@dias.cz" required style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
             </div>
             <div>
                 <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Předmět e-mailu</label>
-                <input type="text" id="ems-subject" placeholder="Např. [Spisovatel] Darovací smlouva nebo [Kontrolor] Kontrola doložky" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
+                <input type="text" id="ems-subject" placeholder="Např. [Spisovatel] Darovací smlouva nebo [Kontrolor] Kontrola doložky" required style="width: 100%; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none;" />
             </div>
             <div>
                 <label style="font-size: 0.8rem; opacity: 0.8; display: block; margin-bottom: 5px;">Obsah zprávy (Zadání úkolu pro asistenta)</label>
-                <textarea id="ems-body" placeholder="Např. Ahoj, prosím sepiš darovací smlouvu na auto... nebo @kontrolor zkontroluj smluvní pokutu..." required style="width: 100%; height: 120px; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none; resize: none; font-family: inherit; font-size: 0.85rem;"></textarea>
+                <textarea id="ems-body" placeholder="Např. Ahoj, prosím sepiš darovací smlouvu na auto... nebo @kontrolor zkontroluj smluvní pokutu..." required style="width: 100%; height: 120px; padding: 10px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 8px; color: white; outline: none; resize: none; font-family: inherit; font-size: 0.85rem;"></textarea>
             </div>
             <div style="font-size: 0.75rem; opacity: 0.7; color: var(--accent-blue);">
                 💡 Tip: V předmětu uveďte roli asistenta v hranatých závorkách (např. [Spisovatel]) nebo v textu napište na začátek tag (např. @kontrolor). Jinak systém provede automatické přiřazení podle obsahu textu.
@@ -1193,16 +1426,68 @@
     </button>
 
     <!-- Core App Logic -->
+    <script src="app-dialogs.js"></script>
     <script src="app-helpers.js"></script>
     <script src="app.js"></script>
     <script src="app-inbox.js"></script>
     <script src="app-chat.js"></script>
+    <script src="app-datovka.js"></script>
+    <script src="app-ux.js"></script>
     <script src="app-alerts-audit.js"></script>
     <script src="app-agents.js"></script>
     <script src="app-agent-kb.js"></script>
+    <script src="app-agent-examples.js"></script>
     <script src="app-calendar.js"></script>
     <script src="app-managerial.js"></script>
     <script src="app-email.js"></script>
     <script src="app-spisova.js"></script>
+    <script src="app-drafts.js"></script>
+    <script src="app-users.js"></script>
+    <!-- Sjednocení emoji → Lucide-style čárové ikony (i pro dynamický obsah) -->
+    <script src="app-icons.js"></script>
+    <script>
+    (function(){
+      var btn=document.getElementById('btn-theme-toggle');
+      /* Modernist: světlý = výchozí (bez atributu), tmavý = data-theme="dark" */
+      function cur(){ return document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light'; }
+      function paint(){ if(btn) btn.textContent = cur()==='dark' ? '🌙' : '☀️'; }
+      if(btn){ btn.addEventListener('click',function(){
+        var dark = cur()!=='dark';
+        if(dark) document.documentElement.setAttribute('data-theme','dark');
+        else document.documentElement.removeAttribute('data-theme');
+        try{ localStorage.setItem('lexis-theme', dark?'dark':'light'); }catch(e){}
+        paint();
+      }); }
+      paint();
+    })();
+    </script>
+    <script>
+    /* Jednotné line-ikony (inline SVG, offline, bez knihovny) — nahradí emoji v menu. */
+    (function(){
+      var I={
+        overview:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
+        inbox:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.5z"/>',
+        registries:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><path d="m9 11 1.5 1.5L14 9"/>',
+        models:'<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/>',
+        agents:'<rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M8 3h8"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/>',
+        chat:'<path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/>',
+        workflow:'<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 9h18"/><path d="M12 13v3l2 1"/>',
+        timetracking:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+        risks:'<path d="M12 3 5 6v5c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z"/><path d="M12 8v4M12 15h.01"/>',
+        spisova:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+        aml:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="2"/><path d="M14 10h4M14 14h4"/>',
+        managerial:'<path d="M3 3v18h18"/><path d="M8 17v-5M13 17V9M18 17V6"/>',
+        audit:'<path d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5M8 13h8M8 17h6"/>',
+        manual:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V5.5"/>'
+      };
+      function paint(){
+        document.querySelectorAll('.nav-btn[data-tab]').forEach(function(b){
+          var t=b.getAttribute('data-tab'); var ic=b.querySelector('.icon');
+          if(ic && I[t]) ic.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true">'+I[t]+'</svg>';
+        });
+      }
+      if(document.readyState!=='loading') paint(); else document.addEventListener('DOMContentLoaded',paint);
+    })();
+    </script>
 </body>
 </html>

@@ -11,15 +11,27 @@
 
 const { extractToken } = require('./auth');
 const agentTokens = require('./agent_tokens');
+const users = require('./users');
 
-const FULL_SCOPES = ['read', 'write', 'admin'];
+const FULL_SCOPES = ['read', 'write', 'approve', 'admin'];
 
 function resolvePrincipal(req, opts) {
     opts = opts || {};
     const token = extractToken(req);
 
     if (token) {
-        // 1) Per-agent token se scopy — základ budoucí per-user identity.
+        // 0) Uživatel kanceláře (vlastní token na každé zařízení) — skutečná identita.
+        try {
+            const u = users.verifyToken(token);
+            if (u) {
+                return {
+                    userId: u.user.id, name: u.user.name, role: u.user.role, scopes: users.scopesOf(u.user),
+                    deviceId: u.deviceId, deviceLabel: u.deviceLabel, isAuthenticated: true, kind: 'user'
+                };
+            }
+        } catch (e) { /* ignore — spadneme na další možnost */ }
+
+        // 1) Per-agent token se scopy.
         try {
             const a = agentTokens.verifyToken(token);
             if (a) {
@@ -29,13 +41,13 @@ function resolvePrincipal(req, opts) {
 
         // 2) Hlavní API token = lokální správce s plnými právy.
         if (opts.apiToken && token === opts.apiToken) {
-            return { userId: 'local', name: 'Místní uživatel', scopes: FULL_SCOPES.slice(), isAuthenticated: true, kind: 'local-token' };
+            return { userId: 'local', name: 'Místní uživatel', role: 'spravce', scopes: FULL_SCOPES.slice(), isAuthenticated: true, kind: 'local-token' };
         }
     }
 
     // 3) Bez vynucení = solo režim: jeden implicitní uživatel s plnými právy.
     if (!opts.enforceToken) {
-        return { userId: 'local', name: 'Místní uživatel', scopes: FULL_SCOPES.slice(), isAuthenticated: false, kind: 'implicit' };
+        return { userId: 'local', name: 'Místní uživatel', role: 'spravce', scopes: FULL_SCOPES.slice(), isAuthenticated: false, kind: 'implicit' };
     }
 
     // 4) Vynuceno a token nesedí → žádný principal.

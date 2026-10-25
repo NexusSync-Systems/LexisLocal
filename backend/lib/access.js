@@ -15,14 +15,43 @@
 'use strict';
 
 const principalLib = require('./principal');
+const _nm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+function _sameName(a, b) { return !!_nm(a) && _nm(a) === _nm(b); }
 
 // --- Firemní vs. solo režim -------------------------------------------------
 // Výchozí = solo (neomezuje). Zapnout přes env LEXIS_FIRM_MODE=1 nebo setFirmMode().
 let _firmModeOverride = null;
+// Pořadí: přepnutí za běhu (testy) → env LEXIS_FIRM_MODE → uložené nastavení (dashboard).
+let _cache = { at: 0, val: false };
+function _persisted() {
+    const now = Date.now();
+    if (now - _cache.at < 2000) return _cache.val;
+    let v = false;
+    try { v = !!require('./config').readSettings().firmMode; } catch (e) { v = false; }
+    _cache = { at: now, val: v };
+    return v;
+}
 function isFirmMode() {
     if (_firmModeOverride !== null) return _firmModeOverride;
     const v = process.env.LEXIS_FIRM_MODE;
-    return v === '1' || v === 'true';
+    if (v === '1' || v === 'true') return true;
+    if (v === '0' || v === 'false') return false;
+    return _persisted();
+}
+function firmModeSource() {
+    if (_firmModeOverride !== null) return 'runtime';
+    const v = process.env.LEXIS_FIRM_MODE;
+    if (v === '1' || v === 'true' || v === '0' || v === 'false') return 'env';
+    return 'setting';
+}
+/** Uloží volbu firemního režimu (dashboard). Env LEXIS_FIRM_MODE má dál přednost. */
+function persistFirmMode(enabled) {
+    const config = require('./config');
+    const st = config.readSettings();
+    st.firmMode = !!enabled;
+    config.writeSettings(st);
+    _cache = { at: 0, val: false };
+    return isFirmMode();
 }
 function setFirmMode(v) { _firmModeOverride = (v == null ? null : !!v); }
 
@@ -48,6 +77,8 @@ function canAccess(spis, principal, level) {
     const acl = normalizeAccess(spis);
     const uid = principal.userId;
     if (uid === acl.owner) return true;
+    // Starší spisy mají vlastníka jako jméno advokáta (text) — uživatel se stejným jménem je vlastník.
+    if (principal.kind === 'user' && principal.name && _sameName(principal.name, acl.owner)) return true;
     if (level === 'read') return acl.readers.indexOf(uid) !== -1 || acl.writers.indexOf(uid) !== -1;
     if (level === 'write') return acl.writers.indexOf(uid) !== -1;
     return false;                                  // 'admin' i cokoli jiného: fail-closed
@@ -81,4 +112,24 @@ function revoke(spis, userId) {
     return acl;
 }
 
-module.exports = { isFirmMode, setFirmMode, canAccess, grant, revoke, normalizeAccess };
+/**
+ * Pro routy mimo spisy.js: ověří přístup ke spisu podle id (firemní režim).
+ * Vrací null = v pořádku, jinak { status, error } k odeslání. Neexistující spis → 404.
+ */
+function checkSpisAccess(spisId, principal, level) {
+    if (!isFirmMode()) return null;
+    let spis = null;
+    try { spis = require('./spisy').getSpis(spisId); } catch (e) { spis = null; }
+    if (!spis) return { status: 404, error: 'Spis nenalezen.' };
+    return canAccess(spis, principal, level) ? null : { status: 403, error: 'Přístup ke spisu odepřen.' };
+}
+
+/** Je principal správce (scope admin) nebo běží solo režim? */
+function isAdminOrSolo(principal) {
+    if (!isFirmMode()) return true;
+    return !!principal && principalLib.hasScope(principal, 'admin');
+}
+
+module.exports = {
+    checkSpisAccess, isAdminOrSolo,
+    firmModeSource, persistFirmMode, isFirmMode, setFirmMode, canAccess, grant, revoke, normalizeAccess };

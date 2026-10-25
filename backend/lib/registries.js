@@ -44,7 +44,9 @@ function fetchUrl(url, options = {}) {
             path: urlObj.pathname + urlObj.search,
             method: options.method || 'GET',
             headers: options.headers || {},
-            timeout: 5000 // 5 seconds timeout to keep it responsive
+            // 5 s výchozí (svižná odezva UI); pomalejší SOAP služby (ISDS) si mohou
+            // vyžádat delší limit přes options.timeout.
+            timeout: options.timeout || 5000
         };
 
         const req = https.request(requestOptions, (res) => {
@@ -196,6 +198,7 @@ async function checkSubject(ico) {
     
     return {
         ico: cleanIco,
+        aresOk: !!ares, // false = jméno/sídlo níže je jen zástupný text, NE údaj z registru
         name: ares ? ares.name : "ARES nedostupný / Selhal dotaz",
         seat: ares ? ares.seat : "Adresa nezjištěna",
         inInsolvency: isir.inInsolvency,
@@ -334,9 +337,15 @@ async function checkAresStatutory(ico, opts = {}) {
  * žádné ID (a NIKDY nefabrikuje) — jen čestné „není k dispozici". Při více shodách
  * je výsledek NEjednoznačný (fail-closed) a vyžaduje ruční volbu.
  * ENV/DB: ISDS_WS_URL (volitelné), ISDS_LOGIN, ISDS_PASSWORD.
+ *
+ * PŘÍSTUPOVÝ BOD (dle provozní dokumentace ISDS): přihlášení JMÉNEM+HESLEM (basic
+ * auth) má dvě cesty — `/DS/dz` pro operace se zprávami a `/DS/dx` pro INFORMAČNÍ
+ * a VYHLEDÁVACÍ služby. FindDataBox je vyhledávací služba → patří na `/DS/dx`.
+ * (Cesta `/DS/df` vyžaduje navíc klientský certifikát — s pouhým heslem selže.)
+ * Testovací prostředí: zaměň bázi za `https://ws1.czebox.cz/DS/dx`.
  * ⚠ SOAP tělo a parsování jsou izolované a provizorní — finalizovat proti reálnému ISDS WS.
  */
-const ISDS_DEFAULT_URL = 'https://ws1.mojedatovaschranka.cz/DS/df';
+const ISDS_DEFAULT_URL = 'https://ws1.mojedatovaschranka.cz/DS/dx';
 
 function _isdsCfg() {
     return {
@@ -363,21 +372,35 @@ async function findDataBox(ico, opts = {}) {
             '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:p="http://isds.czechpoint.cz/v20">' +
             '<soapenv:Body><p:FindDataBox><p:dbOwnerInfo><p:ic>' + cleanIco + '</p:ic></p:dbOwnerInfo></p:FindDataBox></soapenv:Body></soapenv:Envelope>';
         const auth = 'Basic ' + Buffer.from(c.login + ':' + c.password).toString('base64');
+        // SOAPAction je dle WSDL PRÁZDNÝ řetězec (document/literal) — ne název operace.
+        // ISDS SOAP bývá pomalejší než REST registry → delší timeout (15 s).
         const xml = await doFetch(c.url, {
             method: 'POST',
-            headers: { 'Content-Type': 'text/xml;charset=UTF-8', 'SOAPAction': 'FindDataBox', 'Authorization': auth },
-            body: soapBody
+            headers: { 'Content-Type': 'text/xml;charset=UTF-8', 'SOAPAction': '', 'Authorization': auth },
+            body: soapBody,
+            timeout: 15000
         });
-        const ids = [...String(xml).matchAll(/<[^>]*dbID>([^<]+)<\/[^>]*dbID>/g)].map(m => m[1].trim()).filter(Boolean);
-        const nameM = String(xml).match(/<[^>]*firmName>([^<]+)<\/[^>]*firmName>/);
+        const sx = String(xml);
+        // Stavový kód ISDS (0000 = OK). Užitečné pro diagnostiku, i když dbID chybí.
+        const codeM = sx.match(/<[^>]*dbStatusCode>([^<]+)<\/[^>]*dbStatusCode>/);
+        const msgM = sx.match(/<[^>]*dbStatusMessage>([^<]+)<\/[^>]*dbStatusMessage>/);
+        const statusCode = codeM ? codeM[1].trim() : null;
+        const statusMessage = msgM ? msgM[1].trim() : null;
+        const ids = [...sx.matchAll(/<[^>]*dbID>([^<]+)<\/[^>]*dbID>/g)].map(m => m[1].trim()).filter(Boolean);
+        const nameM = sx.match(/<[^>]*firmName>([^<]+)<\/[^>]*firmName>/);
         const subjectName = nameM ? nameM[1].trim() : null;
         if (ids.length === 1) {
-            return { available: true, configured: true, found: true, dataBoxId: ids[0], subjectName };
+            return { available: true, configured: true, found: true, dataBoxId: ids[0], subjectName, statusCode, statusMessage };
         }
         if (ids.length > 1) {
-            return { available: true, configured: true, found: false, ambiguous: true, candidates: ids, subjectName };
+            return { available: true, configured: true, found: false, ambiguous: true, candidates: ids, subjectName, statusCode, statusMessage };
         }
-        return { available: true, configured: true, found: false };
+        // Žádná schránka. Když ISDS vrátil chybový stav (jiný než 0000), předej ho výš.
+        if (statusCode && statusCode !== '0000') {
+            return { available: true, configured: true, found: false, statusCode,
+                error: 'ISDS status ' + statusCode + (statusMessage ? ': ' + statusMessage : '') };
+        }
+        return { available: true, configured: true, found: false, statusCode, statusMessage };
     } catch (e) {
         return { available: false, configured: true, error: 'Dotaz do ISDS selhal: ' + e.message };
     }
@@ -456,4 +479,25 @@ function setRegistryConfig(input) {
     return getRegistryConfig();
 }
 
-module.exports = { checkSubject, checkCee, checkKatastr, findDataBox, isIsdsConfigured, checkAresStatutory, checkVatReliability, getRegistryConfig, setRegistryConfig };
+/**
+ * Doplní ověřené IČO/sídlo k té straně, které subjekt z registru skutečně odpovídá.
+ * Dřív se jméno z ARES zapsalo vždy do „žalovaného“ — i když IČO patřilo žalobci,
+ * a při výpadku ARES dokonce text „ARES nedostupný / Selhal dotaz“ (test 2. 10. 2026).
+ * Vrací { plaintiff, defendant } (beze změny, když shoda není jistá nebo ARES selhal).
+ */
+function enrichPartiesWithRegistry(metadata, reg) {
+    const out = { plaintiff: metadata.plaintiff, defendant: metadata.defendant };
+    if (!reg || reg.error || reg.aresOk === false || !reg.name) return out;
+    const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[,.]/g, ' ').replace(/\b(s\s?r\s?o|a\s?s|spol|k\s?s|v\s?o\s?s|z\s?s)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    const name = norm(reg.name);
+    if (!name) return out;
+    const suffix = ` (IČO: ${reg.ico}, sídlo: ${reg.seat})`;
+    for (const side of ['plaintiff', 'defendant']) {
+        const v = out[side];
+        if (v && norm(v).includes(name) && !String(v).includes(reg.ico)) { out[side] = `${v}${suffix}`; return out; }
+    }
+    return out;
+}
+
+module.exports = { enrichPartiesWithRegistry, checkSubject, checkCee, checkKatastr, findDataBox, isIsdsConfigured, checkAresStatutory, checkVatReliability, getRegistryConfig, setRegistryConfig };

@@ -75,15 +75,42 @@ async function runTesseractOCR(imagePathOrBuffer) {
     try {
         const { createWorker } = require('tesseract.js');
         
-        const worker = await createWorker('ces+eng', 1, {
+        // errorHandler je NUTNÝ: bez něj tesseract.js chybu workeru (např. nedostupná
+        // jazyková data na CDN v offline kanceláři) vyhodí mimo Promise a SHODÍ celý
+        // server (zjištěno 2. 10. 2026). Jazyková data lze dodat offline přes
+        // LEXIS_TESSDATA_DIR (složka s ces.traineddata(.gz) a eng.traineddata(.gz)).
+        let workerError = null, failWorker = null;
+        const failed = new Promise((_, reject) => { failWorker = reject; });
+        const opts = {
+            errorHandler: (e) => { workerError = e; console.error('❌ OCR worker:', e && e.message ? e.message : e); failWorker(e instanceof Error ? e : new Error(String(e))); },
             logger: m => {
                 if (m.status === 'recognizing text') {
                     process.stdout.write(`\r🔍 OCR: ${Math.round(m.progress * 100)}%`);
                 }
             }
-        });
-        
-        const { data: { text } } = await worker.recognize(imagePathOrBuffer);
+        };
+        if (process.env.LEXIS_TESSDATA_DIR) { opts.langPath = process.env.LEXIS_TESSDATA_DIR; opts.cachePath = process.env.LEXIS_TESSDATA_DIR; }
+        const timeoutMs = parseInt(process.env.LEXIS_OCR_TIMEOUT_MS, 10) || 120000;
+        let timer;
+        const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`OCR nedoběhlo do ${timeoutMs / 1000} s`)), timeoutMs); });
+        failed.catch(() => {}); timeout.catch(() => {});
+        const pending = createWorker('ces+eng', 1, opts);
+        let worker;
+        try {
+            worker = await Promise.race([pending, failed, timeout]);
+        } catch (e) {
+            clearTimeout(timer);
+            pending.then(w => w.terminate()).catch(() => {});
+            throw e;
+        }
+        if (workerError) { clearTimeout(timer); try { await worker.terminate(); } catch (e) { /* ignore */ } throw workerError; }
+
+        let text;
+        try {
+            ({ data: { text } } = await Promise.race([worker.recognize(imagePathOrBuffer), failed, timeout]));
+        } finally {
+            clearTimeout(timer);
+        }
         await worker.terminate();
         
         process.stdout.write('\n');

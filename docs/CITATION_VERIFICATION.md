@@ -77,3 +77,16 @@ const report = verifyCitations(modelOutput, {
 Verifier chytí **falešné citace a falešné doslovné citáty**. Nechytí, když model
 odkáže na *reálný* § a přitom ho *špatně vyloží* — to je věcná chyba, ne smyšlený
 odkaz, a odchytí ji až člověk. Proto zůstává human-in-the-loop (`humanApproved`).
+
+## Holý § bez zákona (13. 10. 2026)
+
+Serverový test 13. 10. 2026 ukázal, že všech 29 neověřených citací byl paragraf bez uvedeného zákona
+(„§ 2248“, „§ 629“) — verifier zákon nenašel do 300 znaků, a proto do báze zákonů vůbec nehledal.
+
+- Verifier teď u paragrafu bez zákona prohledá **všechny zákony v bázi** (`lib/kb_law_index.js`).
+  Přednost mají zákony, které odpověď jmenuje jinde. Jednoznačný nález → `verified`, zákon se doplní
+  a citace nese `lawInferred: true` (důvod: „zákon … odvozen“).
+- Paragraf, který je ve více zákonech báze (např. § 629 v OZ i ZOK), dostane nový stav
+  **`ambiguous_law`** — počítá se mezi neověřené, v důvodu jsou kandidátní zákony.
+- Prompty rešeršníka a kontrolora (a pokyn k podkladům z báze) vyžadují u každého § i zákon.
+- Na dnešních 29 citacích: 19 ověřeno s odvozeným zákonem, 10 `ambiguous_law`, 0 beze změny.

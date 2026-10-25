@@ -1,22 +1,39 @@
 name: CI
 
+# Testy po každém pushi do main i release-prep a u každého PR.
+# (14. 10. 2026: přidána release-prep — dosud se testovala jen ručně na Macu.)
 on:
   push:
-    branches: [ main ]
+    branches: [ main, release-prep ]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 20 = spodní hranice engines, 24 = verze na vývojovém Macu
+        node: [ 20, 24 ]
+    env:
+      NODE_ENV: test
+      # Testy si zakládají vlastní dočasné složky; síť k AI poskytovatelům mockují.
+      AI_PROVIDER: ollama
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           cache: 'npm'
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
-      - name: Syntax check (server + libs + routes)
-        run: node -e "const cp=require('child_process');const fs=require('fs');const g=(d)=>fs.readdirSync(d).filter(f=>f.endsWith('.js')).map(f=>d+'/'+f);['backend/server.js',...g('backend/lib'),...g('backend/routes')].forEach(f=>cp.execSync('node --check '+f));console.log('node --check OK')"
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+      - name: Syntax check (server + libs + routes + dashboard)
+        run: node -e "const cp=require('child_process');const fs=require('fs');const g=(d)=>fs.readdirSync(d).filter(f=>f.endsWith('.js')).map(f=>d+'/'+f);['backend/server.js',...g('backend/lib'),...g('backend/routes'),...g('backend/public')].forEach(f=>cp.execSync('node --check '+f));console.log('node --check OK')"
       - name: Run tests
-        run: npm test
+        run: npx jest --ci

@@ -161,6 +161,7 @@ class LexisDatabase {
             // Exclude mutable human-review fields from hash
             delete cleanItem.humanApproved;
             delete cleanItem.approvedAt;
+            delete cleanItem.approvedBy;
             delete cleanItem.updatedAt;
             
             const hashInput = prevHash + JSON.stringify(cleanItem);
@@ -191,6 +192,7 @@ class LexisDatabase {
             // Exclude mutable human-review fields from hash
             delete cleanItem.humanApproved;
             delete cleanItem.approvedAt;
+            delete cleanItem.approvedBy;
             delete cleanItem.updatedAt;
             
             const hashInput = prevHash + JSON.stringify(cleanItem);

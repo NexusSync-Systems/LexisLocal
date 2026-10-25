@@ -9,6 +9,8 @@ process.env.API_TOKEN = 'tok-test';
 process.env.WATCH_DIR = path.join(os.tmpdir(), `lexis_test_citroute_${Date.now()}`);
 process.env.LEXIS_KEY_DIR = path.join(os.tmpdir(), `lexis_test_citroute_key_${Date.now()}`);
 
+jest.mock('../lib/kb_law_index', () => ({ getKbLawIndex: () => ({ '89/2012': new Set(['629']) }) }));
+
 const request = require('supertest');
 const app = require('../server');
 const H = (r) => r.set('X-API-Token', 'tok-test');
@@ -50,5 +52,11 @@ describe('GET /api/citations/sources', () => {
             expect(typeof p.enabled).toBe('boolean');
         });
     });
-});
 
+    test('paragraf z nahrané báze zákonů je ověřený (test 5. 10. 2026: § 629 OZ „nelze ověřit“)', async () => {
+        const r = await H(request(app).post('/api/citations/verify'))
+            .send({ text: 'Podle § 629 občanského zákoníku je promlčecí lhůta 3 roky.', useSources: false });
+        expect(r.statusCode).toBe(200);
+        expect(r.body.citations[0]).toMatchObject({ paragraph: '629', status: 'verified' });
+    });
+});

@@ -23,6 +23,9 @@ router.post('/email-logged', (req, res) => {
         let linkedToCase = false;
         if (caseNumber) {
             const spis = spisy.findByCase(caseNumber);
+            if (spis && !require('../lib/access').canAccess(spis, req.principal, 'write')) {
+                return res.status(403).json({ success: false, error: 'Přístup ke spisu odepřen.' });
+            }
             if (spis) {
                 spisy.addEvent(
                     spis.id,

@@ -4,7 +4,9 @@ const { checkSubject } = require('../lib/registries');
 const ollamaLib = require('ollama');
 
 jest.mock('../lib/agents', () => ({
-    loadAgents: jest.fn()
+    loadAgents: jest.fn(),
+    // #4: orchestrator nově importuje agentTemperature — mock ho musí poskytnout.
+    agentTemperature: (agent, fb) => { const v = agent && agent.temperature; return (typeof v === 'number' && v >= 0 && v <= 1) ? v : fb; }
 }));
 
 jest.mock('../lib/rag', () => ({
@@ -77,7 +79,11 @@ describe('ChiefOrchestrator', () => {
 
             const steps = await orchestrator.decomposeQuery('Test prompt', 'llama3');
 
-            expect(steps).toEqual(mockSteps);
+            // #1: sanitizeSteps validuje a doplní tier:'advanced' (default).
+            expect(steps).toEqual([
+                { step: 1, agentId: 'resersnik', instruction: 'Do research', tier: 'advanced' },
+                { step: 2, agentId: 'spisovatel', instruction: 'Write doc', tier: 'advanced' }
+            ]);
         });
     });
 

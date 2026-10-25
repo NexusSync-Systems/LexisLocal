@@ -1,0 +1,55 @@
+{
+  "_comment": "Golden set nad REÁLNOU judikaturou (backend/judikatura/*, resp. _kb_obor_* partitiony). Slouží k měření kvality retrievalu (semantic vs. hybrid #5). Každý dotaz je odvozen z metadat konkrétního rozhodnutí; 'relevant' = basename souboru. Spuštění: `node backend/scripts/rag_eval.js backend/eval/rag_eval_judikatura.json`. POZOR: měří se jen obory, které jsou reálně naplněné (viz naplnit-judikaturu.sh); celoobora-miss obvykle znamená NEnaseedováno, ne špatný retrieval. Pro férové semantic čísla musí běžet embedding model (Ollama).",
+  "k": 5,
+  "cases": [
+    { "label": "pracovní — neplatnost výpovědi + pracovní úraz/BOZP",
+      "query": "Neplatnost výpovědi dané zaměstnavatelem po pracovním úrazu a porušení bezpečnosti a ochrany zdraví při práci.",
+      "relevant": ["10_C_126_2022-325"],
+      "filters": { "scopes": ["_kb_obor_pracovni_pravo"], "clientAccess": false } },
+
+    { "label": "rodinné — výživné neprovdané matky (§ 920)",
+      "query": "Příspěvek na výživu a úhradu nákladů neprovdané matky podle § 920 občanského zákoníku.",
+      "relevant": ["107_C_261_2023-19"],
+      "filters": { "scopes": ["_kb_obor_rodinne_pravo"], "clientAccess": false } },
+
+    { "label": "rodinné — výživné manželky při rozvodu",
+      "query": "Vyživovací povinnost mezi manžely a výživné manželky v souvislosti s rozvodem manželství.",
+      "relevant": ["107_C_277_2023-53"],
+      "filters": { "scopes": ["_kb_obor_rodinne_pravo"], "clientAccess": false } },
+
+    { "label": "náhrada škody — bolestné a ztížení společenského uplatnění",
+      "query": "Náhrada nemajetkové újmy na zdraví: bolestné a ztížení společenského uplatnění po těžké újmě na zdraví.",
+      "relevant": ["109_C_36_2018-227"],
+      "filters": { "scopes": ["_kb_obor_nahrada_skody_a_odpovednost"], "clientAccess": false } },
+
+    { "label": "dědické — neplatnost vydědění, dědická nezpůsobilost",
+      "query": "Neplatnost vydědění a určení dědické nezpůsobilosti, posouzení duševní poruchy zůstavitele znaleckým posudkem.",
+      "relevant": ["10_C_115_2022-99"],
+      "filters": { "scopes": ["_kb_obor_dedicke_pravo"], "clientAccess": false } },
+
+    { "label": "dědické — pozůstalost a správce pozůstalosti",
+      "query": "Spory o pozůstalost a role správce pozůstalosti při převodu nemovitosti ze zůstavitelova majetku.",
+      "relevant": ["109_C_37_2022-70"],
+      "filters": { "scopes": ["_kb_obor_dedicke_pravo"], "clientAccess": false } },
+
+    { "label": "spotřebitelské — odstoupení od kupní smlouvy",
+      "query": "Odstoupení spotřebitele od kupní smlouvy a vrácení peněžitého plnění.",
+      "relevant": ["13_C_70_2023-46"],
+      "filters": { "scopes": ["_kb_obor_spotrebitelske_pravo"], "clientAccess": false } },
+
+    { "label": "insolvenční — pohledávka ze smlouvy o úvěru v oddlužení",
+      "query": "Uplatnění pohledávky ze smlouvy o úvěru vůči dlužníkovi v oddlužení.",
+      "relevant": ["109_C_306_2023-75"],
+      "filters": { "scopes": ["_kb_obor_insolvencni_pravo"], "clientAccess": false } },
+
+    { "label": "občanské — vymáhání dluhu ze smlouvy o úvěru",
+      "query": "Vymáhání dlužné částky ze smlouvy o úvěru a bezdůvodné obohacení, žaloba na zaplacení.",
+      "relevant": ["108_C_229_2023-80"],
+      "filters": { "scopes": ["_kb_obor_obcanske_pravo"], "clientAccess": false } },
+
+    { "label": "nemovitosti — dlužné nájemné, uznání dluhu",
+      "query": "Žaloba na zaplacení dlužného nájemného z nájemní smlouvy a uznání dluhu nájemcem.",
+      "relevant": ["107_C_300_2023-23"],
+      "filters": { "scopes": ["_kb_obor_nemovitosti_a_najemni_pravo"], "clientAccess": false } }
+  ]
+}

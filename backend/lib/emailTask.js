@@ -11,6 +11,7 @@
  *   • auto-odpověď smí jít VÝHRADNĚ zpět na authorized_sender.
  */
 'use strict';
+const { agentNumCtx } = require('./agent_options');
 
 const db = require('./database');
 const { logEvent } = require('./audit');
@@ -125,7 +126,7 @@ async function processEmailTask(input) {
                 const r = await withTimeout(ollama.chat({
                     model: agent.preferredModel || CHAT_MODEL,
                     messages: [{ role: 'system', content: agent.systemPrompt }, { role: 'user', content: cleanBody }],
-                    options: { temperature: 0.3 }
+                    options: { temperature: 0.3, num_ctx: agentNumCtx() }
                 }), AI_TIMEOUT_MS);
                 output = r.message.content;
             } catch (e) {
@@ -136,7 +137,19 @@ async function processEmailTask(input) {
         }
     } else {
         try {
-            const r = await ChiefOrchestrator.orchestrate(cleanBody, '', CHAT_MODEL, null, null);
+            // B2: e-mailový vstup dříve jel s ragFilters=null → orchestrátor bez oboru
+            // i judikatury. Zkus obor auto-detekovat z těla e-mailu; při jistotě ho
+            // předej (přesnost), jinak null → per-agent scope (B1) přidá judikaturu
+            // celoplošně u agentů se čtením spisů.
+            let emailFilters = null;
+            try {
+                const { detectObor } = require('./obor_detect');
+                const d = await detectObor(cleanBody);
+                if (d && d.confident && d.scope) {
+                    emailFilters = { scopes: [d.scope], oborScope: d.scope, oborSource: 'auto' };
+                }
+            } catch (oErr) { /* bez oboru → orchestrátor doplní judikaturu celoplošně */ }
+            const r = await ChiefOrchestrator.orchestrate(cleanBody, '', CHAT_MODEL, null, emailFilters);
             output = r.finalOutput || '';
             stepsSummary = (r.steps || []).map(st => `${st.agentEmoji || ''} ${st.agentName}: ${st.instruction}`);
             citationCheck = r.citationCheck || null;
@@ -228,7 +241,7 @@ async function processEmailTask(input) {
         ? `\n\n⚠️ UPOZORNĚNÍ K ŠABLONĚ: ${templateWarnings.join(' ')}`
         : '';
     const stepsBlock = stepsSummary.length ? `\nPrůběh zpracování:\n- ${stepsSummary.join('\n- ')}\n` : '';
-    const fullReply = `Vážený pane doktore,\n\nk Vašemu zadání ze dne ${dateStr} („${subject.replace(/\[[^\]]+\]\s*/g, '')}") zasílám zpracovaný výstup.\n${stepsBlock}\nS úctou,\nVaše AI kancelář (LexisLocal)\n\n${'-'.repeat(80)}\nVÝSTUP:\n${'-'.repeat(80)}\n\n${output}${citationNote}${templateNote}${scheduleNote}${draftNote}`;
+    const fullReply = `Vážený pane doktore,\n\nk Vašemu zadání ze dne ${dateStr} („${subject.replace(/\[[^\]]+\]\s*/g, '')}") zasílám zpracovaný výstup.\n${stepsBlock}\nS úctou,\nVaše AI kancelář (LexisLocal)\n\n${'-'.repeat(80)}\nVÝSTUP:\n${'-'.repeat(80)}\n${require('./ai_disclosure').TEXT_NOTICE}\n\n${output}${citationNote}${templateNote}${scheduleNote}${draftNote}`;
 
     const createdTask = db.insert('email_tasks', {
         sender: String(sender).trim(), subject: String(subject).trim(), body: String(body).trim(),

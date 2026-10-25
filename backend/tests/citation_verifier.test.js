@@ -107,3 +107,46 @@ describe('přiřazení zákona k paragrafu (pořadí "§ X zákona Y")', () => {
         expect(r.citations.find(x => x.paragraph === '5').status).toBe('verified');
     });
 });
+
+// Server test 13. 10. 2026: všech 29 neověřených citací byl „holý“ § bez zákona
+// (§ 2248, § 629 …) → do báze zákonů se nehledalo. Zákon se teď odvodí z báze.
+describe('holý § bez zákona — odvození zákona z báze', () => {
+    const { indexFromTexts } = require('../lib/kb_law_index');
+    const kb = indexFromTexts([
+        'Citace: § 2248 zákona č. 89/2012 Sb.; § 629 zákona č. 89/2012 Sb.; § 84 zákona č. 89/2012 Sb.',
+        'Citace: § 629 zákona č. 90/2012 Sb.; § 84 zákona č. 99/1963 Sb.; § 84 zákona č. 90/2012 Sb.'
+    ]);
+    test('§ jen v jednom zákoně báze → ověřeno s odvozeným zákonem', () => {
+        const r = verifyCitations('Nájemce může podle § 2248 požadovat slevu.', { kbIndex: kb });
+        expect(r.citations[0]).toMatchObject({ status: 'verified', law: '89/2012', lawInferred: true });
+        expect(r.unverifiedCount).toBe(0);
+    });
+    test('§ ve více zákonech → ambiguous_law (neověřeno), bez kontextu', () => {
+        const r = verifyCitations('Promlčecí lhůta podle § 629 činí deset let.', { kbIndex: kb });
+        expect(r.citations[0].status).toBe('ambiguous_law');
+        expect(r.citations[0].verified).toBe(false);
+        expect(r.citations[0].reason).toMatch(/89\/2012.*90\/2012|90\/2012.*89\/2012/);
+    });
+    test('§ ve více zákonech, ale odpověď jinde jmenuje OZ → zákon odvozen z odpovědi', () => {
+        const txt = 'Podle § 2248 OZ nájemce … ' + 'x '.repeat(200) + 'Promlčení se řídí § 629.';
+        const r = verifyCitations(txt, { kbIndex: kb });
+        const c = r.citations.find(x => x.paragraph === '629');
+        expect(c).toMatchObject({ status: 'verified', law: '89/2012', lawInferred: true });
+    });
+    test('§, který v bázi vůbec není, zůstává neověřený', () => {
+        const r = verifyCitations('Podle § 9999 je to jinak.', { kbIndex: kb });
+        expect(r.citations[0].status).toBe('unsupported_by_context');
+    });
+    test('bez kbIndex se chování nemění', () => {
+        const r = verifyCitations('Podle § 2248 je to jinak.');
+        expect(r.citations[0].status).toBe('unsupported_by_context');
+        expect(r.citations[0].lawInferred).toBe(false);
+    });
+});
+
+test('§ s nulami na začátku (z názvu souboru báze) se normalizuje — server test 14. 10. 2026', () => {
+    const { indexFromTexts } = require('../lib/kb_law_index');
+    const kb = indexFromTexts(['Citace: § 75a zákona č. 99/1963 Sb.']);
+    const r = verifyCitations('Podle § 0075a o. s. ř. platí …', { kbIndex: kb });
+    expect(r.citations[0]).toMatchObject({ paragraph: '75a', law: '99/1963', status: 'verified' });
+});

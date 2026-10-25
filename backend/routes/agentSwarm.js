@@ -5,25 +5,36 @@
  * Montuje se v server.js na /api/agent-swarm.
  */
 'use strict';
+const { agentNumCtx } = require('../lib/agent_options');
 
 const express = require('express');
-const { CHAT_MODEL } = require('../lib/model_config');
+const { CHAT_MODEL, RAG_MIN_SCORE } = require('../lib/model_config');
 const router = express.Router();
-const { loadAgents } = require('../lib/agents');
-const { searchSimilar } = require('../lib/rag');
+const { loadAgents, agentTemperature } = require('../lib/agents');
+const { searchSimilar, agentRagK } = require('../lib/rag');
 const { logEvent } = require('../lib/audit');
-const { anonymizeText } = require('../lib/anonymizer');
+const { anonymizeText, pseudonymizeText, restorePseudonyms } = require('../lib/anonymizer');
 const ollama = require('../lib/ai_provider'); // Ollama | OpenAI | Anthropic (stejné rozhraní)
 const { generateAgentFallback } = require('../lib/agent_fallback');
-const { resolveRagFilters, applyAgentScope } = require('../lib/rag_request');
+const { resolveRagFilters, buildRagScope } = require('../lib/rag_request');
 const ChiefOrchestrator = require('../lib/orchestrator');
+const aiDisclosure = require('../lib/ai_disclosure');
 const spisFolders = require('../lib/spisFolders');
 const spisy = require('../lib/spisy');
+const clauseScan = require('../lib/clause_scan');
 
 // POST /api/agent-swarm/debate - Coordinate two agents interacting over the same task
 router.post('/debate', async (req, res) => {
     const { prompt, agentId1, agentId2, context, model } = req.body;
     const startTime = Date.now();
+
+    // Chybějící vstup = 400 (dřív 404 „agent nenalezen“ i při chybějícím parametru).
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({ error: 'Zadání (prompt) je povinné.' });
+    }
+    if (!agentId1 || !agentId2) {
+        return res.status(400).json({ error: 'Chybí agentId1 a/nebo agentId2 (tvůrce a oponent debaty).' });
+    }
 
     const agents = loadAgents();
     const agent1 = agents[agentId1];
@@ -38,16 +49,23 @@ router.post('/debate', async (req, res) => {
 
     // Retrieve RAG context
     let ragContext = "";
+    let oborDetection = null; // pro UI („detekován obor…"); viditelné i ve fallbacku
     try {
-        let resolvedFilters = await resolveRagFilters(req.body);
         // Debata dvou agentů: sjednotit jejich znalostní báze; přístup ke klientským
-        // spisům omezit, jakmile ho nemá kterýkoli z nich (konzervativně).
-        resolvedFilters = applyAgentScope(resolvedFilters, [agent1, agent2]);
+        // spisům omezit, jakmile ho nemá kterýkoli z nich (konzervativně). Judikaturní
+        // politika vč. auto-detekce oboru z promptu (buildRagScope).
+        const built = await buildRagScope(req.body, [agent1, agent2], prompt);
+        let resolvedFilters = built.filters;
+        oborDetection = built.detection;
         if (resolvedFilters) {
             console.log(`🧠 Swarm RAG: Aktivní filtry pro debatu: ${JSON.stringify(resolvedFilters)}`);
         }
-        const matches = await searchSimilar(prompt, 3, resolvedFilters);
-        const highConfidenceMatches = matches.filter(m => m.score >= 0.70);
+        if (oborDetection) {
+            console.log(`🧭 Swarm obor: ${oborDetection.label} (${oborDetection.source}${oborDetection.confident ? '' : ', nejistě → celoplošně'})`);
+        }
+        const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true, rerank: true });
+        const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
+        require('../lib/file_acl').logChunkReads(highConfidenceMatches, 'Použití spisu agenty (debata)');
 
         if (highConfidenceMatches.length > 0) {
             // 'redacted' (kterýkoli agent debaty) → klientské pasáže anonymizovaně; KB beze změny.
@@ -64,6 +82,9 @@ router.post('/debate', async (req, res) => {
         console.warn("⚠️ Swarm RAG: Selhalo vyhledávání kontextu:", ragErr.message);
     }
 
+    let clauseFindings = [];
+    try { clauseFindings = context ? clauseScan.scanContract(String(context)) : []; } catch (e) { clauseFindings = []; }
+
     try {
         // --- STEP 1: INVOKE AGENT 1 (CREATOR) ---
         const messages1 = [
@@ -77,8 +98,20 @@ router.post('/debate', async (req, res) => {
             });
         }
 
+        // Kontext vratně pseudonymizovaný jako u /api/agent (dřív šel modelu syrový).
+        let pseudoMap = null, ctxForModel = context;
         if (context) {
-            messages1.push({ role: 'system', content: `Kontext dokumentu:\n${context}` });
+            if (process.env.AGENT_CONTEXT_REDACTION === 'irreversible') ctxForModel = anonymizeText(context);
+            else { const ps = pseudonymizeText(context); ctxForModel = ps.text; pseudoMap = ps.map; }
+        }
+        const restore = t => (pseudoMap ? restorePseudonyms(t, pseudoMap) : t);
+        // Rizikové doložky najde program (lib/clause_scan.js) — oba agenti je dostanou jako
+        // kontrolní seznam a co v debatě nezazní, program doplní (serverový test F2).
+        if (clauseFindings.length) {
+            messages1.push({ role: 'system', content: clauseScan.modelNote(clauseFindings) });
+        }
+        if (context) {
+            messages1.push({ role: 'system', content: `Kontext dokumentu (osobní údaje jako symboly [OSOBA_1] apod. — ponech je přesně v tomto tvaru):\n${ctxForModel}` });
         }
 
         messages1.push({ role: 'user', content: prompt });
@@ -86,7 +119,7 @@ router.post('/debate', async (req, res) => {
         const response1 = await ollama.chat({
             model: selectedModel,
             messages: messages1,
-            options: { temperature: 0.3 }
+            options: { temperature: agentTemperature(agent1, 0.3), num_ctx: agentNumCtx() }
         });
 
         const answer1 = response1.message.content;
@@ -104,7 +137,11 @@ router.post('/debate', async (req, res) => {
         }
 
         if (context) {
-            messages2.push({ role: 'system', content: `Kontext dokumentu:\n${context}` });
+            messages2.push({ role: 'system', content: `Kontext dokumentu (osobní údaje jako symboly [OSOBA_1] apod. — ponech je přesně v tomto tvaru):\n${ctxForModel}` });
+        }
+
+        if (clauseFindings.length) {
+            messages2.push({ role: 'system', content: clauseScan.modelNote(clauseFindings) });
         }
 
         messages2.push({
@@ -117,10 +154,12 @@ router.post('/debate', async (req, res) => {
         const response2 = await ollama.chat({
             model: selectedModel,
             messages: messages2,
-            options: { temperature: 0.2 }
+            options: { temperature: agentTemperature(agent2, 0.2), num_ctx: agentNumCtx() }
         });
 
-        const answer2 = response2.message.content;
+        let answer2 = restore(response2.message.content);
+        const clauseApx = clauseFindings.length ? clauseScan.missingAppendix(answer1 + '\n' + answer2, clauseFindings) : { text: '', missing: [] };
+        answer2 += clauseApx.text;
 
         logEvent('LexisEditor', 'Swarm Debata', `Duel: ${agent1.name} vs. ${agent2.name}`, {
             model: selectedModel,
@@ -135,9 +174,22 @@ router.post('/debate', async (req, res) => {
 
         res.json({
             success: true,
+            ...aiDisclosure.forResponse(),
             model: selectedModel,
-            agent1: { id: agentId1, name: agent1.name, response: answer1 },
+            agent1: { id: agentId1, name: agent1.name, response: restore(answer1) },
             agent2: { id: agentId2, name: agent2.name, response: answer2 },
+            clauseCheck: clauseFindings.length ? { findings: clauseFindings.map(x => ({ id: x.id, article: x.article, label: x.label, law: x.law })), appended: clauseApx.missing } : null,
+            citationCheck: await (async () => {
+                // Kontrola citací i u debaty (dřív jen /api/agent a orchestrátor).
+                try {
+                    const { verifyCitationsWithSources } = require('../lib/citation_verifier');
+                    const { getKbLawIndex } = require('../lib/kb_law_index');
+                    const chunks = [prompt, context, ragContext].filter(Boolean).map(t => ({ text: String(t), fileName: 'podklady' }));
+                    const cc = await verifyCitationsWithSources(answer2, { contextChunks: chunks, kbIndex: getKbLawIndex() });
+                    return { total: cc.total, unverifiedCount: cc.unverifiedCount, citations: cc.citations, annotatedText: cc.annotatedText };
+                } catch (e) { return null; }
+            })(),
+            oborDetected: oborDetection,
             timestamp: new Date().toISOString()
         });
 
@@ -145,7 +197,10 @@ router.post('/debate', async (req, res) => {
         console.warn(`⚠️ Selhalo spojení s Ollama ve Swarmu (${err.message}). Používám lokalizovaný robustní simulovaný oponentní výstup.`);
 
         const answer1 = generateAgentFallback(agentId1, prompt);
-        const answer2 = `[Oponentní posudek od agenta ${agent2.name} na návrh od ${agent1.name}]:\n\nAnalyzoval jsem předchozí vypracování. Návrh je strukturovaný správně, avšak doporučuji doplnit výslovnou doložku o volbě práva a smluvní pokutě ve výši 0.05 % denně za prodlení, aby byly zájmy našeho klienta chráněny neprůstřelně.\n\nZde je revidovaný odstavec:\n"V případě prodlení kupujícího s úhradou kupní ceny se sjednává smluvní pokuta ve výši 0.05 % z dlužné částky za každý den prodlení."`;
+        // Dřív tu byl NATVRDO napsaný „oponentní posudek“ (doložka o smluvní pokutě 0,05 %)
+        // vydávaný za výstup modelu — falešný právní obsah. Teď poctivý fallback.
+        let answer2 = generateAgentFallback(agentId2, prompt);
+        if (clauseFindings.length) answer2 += clauseScan.missingAppendix('', clauseFindings).text;
 
         logEvent('LexisEditor', 'Swarm Debata Fallback', `Duel Fallback: ${agent1.name} vs. ${agent2.name}`, {
             model: `${selectedModel} (Simulovaný Swarm)`,
@@ -160,9 +215,13 @@ router.post('/debate', async (req, res) => {
 
         res.json({
             success: true,
+            ...aiDisclosure.forResponse(),
             model: `${selectedModel} (Simulovaný Swarm)`,
             agent1: { id: agentId1, name: agent1.name, response: answer1 },
             agent2: { id: agentId2, name: agent2.name, response: answer2 },
+            fallback: true,
+            clauseCheck: clauseFindings.length ? { findings: clauseFindings.map(x => ({ id: x.id, article: x.article, label: x.label, law: x.law })), appended: clauseFindings.map(x => x.id) } : null,
+            oborDetected: oborDetection,
             timestamp: new Date().toISOString()
         });
     }
@@ -196,7 +255,7 @@ router.post('/orchestrate', async (req, res) => {
         // Volitelné bezpečné uložení konceptu do složky spisu (fail-closed).
         // Aktivuje se jen když klient pošle spisId + saveDraft. Odmítnutí kvůli
         // nedostatku podkladů se NEUKLÁDÁ jako koncept.
-        if (spisId && saveDraft && result && result.finalOutput) {
+        if (spisId && saveDraft === true && result && result.finalOutput) {
             const txt = String(result.finalOutput);
             const refused = /^\s*Nedostatek podkladů/i.test(txt);
             if (refused) {
@@ -213,6 +272,22 @@ router.post('/orchestrate', async (req, res) => {
                 } catch (e) {
                     result.draftError = e.message;
                 }
+            }
+        }
+
+        // Sdílený koncept (webový LexisEditor Lite) — výstup orchestrace „ke kontrole“.
+        if (result && result.finalOutput && (saveDraft === true || saveDraft === 'auto')) {
+            const Drafts = require('../lib/drafts');
+            const principal = req.principal || { userId: 'local', kind: 'implicit', scopes: ['read', 'write', 'admin'] };
+            const denied = Drafts.checkAccess(principal, spisId || null, 'write');
+            if (denied) result.sharedDraft = { error: denied.error };
+            else {
+                const tIds = (result.steps || []).map(st => st && st.transparencyId).filter(Boolean);
+                result.sharedDraft = Drafts.saveAgentOutput({
+                    text: result.finalOutput, type: 'orchestrator', agentId: 'orchestrator', agentName: 'Chief Orchestrator',
+                    model: selectedModel, transparencyId: tIds[0], spisId: spisId || null,
+                    title: req.body.draftTitle || prompt.substring(0, 80)
+                });
             }
         }
 

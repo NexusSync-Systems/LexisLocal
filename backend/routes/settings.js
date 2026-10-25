@@ -42,4 +42,114 @@ router.post('/ingest-dir', (req, res) => {
     }
 });
 
+// GET /api/settings/external-research — stav cloud rešerše pro roj (persistováno; env = výchozí)
+router.get('/external-research', (req, res) => {
+    const s = config.readSettings();
+    const persisted = (s && typeof s.externalResearch === 'boolean') ? s.externalResearch : null;
+    const env = ['1', 'true', 'yes', 'on'].indexOf(String(process.env.AGENT_EXTERNAL_RESEARCH || '').toLowerCase()) >= 0;
+    res.json({ enabled: persisted != null ? persisted : env, persisted: persisted, envDefault: env });
+});
+
+// POST /api/settings/external-research { enabled } — zapne/vypne cloud rešerši roje ZA BĚHU (bez restartu)
+router.post('/external-research', (req, res) => {
+    try {
+        const enabled = !!(req.body && req.body.enabled);
+        const s = config.readSettings();
+        s.externalResearch = enabled;
+        config.writeSettings(s);
+        logEvent('Nastavení', 'Externí rešerše (cloud) pro roj', enabled ? 'zapnuto' : 'vypnuto', {});
+        res.json({ success: true, enabled: enabled });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// ── CODEXIS AI (licence kanceláře; klíč se nikdy nevrací) ───────────────────
+// GET /api/settings/codexis — { configured, switchOn, localOnly, enabled }
+router.get('/codexis', (req, res) => res.json(require('../lib/codexis').status()));
+
+// POST /api/settings/codexis { apiKey?, enabled? } — jen správce (authz: POST /api/settings*)
+router.post('/codexis', (req, res) => {
+    try {
+        const cx = require('../lib/codexis');
+        const b = req.body || {};
+        if (typeof b.apiKey === 'string') {
+            const k = b.apiKey.trim();
+            if (k && !/^[\x21-\x7e]{16,256}$/.test(k)) return res.status(400).json({ error: 'Klíč nemá očekávaný tvar.' });
+            cx.setKey(k);
+            logEvent('Nastavení', k ? 'Uložen klíč CODEXIS AI' : 'Odebrán klíč CODEXIS AI', 'codexis', {});
+        }
+        if (typeof b.enabled === 'boolean') {
+            cx.setEnabled(b.enabled);
+            logEvent('Nastavení', 'CODEXIS AI ' + (b.enabled ? 'zapnuto' : 'vypnuto'), 'codexis', {});
+        }
+        res.json({ success: true, ...cx.status() });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// POST /api/settings/codexis/check — ověří klíč a licenci (nečerpá kredity)
+router.post('/codexis/check', async (req, res) => {
+    try { res.json(await require('../lib/codexis').check()); }
+    catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ── Firemní režim (přístup ke spisům podle vlastníka a sdílení) ──────────────
+// GET /api/settings/firm-mode — stav + kolik spisů nemá vlastníka s účtem (uvidí je jen správce).
+router.get('/firm-mode', (req, res) => {
+    try {
+        const access = require('../lib/access');
+        const users = require('../lib/users').listUsers().filter(u => !u.disabled);
+        const ids = new Set(users.map(u => u.id));
+        const norm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        const names = new Set(users.map(u => norm(u.name)));
+        const spisy = require('../lib/spisy').listSpisy();
+        const orphan = spisy.filter(sp => {
+            const o = access.normalizeAccess(sp).owner;
+            return !ids.has(o) && !names.has(norm(o));
+        });
+        res.json({
+            enabled: access.isFirmMode(), source: access.firmModeSource(),
+            users: users.length, spisy: spisy.length, spisyWithoutOwnerAccount: orphan.length
+        });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/settings/firm-mode { enabled } — jen správce (lib/authz: POST /api/settings).
+router.post('/firm-mode', (req, res) => {
+    try {
+        const access = require('../lib/access');
+        const want = !!(req.body && req.body.enabled);
+        if (access.firmModeSource() === 'env') {
+            return res.status(409).json({ error: 'Firemní režim je pevně nastaven proměnnou LEXIS_FIRM_MODE na serveru — v dashboardu ho nelze změnit.' });
+        }
+        if (want && require('../lib/users').listUsers().filter(u => !u.disabled).length === 0) {
+            return res.status(409).json({ error: 'Nejdřív založte uživatele kanceláře — bez účtů by firemní režim nikoho nerozlišil.' });
+        }
+        const enabled = access.persistFirmMode(want);
+        logEvent('Nastavení', enabled ? 'Zapnutí firemního režimu' : 'Vypnutí firemního režimu', 'Přístup ke spisům', { by: req.principal && req.principal.name });
+        res.json({ success: true, enabled });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// ── Profil aplikace: „pilot“ skryje moduly, které v pilotu nejsou (plán pilotu 3. 10. 2026).
+// Moduly zůstávají v kódu a API; skrývá se jen navigace. LEXIS_PROFILE na serveru má přednost.
+const PILOT_HIDDEN = ['models', 'chat', 'timetracking', 'risks', 'aml', 'managerial'];
+function _profile() {
+    const env = String(process.env.LEXIS_PROFILE || '').toLowerCase();
+    if (env === 'pilot' || env === 'full') return { profile: env, source: 'env' };
+    const p = config.readSettings().profile;
+    return { profile: p === 'pilot' ? 'pilot' : 'full', source: 'settings' };
+}
+router.get('/profile', (req, res) => {
+    const p = _profile();
+    res.json(Object.assign(p, { hiddenTabs: p.profile === 'pilot' ? PILOT_HIDDEN : [] }));
+});
+// POST /api/settings/profile { profile: 'pilot' | 'full' } — jen správce (lib/authz: POST /api/settings).
+router.post('/profile', (req, res) => {
+    const want = req.body && req.body.profile;
+    if (!['pilot', 'full'].includes(want)) return res.status(400).json({ error: 'Profil musí být „pilot“ nebo „full“.' });
+    if (_profile().source === 'env') return res.status(409).json({ error: 'Profil je pevně nastaven proměnnou LEXIS_PROFILE na serveru.' });
+    const s = config.readSettings(); s.profile = want; config.writeSettings(s);
+    logEvent('Nastavení', want === 'pilot' ? 'Zapnutí pilotního profilu' : 'Vypnutí pilotního profilu', 'Profil aplikace', { by: req.principal && req.principal.name });
+    res.json({ success: true, profile: want, hiddenTabs: want === 'pilot' ? PILOT_HIDDEN : [] });
+});
+
 module.exports = router;

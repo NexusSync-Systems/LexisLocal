@@ -26,6 +26,32 @@ const ollama = require('./ollama_client'); // Ollama backend + správa modelů (
 function _env(k, d) { return process.env[k] || d; }
 function _chatProvider() { return String(process.env.AI_CHAT_PROVIDER || process.env.AI_PROVIDER || 'ollama').toLowerCase(); }
 function _embedProvider() { return String(process.env.AI_EMBED_PROVIDER || process.env.AI_PROVIDER || 'ollama').toLowerCase(); }
+
+// --- Pilotní pojistka mlčenlivosti: LOCAL-ONLY ---------------------------------
+// Když je zapnutý lokální/pilotní režim (LEXIS_PILOT_LOCAL_ONLY / AI_LOCAL_ONLY),
+// SMÍ běžet jen lokální provider (ollama). Cloud (openai/anthropic) by poslal
+// klientská data (vč. RAG chunků) mimo stroj → porušení advokátní mlčenlivosti.
+function _truthy(v) { const t = String(v == null ? '' : v).trim().toLowerCase(); return t !== '' && t !== '0' && t !== 'false' && t !== 'no' && t !== 'off'; }
+function _localOnly() { return _truthy(process.env.LEXIS_PILOT_LOCAL_ONLY) || _truthy(process.env.AI_LOCAL_ONLY); }
+
+// Stav souladu s lokálním režimem: { localOnly, chat, embed, compliant, violations }.
+function assertLocalCompliance() {
+    const localOnly = _localOnly();
+    const chat = _chatProvider();
+    const embed = _embedProvider();
+    const violations = [];
+    if (localOnly) {
+        if (chat !== 'ollama') violations.push({ kind: 'chat', provider: chat });
+        if (embed !== 'ollama') violations.push({ kind: 'embed', provider: embed });
+    }
+    return { localOnly: localOnly, chat: chat, embed: embed, compliant: violations.length === 0, violations: violations };
+}
+function _guardLocalOnly(kind, provider) {
+    if (_localOnly() && provider !== 'ollama') {
+        const env = kind === 'chat' ? 'AI_CHAT_PROVIDER' : 'AI_EMBED_PROVIDER';
+        throw new Error('LEXIS_PILOT_LOCAL_ONLY: ' + kind + ' přes cloud (' + provider + ') je v lokálním režimu zakázán — klientská data nesmí opustit stroj (mlčenlivost). Použij lokální Ollama (' + env + '=ollama).');
+    }
+}
 function _openaiBase() { return _env('OPENAI_BASE_URL', 'https://api.openai.com/v1').replace(/\/+$/, ''); }
 function _openaiHeaders() {
     const h = { 'Content-Type': 'application/json' };
@@ -90,23 +116,34 @@ async function _anthropicChat(messages, options) {
 async function chat(params) {
     params = params || {};
     const p = _chatProvider();
+    _guardLocalOnly('chat', p);
     if (p === 'openai') return _openaiChat(params.messages, params.options);
     if (p === 'anthropic') return _anthropicChat(params.messages, params.options);
+    // Strop délky odpovědi: bez num_predict může model „utéct“ a generovat minuty. Ollama
+    // (stream:false) pošle hlavičky až po dogenerování, takže po 300 s spadne spojení
+    // (serverový test 4. 10. 2026: souběh 8, jeden dotaz Sekretářky 313 s, „fetch failed“).
+    // AGENT_NUM_PREDICT (tokeny, výchozí 3072; 0 = bez stropu). Explicitní hodnota volajícího má přednost.
+    const cap = parseInt(process.env.AGENT_NUM_PREDICT == null ? '3072' : process.env.AGENT_NUM_PREDICT, 10);
+    if (cap > 0 && !params.stream && !(params.options && params.options.num_predict != null)) {
+        params = Object.assign({}, params, { options: Object.assign({}, params.options, { num_predict: cap }) });
+    }
     return ollama.chat(params); // ollama default (respektuje params.model i options)
 }
 async function embeddings(params) {
     params = params || {};
     const p = _embedProvider();
+    _guardLocalOnly('embed', p);
     if (p === 'openai') return _openaiEmbeddings(params.prompt != null ? params.prompt : params.input);
     if (p === 'anthropic') throw new Error('Anthropic nemá embeddings API — použij AI_EMBED_PROVIDER=openai nebo ollama.');
     return ollama.embeddings(params);
 }
-function providerInfo() { return { chat: _chatProvider(), embed: _embedProvider() }; }
+function providerInfo() { const c = assertLocalCompliance(); return { chat: c.chat, embed: c.embed, localOnly: c.localOnly, compliant: c.compliant }; }
 
 module.exports = {
     chat: chat,
     embeddings: embeddings,
     providerInfo: providerInfo,
+    assertLocalCompliance: assertLocalCompliance,
     // Průchod pro správu modelů (jen Ollama je má) — kdyby to někdo volal přes ai_provider.
     list: typeof ollama.list === 'function' ? ollama.list.bind(ollama) : undefined,
     pull: typeof ollama.pull === 'function' ? ollama.pull.bind(ollama) : undefined

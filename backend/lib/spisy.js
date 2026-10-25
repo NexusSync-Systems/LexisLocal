@@ -28,8 +28,15 @@ const STAVY = ['aktivni', 'archiv', 'skartace'];
 const DEFAULT_RETENTION_YEARS = 5;
 
 // --- Pomocné: normalizace sp. zn. pro párování ------------------------------
+// Spisová značka bez čísla listu: „12 C 45/2026-30“ → „12 C 45/2026“ (č. j. soudu nese za
+// pomlčkou číslo listu; spis je jeden pro všechny listy — test datové schránky 5. 10. 2026).
+function stripFolio(s) {
+    const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    const m = /^(\d+\s?[A-Za-zÁ-Žá-ž]{1,4}\s?\d+\/\d{4})\s?-\s?\d{1,5}$/.exec(t);
+    return m ? m[1] : t;
+}
 function _normCase(s) {
-    return String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return stripFolio(s);
 }
 function _caseKey(s) {
     return _normCase(s).toLowerCase();
@@ -82,6 +89,13 @@ function findByCase(spisZn) {
     return (db.get('spisy') || []).find(s => _caseKey(s.spisZn) === key) || null;
 }
 
+function _cleanEmail(v) {
+    const e = String(v == null ? '' : v).trim();
+    if (!e) return '';
+    if (!/^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[a-z]{2,}$/i.test(e)) throw new Error('Neplatný e-mail klienta.');
+    return e;
+}
+
 function createSpis(data) {
     data = data || {};
     const spisZn = _normCase(data.spisZn);
@@ -100,13 +114,22 @@ function createSpis(data) {
         nazev: nazev,
         klient: data.klient ? String(data.klient).trim() : '',
         klientIco: data.klientIco ? String(data.klientIco).replace(/\s+/g, '') : '',
+        // E-mail klienta pro průběžné souhrny (lib/client_updates.js — odchází jen po schválení advokátem).
+        klientEmail: _cleanEmail(data.klientEmail),
         protistrana: data.protistrana ? String(data.protistrana).trim() : '',
         agenda: data.agenda ? String(data.agenda).trim() : '',
         odpovednyAdvokat: data.odpovednyAdvokat ? String(data.odpovednyAdvokat).trim() : '',
+        // Soud (název) a volitelně kód soudu pro InfoJednání — bez nich nejde hlídat jednání.
+        soud: data.soud ? String(data.soud).trim() : '',
+        soudKod: data.soudKod ? String(data.soudKod).trim() : '',
+        // Sp. zn. insolvenčního řízení pro hlídač ISIR, když spis sám vede jinou sp. zn.
+        // (např. přihláška pohledávky klienta do cizí insolvence).
+        insZn: data.insZn ? _normCase(data.insZn) : '',
         // ACL přístupu ke spisu (viz access.js). Vlastník = odpovědný advokát,
         // jinak implicitní 'local'. V solo režimu se přístup nevynucuje.
         access: {
-            owner: (data.odpovednyAdvokat ? String(data.odpovednyAdvokat).trim() : '') || (data.owner ? String(data.owner) : 'local'),
+            // Explicitní owner (ID uživatele kanceláře, dosazuje routa podle přihlášeného) má přednost.
+            owner: (data.owner ? String(data.owner) : '') || (data.odpovednyAdvokat ? String(data.odpovednyAdvokat).trim() : '') || 'local',
             readers: [],
             writers: []
         },
@@ -123,11 +146,21 @@ function updateSpis(id, patch) {
     const spis = getSpis(id);
     if (!spis) return null;
     const clean = {};
-    ['nazev', 'klient', 'protistrana', 'agenda', 'odpovednyAdvokat', 'poznamka'].forEach(k => {
+    ['nazev', 'klient', 'protistrana', 'agenda', 'odpovednyAdvokat', 'poznamka', 'soud', 'soudKod'].forEach(k => {
         if (patch[k] !== undefined) clean[k] = String(patch[k]);
     });
     if (patch.spisZn !== undefined) clean.spisZn = _normCase(patch.spisZn);
+    if (patch.klientEmail !== undefined) clean.klientEmail = _cleanEmail(patch.klientEmail);
     if (patch.klientIco !== undefined) clean.klientIco = String(patch.klientIco).replace(/\s+/g, '');
+    if (patch.insZn !== undefined) clean.insZn = _normCase(patch.insZn);
+    // Jiné insolvenční řízení → zapomenout uložený stav ISIR (jinak by hlídač ohlásil
+    // „změnu stavu“, která je ve skutečnosti jen jiné řízení).
+    if (clean.spisZn !== undefined || clean.insZn !== undefined) {
+        const { insKey } = require('./isir_cases');
+        const before = insKey(spis.insZn || spis.spisZn);
+        const after = insKey((clean.insZn !== undefined ? clean.insZn : spis.insZn) || (clean.spisZn !== undefined ? clean.spisZn : spis.spisZn));
+        if (before !== after) { clean.isirStav = null; clean.isirCheckedAt = null; clean.isirError = null; }
+    }
     if (patch.retentionYears !== undefined && Number.isFinite(patch.retentionYears)) {
         clean.retentionYears = patch.retentionYears;
     }
@@ -301,6 +334,7 @@ function syncFromInbox() {
             klient: (first && first.plaintiff && first.plaintiff !== 'Nezjištěn') ? first.plaintiff : '',
             protistrana: (first && first.defendant && first.defendant !== 'Nezjištěn') ? first.defendant : '',
             klientIco: (first && first.ico) ? first.ico : '',
+            soud: (group.files.find(f => f.court) || {}).court || '',
             source: 'inbox-sync'
         });
         created++;
@@ -461,6 +495,22 @@ function revokeSpisAccess(id, userId) {
     return updated;
 }
 
+/** Změna vlastníka spisu (odpovědný uživatel). Původní vlastník přístup ztrácí, pokud ho nemá sdílený. */
+function setSpisOwner(id, userId) {
+    const spis = getSpis(id);
+    if (!spis) throw new Error('Spis nenalezen.');
+    if (!userId) throw new Error('Chybí nový vlastník.');
+    const acc = require('./access').normalizeAccess(spis);
+    const prev = acc.owner;
+    acc.owner = String(userId);
+    acc.readers = acc.readers.filter(u => u !== acc.owner);
+    acc.writers = acc.writers.filter(u => u !== acc.owner);
+    const updated = db.update('spisy', id, { access: acc });
+    addEvent(id, 'vlastnik', 'Změna vlastníka spisu: „' + prev + '“ → „' + acc.owner + '“.', { from: prev, to: acc.owner });
+    try { require('./audit').logEvent('Spisová služba', 'Změna vlastníka spisu', spis.spisZn || spis.nazev, { spisId: id, from: prev, to: acc.owner }); } catch (e) { /* audit best-effort */ }
+    return updated;
+}
+
 /** Aktuální ACL spisu (owner/readers/writers). */
 function getSpisAccess(id) {
     const spis = getSpis(id);
@@ -469,6 +519,7 @@ function getSpisAccess(id) {
 }
 
 module.exports = {
+    stripFolio,
     STAVY,
     DEFAULT_RETENTION_YEARS,
     listSpisy,
@@ -489,6 +540,7 @@ module.exports = {
     shareSpis,
     revokeSpisAccess,
     getSpisAccess,
+    setSpisOwner,
     // exportováno pro testy
     _normCase,
     _caseKey,

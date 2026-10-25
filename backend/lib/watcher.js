@@ -15,7 +15,7 @@ const { extractLexisSpecFromDocx } = require('./lexis-spec');
 const { logEvent } = require('./audit');
 const Mutex = require('./mutex');
 const { anonymizeText } = require('./anonymizer');
-const { calculateDeadlineDate, collectUnitDeadlines, runAIExtractor } = require('./extraction'); // sdílený AI-extraktor
+const { calculateDeadlineDate, collectUnitDeadlines, runAIExtractor, extractDeliveryDates, pickProceduralDeadline } = require('./extraction'); // sdílený AI-extraktor
 
 const { WATCH_DIR, dataPath } = require('./config'); // jeden zdroj pravdy, viz lib/config.js
 const { getIngestDir } = require('./config');
@@ -145,8 +145,12 @@ async function saveInbox(inbox) {
 }
 
 // Combined Heuristic and AI extraction engine
-async function processDocument(filePath) {
+async function processDocument(filePath, opts = {}) {
     const fileName = path.basename(filePath);
+    // Příloha zprávy z datové schránky: datum DORUČENÍ z ISDS (lib/isds_inbox.js) má
+    // přednost před datem nalezeným v textu. Watcher (bez opts) si metadata dohledá sám.
+    let isds = opts && opts.isds ? opts.isds : null;
+    if (!isds) { try { isds = require('./isds_inbox').metaForFile(path.relative(_watchedDir, filePath)); } catch (e) { isds = null; } }
     console.log(`⚙️ Analyzuji dokument ${fileName}...`);
 
     // .docx ulozeny LexisEditorem nese vnoreny spec (JSON) - precteme ho, aby sel
@@ -172,13 +176,19 @@ async function processDocument(filePath) {
         console.error(`❌ Chyba extrakce textu z ${fileName}:`, extractErr.message);
     }
     
+    if (text && text.trim()) {
+        try { require('./text_cache').setText(filePath, text); } catch (e) { /* cache je jen optimalizace */ }
+    }
     if (!text || !text.trim()) {
         console.warn(`⚠️ Soubor ${fileName} je prázdný nebo nelze přečíst.`);
-        return;
+        // Volající (upload) musí vědět, že dokument NEBYL zpracován — dřív API hlásilo
+        // úspěch a dokument se v doručené poště vůbec neobjevil (test 2. 10. 2026).
+        return { ok: false, reason: 'z dokumentu nejde přečíst text (prázdný či poškozený soubor, nebo selhalo OCR)' };
     }
     
     // 1. Step: Run High-Quality Czech Heuristic Regex Engine (Bulletproof Fallback)
     const metadata = runRegexExtractor(text);
+    if (isds && isds.deliveryDate) applyIsdsDelivery(metadata, isds);
     
     // 2. Step: Refine metadata with Local Ollama AI if online
     let refinedMetadata = null;
@@ -188,9 +198,12 @@ async function processDocument(filePath) {
             if (refinedMetadata.caseNumber) metadata.caseNumber = refinedMetadata.caseNumber;
             if (refinedMetadata.plaintiff) metadata.plaintiff = refinedMetadata.plaintiff;
             if (refinedMetadata.defendant) metadata.defendant = refinedMetadata.defendant;
-            if (refinedMetadata.deadlineDays !== undefined) {
+            // Procesní lhůta nalezená v textu (odvolání/odpor/vyjádření) má přednost
+            // před číslem od AI — to si u rozsudku vybralo 3denní pariční lhůtu.
+            if (refinedMetadata.deadlineDays !== undefined && !metadata.deadlineProcedural) {
                 metadata.deadlineDays = refinedMetadata.deadlineDays;
-                metadata.deadlineDate = calculateDeadlineDate(refinedMetadata.deadlineDays);
+                metadata.deadlineDate = refinedMetadata.deadlineDays
+                    ? calculateDeadlineDate(refinedMetadata.deadlineDays, metadata.deliveryDate || undefined) : null;
             }
             if (refinedMetadata.summary) metadata.summary = refinedMetadata.summary;
         }
@@ -207,10 +220,8 @@ async function processDocument(filePath) {
                 if (registryData.inInsolvency) {
                     metadata.summary = `⚠️ POZOR: Subjekt ${registryData.name} je v INSOLVENCI (${registryData.insolvencyCase})! ` + metadata.summary;
                 }
-                // Enrich defendant/plaintiff with verified ARES address
-                if (metadata.defendant && (metadata.defendant.toLowerCase().includes("žalovaný") || metadata.defendant.length < 30)) {
-                    metadata.defendant = `${registryData.name} (IČO: ${registryData.ico}, sídlo: ${registryData.seat})`;
-                }
+                // IČO/sídlo z ARES jen k té straně, které subjekt odpovídá (nikdy chybový text).
+                Object.assign(metadata, require('./registries').enrichPartiesWithRegistry(metadata, registryData));
             }
         } catch (e) {
             console.warn("⚠️ Chyba při automatickém ověření registrů v watcher:", e.message);
@@ -222,13 +233,58 @@ async function processDocument(filePath) {
     // needsReview=true — advokát je má potvrdit (nic se tiše nefinalizuje).
     let unitDeadlines = [];
     try {
-        unitDeadlines = collectUnitDeadlines(text, refinedMetadata);
+        unitDeadlines = collectUnitDeadlines(text, refinedMetadata, metadata.deliveryDate || undefined);
     } catch (e) { /* detekce jednotek je best-effort */ }
     if (unitDeadlines.length) {
         const lbl = { week: 'týd.', month: 'měs.', year: 'r.' };
         metadata.summary = (metadata.summary || '') + ' ⏳ K OVĚŘENÍ: ' +
             unitDeadlines.map(d => `${d.amount} ${lbl[d.unit] || d.unit} → ${d.deadlineDate}`).join(', ') + '.';
     }
+
+    // 2.75 Step: Systémová zpráva ISDS (uvítání, oznámení provozovatele) — žádné lhůty.
+    //     Test 5. 10. 2026: z věty o mazání zpráv po 90 dnech vznikla falešná lhůta 90 dnů.
+    if (isds && isds.systemMessage) {
+        metadata.deadlineDays = 0; metadata.deadlineDate = null; metadata.deadlineProcedural = null;
+        unitDeadlines = [];
+        metadata.summary = '📨 Systémová zpráva datové schránky (provozovatel ISDS) — informační, bez lhůt.';
+    }
+
+    // 2.8 Step: Nařízené jednání v dokumentu (předvolání, vyrozumění) → návrh ke sledování.
+    //     Hlídač pak termín ověřuje na InfoJednání; advokát ho musí potvrdit.
+    let hearingsFound = [];
+    try {
+        const { extractHearings } = require('./hearing_extract');
+        const { detectCourtName } = require('./court_hearings_source');
+        metadata.court = detectCourtName(text);
+        hearingsFound = extractHearings(text);
+        const HW = require('./hearings');
+        let spis = null;
+        try { spis = require('./spisy').findByCase(metadata.caseNumber); } catch (e) { /* bez spisu */ }
+        hearingsFound.forEach(hf => {
+            if (!hf.spisZn && metadata.caseNumber) hf.spisZn = metadata.caseNumber;
+            if (!hf.spisZn) return;
+            const reg = HW.registerHearing(WATCH_DIR, { // stejný soubor jako kalendář (routes/calendar.js)
+                spisZn: hf.spisZn, date: hf.date, time: hf.time, room: hf.room,
+                court: hf.court || metadata.court, spisId: spis ? spis.id : null,
+                advokat: spis ? spis.odpovednyAdvokat || null : null,
+                source: 'dokument:' + fileName, needsReview: true
+            });
+            hf.hearingId = reg.hearing.id;
+        });
+        if (hearingsFound.length) {
+            metadata.summary = (metadata.summary || '') + ' ⚖️ JEDNÁNÍ K POTVRZENÍ: ' +
+                hearingsFound.map(h => `${h.date} ${h.time}${h.room ? ', síň ' + h.room : ''}`.trim()).join('; ') + '.';
+        }
+    } catch (e) { console.warn('⚠️ Rozpoznání jednání selhalo (nekritické):', e.message); }
+
+    // 2.9 Step: Elektronické podpisy v PDF (rozhodnutí soudu, podání, smlouvy) — jen ověření.
+    let signatures = null;
+    try { signatures = require('./signature_check').checkPdfFile(filePath); }
+    catch (e) { signatures = null; }
+    const signatureNote = signatures ? require('./signature_check').summaryNote(signatures) : '';
+
+    let action = null;
+    try { action = require('./doc_action').actionFor({ metadata, hearings: hearingsFound }); } catch (e) { action = null; }
 
     // 3. Save to inbox
     const inbox = await loadInbox();
@@ -238,18 +294,33 @@ async function processDocument(filePath) {
         filePath: filePath,
         relativePath: relativePath,
         status: "unread",
-        caseNumber: metadata.caseNumber || "Neznámá sp. zn.",
+        caseNumber: (metadata.caseNumber && require('./spisy').stripFolio(metadata.caseNumber)) || "Neznámá sp. zn.",
         plaintiff: metadata.plaintiff || "Nezjištěn",
         defendant: metadata.defendant || "Nezjištěn",
         deadlineDays: metadata.deadlineDays || 0,
         deadlineDate: metadata.deadlineDate || null,
+        deadlineBase: metadata.deadlineBase || null,
+        deadlineContext: metadata.deadlineContext || null,
+        court: metadata.court || null,
+        hearings: hearingsFound,
+        deliveryDate: metadata.deliveryDate || null,
+        deliveryConflict: !!metadata.deliveryConflict,
         detectedDeadlines: unitDeadlines,
-        summary: metadata.summary || "Nově stažený dokument připravený ke zpracování.",
+        action: action,
+        isds: isds ? { dmID: isds.dmID, sender: isds.sender, annotation: isds.annotation, senderRefNumber: isds.senderRefNumber,
+            deliveryDate: isds.deliveryDate, deliveryHow: isds.deliveryHow, deliveryExact: isds.deliveryExact !== false } : null,
+        summary: (isds ? `📨 Datová schránka: doručeno ${isds.deliveryDate || '?'} (${isds.deliveryHow || 'neznámo'})` +
+            `${isds.sender ? ', od: ' + isds.sender : ''}${isds.annotation ? ', věc: ' + isds.annotation : ''}. ` +
+            ((metadata.isdsTextDates || []).length ? `V textu je jiné datum doručení (${metadata.isdsTextDates.join(', ')}) — rozhoduje doručení do datové schránky. ` : '') : '') +
+            (metadata.deliveryConflict
+            ? `⚠️ ROZPOR V DATU DORUČENÍ (${(metadata.deliveryDates || []).join(' × ')}) — lhůta počítána od nejdřívějšího, OVĚŘIT. `
+            : '') + signatureNote + (metadata.summary || "Nově stažený dokument připravený ke zpracování."),
         ico: metadata.ico || null,
         inInsolvency: registryData ? registryData.inInsolvency : false,
         insolvencyCase: registryData ? registryData.insolvencyCase : null,
-        verifiedSeat: registryData ? registryData.seat : null,
+        verifiedSeat: registryData && registryData.aresOk !== false ? registryData.seat || null : null,
         wasOcr: wasOcr,
+        signatures: signatures,
         hasLexisSpec: !!lexisSpec,
         lexisSpec: lexisSpec || null,
         processedAt: new Date().toISOString()
@@ -282,6 +353,27 @@ async function processDocument(filePath) {
     }
 }
 
+/**
+ * Datum doručení z ISDS přepíše datum z textu a přepočítá lhůtu. Datum v textu, které
+ * se liší, se jen poznamená (doručenka ISDS je rozhodující).
+ */
+function applyIsdsDelivery(metadata, isds) {
+    const textDates = (metadata.deliveryDates || []).filter(d => d && d !== isds.deliveryDate);
+    metadata.deliveryDate = isds.deliveryDate;
+    metadata.deliveryDates = [isds.deliveryDate];
+    metadata.deliveryConflict = false;
+    if (metadata.deadlineDays) {
+        metadata.deadlineDate = calculateDeadlineDate(metadata.deadlineDays, isds.deliveryDate);
+        metadata.deadlineBase = `doručení do datové schránky ${isds.deliveryHow || ''}`.trim() + (isds.deliveryExact === false ? ' — OVĚŘIT' : '');
+    }
+    if ((!metadata.caseNumber) && isds.senderRefNumber && /\d+\s*[A-Za-zČŠŽčšž]+\s*\d+\/\d{4}/.test(isds.senderRefNumber)) {
+        metadata.caseNumber = isds.senderRefNumber.match(/\d+\s*[A-Za-zČŠŽčšž]+\s*\d+\/\d{4}/)[0].replace(/\s+/g, ' ');
+    }
+    metadata.isdsTextDates = textDates;
+    if (metadata.summary && metadata.deadlineDate) metadata.summary = metadata.summary.replace(/vyprší \d{4}-\d{2}-\d{2}/, 'vyprší ' + metadata.deadlineDate);
+    return metadata;
+}
+
 // Regular Expression extractor for Czech legal documents
 function runRegexExtractor(text) {
     const metadata = {
@@ -311,20 +403,36 @@ function runRegexExtractor(text) {
     // 2. Lhůta v dnech: e.g. "lhůta 15 dnů", "do 15 dnů", "ve lhůtě 8 dnů"
     const deadlineReg = /(?:lhůt[aěuouí-]+\s*(?:k\s*vyjádření\s*)?(?:činí|v\s*délce)?\s*|do\s*|ve\s*lhůtě\s*)(\d+)\s*(?:dn[ůía-z]*)/i;
     const matchDeadline = text.match(deadlineReg);
-    if (matchDeadline) {
+    // Lhůta běží od DORUČENÍ, ne ode dne zpracování spisu.
+    const delivery = extractDeliveryDates(text);
+    metadata.deliveryDate = delivery.date;
+    metadata.deliveryDates = delivery.all;
+    metadata.deliveryConflict = delivery.conflict;
+    const proc = pickProceduralDeadline(text);
+    if (proc) {
+        metadata.deadlineDays = proc.days;
+        metadata.deadlineDate = calculateDeadlineDate(proc.days, delivery.date || undefined);
+        metadata.deadlineBase = delivery.date ? 'doručení' : 'zpracování (datum doručení nenalezeno — OVĚŘIT)';
+        metadata.deadlineProcedural = true;
+        metadata.deadlineContext = proc.context;
+    } else if (matchDeadline && !/pr[aá]vn[ií]\s+moc/i.test(text.substr(matchDeadline.index, 80))) {
         const days = parseInt(matchDeadline[1]);
         metadata.deadlineDays = days;
-        metadata.deadlineDate = calculateDeadlineDate(days);
+        metadata.deadlineDate = calculateDeadlineDate(days, delivery.date || undefined);
+        metadata.deadlineBase = delivery.date ? 'doručení' : 'zpracování (datum doručení nenalezeno — OVĚŘIT)';
     }
     
     // 3. Strany sporu
-    const plaintiffReg = /(?:žalobc[eůa-z]+\s*:\s*|žalující\s*strana\s*:\s*)([^\n,.]+)/i;
+    // Jméno strany až do konce řádku / čárky; tečky uvnitř právní formy („s.r.o.“, „a.s.“)
+    // se zachovají (dřív se jméno uřízlo na „Alfa Test s“, test 3. 10. 2026).
+    const partyName = (m) => m ? m[1].trim().replace(/\.$/, (dot, off, str) => /\b(?:s\.r\.o|a\.s|v\.o\.s|k\.s|z\.s|o\.p\.s|spol)$/i.test(str.slice(0, off)) ? dot : '') : '';
+    const plaintiffReg = /(?:žalobc[eůa-z]+\s*:\s*|žalující\s*strana\s*:\s*)([^\n,;]+)/i;
     const matchPlaintiff = text.match(plaintiffReg);
-    if (matchPlaintiff) metadata.plaintiff = matchPlaintiff[1].trim();
+    if (matchPlaintiff) metadata.plaintiff = partyName(matchPlaintiff);
     
-    const defendantReg = /(?:žalovan[éhomy-]+\s*:\s*|žalovaná\s*strana\s*:\s*)([^\n,.]+)/i;
+    const defendantReg = /(?:žalovan[ýáéhomy-]+\s*:\s*|žalovaná\s*strana\s*:\s*)([^\n,;]+)/i;
     const matchDefendant = text.match(defendantReg);
-    if (matchDefendant) metadata.defendant = matchDefendant[1].trim();
+    if (matchDefendant) metadata.defendant = partyName(matchDefendant);
     
     // 4. IČO Search (Exactly 8 digits, supports spaces inside like '123 456 78')
     const icoReg = /(?:IČO|IČ)\s*[:\-]?\s*(\d(?:\s*\d){7})/i;
@@ -420,4 +528,4 @@ function repointWatcher(newDir) {
     return _watchedDir;
 }
 
-module.exports = { WATCH_DIR, loadInbox, saveInbox, processDocument, setWatcherState, checkAllInsolvencies, repointWatcher };
+module.exports = { WATCH_DIR, loadInbox, saveInbox, processDocument, setWatcherState, checkAllInsolvencies, repointWatcher, applyIsdsDelivery };

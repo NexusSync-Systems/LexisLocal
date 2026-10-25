@@ -8,14 +8,17 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const { indexDocument, searchSimilar, loadIndex, reindexAllKnowledge } = require('../lib/rag');
+const rag = require('../lib/rag');
+const { indexDocument, searchSimilar, loadIndex, reindexAllKnowledge } = rag;
 const { loadInbox } = require('../lib/watcher');
 const { logEvent } = require('../lib/audit');
 const { resolveRagFilters } = require('../lib/rag_request');
+const obory = require('../lib/obory');
+const { detectObor } = require('../lib/obor_detect');
 
 // GET /api/rag/search - Sémantické vyhledávání v podkladech
 router.get('/search', async (req, res) => {
-    const { query, limit, caseNumber, fileNames } = req.query;
+    const { query, limit, caseNumber, fileNames, scope } = req.query;
     if (!query) {
         return res.status(400).json({ error: "Vyhledávací dotaz je povinný." });
     }
@@ -33,14 +36,82 @@ router.get('/search', async (req, res) => {
         if (fileNames || caseNumber) {
             resolvedFilters = await resolveRagFilters(filterPayload);
         }
+        // ?scope=kb → hledá ve znalostní bázi (zákony agentů), ?scope=all → spisy + báze.
+        // Dřív šlo z dashboardu prohledat jen klientské spisy (test 2. 10. 2026, C22).
+        if (scope === 'kb' || scope === 'all') {
+            const { listKbScopes } = require('../lib/rag');
+            const kbScopes = listKbScopes().filter(sc => String(sc).indexOf('_kb_obor_') !== 0);
+            resolvedFilters = Object.assign({}, resolvedFilters || {}, { scopes: kbScopes });
+            if (scope === 'kb') resolvedFilters.clientAccess = false;
+        }
 
         // Lexikální fallback zapnut: dashboard vyhledávání funguje i bez modelu
         // (degradovaný, klíčový režim). Výsledky nesou method:'lexical'/degraded:true.
-        const matches = await searchSimilar(query, searchLimit, resolvedFilters, { lexicalFallback: true });
+        const matches = await searchSimilar(query, searchLimit, resolvedFilters, { lexicalFallback: true, rerank: true });
         const degraded = matches.some(m => m.degraded);
+        require('../lib/file_acl').logChunkReads(matches, 'Vyhledávání ve spisu');
         res.json({ query, matches, degraded });
     } catch (err) {
         res.status(500).json({ error: `Chyba sémantického vyhledávání: ${err.message}` });
+    }
+});
+
+// GET /api/rag/detect-obor?query=... — NÁHLED auto-detekce oboru (pro UI).
+// Nezasahuje do žádného vyhledávání; jen ukáže, jaký obor by systém zvolil.
+router.get('/detect-obor', async (req, res) => {
+    const query = req.query.query;
+    if (!query || !String(query).trim()) {
+        return res.status(400).json({ error: "Dotaz (query) je povinný." });
+    }
+    try {
+        const detection = await detectObor(String(query));
+        res.json({ query, detection });
+    } catch (err) {
+        res.status(500).json({ error: `Chyba detekce oboru: ${err.message}` });
+    }
+});
+
+// GET /api/rag/obory — taxonomie oborů + pokrytí judikaturními daty (pro UI a
+// kontrolu „naplnili jsme všechny obory?"). Řadí od nejméně naplněných.
+router.get('/obory', (req, res) => {
+    try {
+        const countFor = (scope) => {
+            const docs = rag.listKnowledge(scope) || [];
+            return {
+                documents: docs.length,
+                chunks: docs.reduce((s, d) => s + (d.chunks || 0), 0),
+                embedded: docs.reduce((s, d) => s + (d.embedded || 0), 0)
+            };
+        };
+        const list = obory.OBORY.map(o => {
+            const c = countFor(o.scope);
+            return {
+                slug: o.slug, label: o.label, scope: o.scope,
+                keywords: o.keywords, ...c, hasData: c.chunks > 0, custom: false
+            };
+        });
+        // Ruční obory mimo taxonomii (mají data, ale nejsou v seznamu OBORY).
+        let existing = [];
+        try { existing = rag.listJudikaturaScopes(); } catch (e) { existing = []; }
+        const known = new Set(obory.allScopes());
+        const extra = existing
+            .filter(s => String(s).indexOf('_kb_obor_') === 0 && !known.has(s))
+            .map(s => {
+                const c = countFor(s);
+                return {
+                    slug: String(s).replace('_kb_obor_', ''), label: obory.labelForScope(s),
+                    scope: s, keywords: [], ...c, hasData: c.chunks > 0, custom: true
+                };
+            });
+        const all = list.concat(extra);
+        res.json({
+            obory: all,
+            total: all.length,
+            filled: all.filter(o => o.hasData).length,
+            empty: all.filter(o => !o.hasData).length
+        });
+    } catch (err) {
+        res.status(500).json({ error: `Chyba přehledu oborů: ${err.message}` });
     }
 });
 

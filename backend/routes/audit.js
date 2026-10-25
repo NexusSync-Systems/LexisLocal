@@ -33,10 +33,16 @@ router.get('/transparency', (req, res) => {
 // POST /api/audit/transparency/:id/approve - Human-in-the-loop review approval
 router.post('/transparency/:id/approve', (req, res) => {
     const { id } = req.params;
+    const p = req.principal;
+    // Lidský dohled = konkrétní člověk s oprávněním schvalovat (advokát/správce), nikdy agent.
+    if (p && (p.kind === 'agent' || !require('../lib/principal').hasScope(p, 'approve'))) {
+        return res.status(403).json({ error: 'Výstup AI smí schválit jen advokát nebo správce.', code: 'forbidden_role' });
+    }
     try {
         const updated = db.update('transparency_logs', id, {
             humanApproved: true,
-            approvedAt: new Date().toISOString()
+            approvedAt: new Date().toISOString(),
+            approvedBy: p ? { id: p.userId, name: p.name } : null
         });
 
         if (updated) {
@@ -64,9 +70,13 @@ router.post('/clear', async (req, res) => {
     try {
         // Delegace do audit modulu — používá stejnou cestu jako zápis logu,
         // takže se nemůže smazat jiný soubor kvůli odlišnému výpočtu WATCH_DIR.
-        clearAuditLogs();
-        logEvent('LexisLocal Dashboard', 'Pročištění logů', 'Audit Trail', { cleared: true });
-        res.json({ success: true, message: "Auditní logy byly vyčištěny." });
+        // Výslovné potvrzení — jedno kliknutí na tlačítko vedle „Obnovit“ nesmí smazat audit.
+        if (!req.body || req.body.confirm !== 'SMAZAT') {
+            return res.status(400).json({ error: 'Pro vyprázdnění auditního logu pošlete potvrzení confirm: "SMAZAT".', code: 'confirm_required' });
+        }
+        const archived = clearAuditLogs();
+        logEvent('LexisLocal Dashboard', 'Pročištění logů', 'Audit Trail', { cleared: true, archive: typeof archived === 'string' ? archived : null });
+        res.json({ success: true, archive: typeof archived === 'string' ? archived : null, message: "Auditní log byl archivován a vyprázdněn." });
     } catch (err) {
         res.status(500).json({ error: `Nelze vyčistit logy: ${err.message}` });
     }

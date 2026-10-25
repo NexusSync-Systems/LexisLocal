@@ -6,7 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { loadAgents, saveAgent, deleteAgent, resetAgentToDefault } = require('../lib/agents');
+const { loadAgents, saveAgent, saveExamples, deleteAgent, resetAgentToDefault, DEFAULT_AGENTS } = require('../lib/agents');
 const { logEvent } = require('../lib/audit');
 
 // GET /api/agents - Seznam agentů
@@ -19,12 +19,34 @@ router.get('/', (req, res) => {
     }
 });
 
+// GET /api/agents/:agentId/examples — vzorové výstupy agenta (few-shot)
+router.get('/:agentId/examples', (req, res) => {
+    const a = loadAgents()[req.params.agentId];
+    if (!a) return res.status(404).json({ error: 'Agent nebyl nalezen.' });
+    const defs = require('../lib/agent_examples').DEFAULT_EXAMPLES[a.id] || [];
+    res.json({ success: true, examples: a.examples || [], hasDefaults: defs.length > 0, limits: require('../lib/agent_examples').LIMITS });
+});
+
+// POST /api/agents/:agentId/examples — uložit celý seznam ukázek { examples: [...] }
+// nebo { reset: true } = vrátit výchozí ukázky systémového agenta. (admin, viz authz)
+router.post('/:agentId/examples', (req, res) => {
+    const { agentId } = req.params;
+    try {
+        const list = req.body && req.body.reset ? (require('../lib/agent_examples').DEFAULT_EXAMPLES[agentId] || []) : (req.body || {}).examples;
+        const saved = saveExamples(agentId, list);
+        logEvent('LexisLocal Dashboard', 'Úprava vzorových výstupů agenta', 'AI Konfigurace', { agentId, count: saved.length });
+        res.json({ success: true, examples: saved });
+    } catch (err) {
+        res.status(err.status || 400).json({ error: err.message });
+    }
+});
+
 // POST /api/agents/:agentId - Update an agent
 router.post('/:agentId', (req, res) => {
     const { agentId } = req.params;
-    const { name, emoji, role, systemPrompt, preferredModel, permissions } = req.body;
+    const { name, emoji, role, systemPrompt, preferredModel, permissions, spisAccess, useJudikatura } = req.body;
     try {
-        const updated = saveAgent(agentId, { name, emoji, role, systemPrompt, preferredModel, permissions });
+        const updated = saveAgent(agentId, { name, emoji, role, systemPrompt, preferredModel, permissions, spisAccess, useJudikatura });
         logEvent('LexisLocal Dashboard', `Úprava agenta (${updated.name})`, 'AI Konfigurace', { agentId });
         res.json({ success: true, agent: updated });
     } catch (err) {
@@ -34,7 +56,7 @@ router.post('/:agentId', (req, res) => {
 
 // POST /api/agents - Create a new custom agent
 router.post('/', (req, res) => {
-    const { id, name, emoji, role, systemPrompt, preferredModel, permissions } = req.body;
+    const { id, name, emoji, role, systemPrompt, preferredModel, permissions, spisAccess, useJudikatura } = req.body;
     if (!id || !name) {
         return res.status(400).json({ error: "ID a název agenta jsou povinné údaje." });
     }
@@ -44,7 +66,7 @@ router.post('/', (req, res) => {
         if (agents[cleanId]) {
             return res.status(400).json({ error: `Agent s ID "${cleanId}" již existuje.` });
         }
-        const created = saveAgent(cleanId, { name, emoji, role, systemPrompt, preferredModel, permissions });
+        const created = saveAgent(cleanId, { name, emoji, role, systemPrompt, preferredModel, permissions, spisAccess, useJudikatura });
         logEvent('LexisLocal Dashboard', `Vytvoření agenta (${created.name})`, 'AI Konfigurace', { agentId: cleanId });
         res.json({ success: true, agent: created });
     } catch (err) {

@@ -4,16 +4,28 @@
  * agents with model-tiering, accumulates context, and synthesizes a final response.
  */
 
-const { loadAgents } = require('./agents');
-const { CHAT_MODEL } = require('./model_config');
-const { anonymizeText } = require('./anonymizer'); // GDPR: kontext se anonymizuje před modelem
+const { agentNumCtx } = require('./agent_options');
+const { loadAgents, agentTemperature } = require('./agents');
+const { CHAT_MODEL, RAG_MIN_SCORE } = require('./model_config');
+const { anonymizeText, pseudonymizeText, restorePseudonyms } = require('./anonymizer'); // GDPR: kontext se anonymizuje před modelem
 const { searchSimilar } = require('./rag');
+// B1: per-agent scope i v ChiefOrchestrator cestě — bez toho agenti v orchestrátoru
+// NEčerpají z vlastní znalostní báze (_kb_<id>) ani z judikatury (na rozdíl od
+// přímých rout /api/agent a /api/agent-swarm, které buildRagScope volají).
+const { applyAgentScope } = require('./rag_request');
+const { routeByIntent, sanitizeSteps } = require('./agent_router'); // #1 deterministický router
 const { checkSubject } = require('./registries');
 // AI poskytovatel nezávislý na backendu (Ollama | OpenAI | Anthropic).
 const ollama = require('./ai_provider');
 const crypto = require('crypto');
 const db = require('./database');
 const { calculateInferenceMetrics } = require('./green_monitor');
+
+// #3: přepínač smyčky kritika→revize (default ZAP). Vypnutí: AGENT_REVISE_LOOP=0.
+function _reviseEnabled() {
+    const v = String(process.env.AGENT_REVISE_LOOP == null ? '1' : process.env.AGENT_REVISE_LOOP).trim().toLowerCase();
+    return v !== '0' && v !== 'false' && v !== 'no' && v !== 'off';
+}
 
 class ChiefOrchestrator {
     constructor() {
@@ -41,10 +53,31 @@ class ChiefOrchestrator {
         console.log(`🧩 Chief Orchestrator: Dekompozice dokončena. Vygenerováno ${steps.length} kroků.`);
         
         let accumulatedContext = "";
+        let pseudoMap = null;
         if (context) {
             // GDPR: syrový kontext z editoru se před vstupem do modelu anonymizuje.
-            accumulatedContext += `Výchozí kontext dokumentu z editoru:\n${anonymizeText(context)}\n\n`;
+            // Vratně (symboly [OSOBA_1]…), finální výstup se doplní — viz routes/agent.js.
+            if (process.env.AGENT_CONTEXT_REDACTION === 'irreversible') {
+                accumulatedContext += `Výchozí kontext dokumentu z editoru:\n${anonymizeText(context)}\n\n`;
+            } else {
+                const ps = pseudonymizeText(context);
+                pseudoMap = ps.map;
+                accumulatedContext += `Výchozí kontext dokumentu z editoru (osobní údaje jako symboly [OSOBA_1] apod. — v textu je ponech přesně v tomto tvaru):\n${ps.text}\n\n`;
+            }
         }
+
+        // Výpočty lhůt (doručení, promlčení) dělá program — dostanou je všechny kroky i syntéza.
+        let dateFacts = null;
+        try {
+            dateFacts = require('./date_facts').buildDateFacts(`${prompt || ''}\n${context || ''}`, { question: prompt });
+            if (dateFacts) accumulatedContext += `${dateFacts.text}\n\n`;
+        } catch (e) { dateFacts = null; }
+        // Procesní lhůty a příslušnost soudu (lib/procedural_facts.js).
+        let procFacts = null;
+        try {
+            procFacts = require('./procedural_facts').proceduralFacts({ prompt, context });
+            if (procFacts) accumulatedContext += `${procFacts.text}\n\n`;
+        } catch (e) { procFacts = null; }
 
         // --- KROK 2: Sekvenční spuštění (Delegation & Sandbox) ---
         const agents = loadAgents();
@@ -77,13 +110,26 @@ class ChiefOrchestrator {
             // --- SANDBOX: Kontrola oprávnění ---
             let ragContext = "";
             let highConfidence = [];
-            if (agent.permissions && agent.permissions.read_files) {
+            // #7: retrieval povol i agentovi BEZ přístupu ke spisům, pokud má vlastní
+            // znalostní bázi (_kb_<id>). applyAgentScope u spisAccess:'none' nastaví
+            // clientAccess:false → čte JEN svou KB, ne klientské spisy.
+            const canRetrieve = (agent.permissions && agent.permissions.read_files) || !!agent.knowledgeScope;
+            if (canRetrieve) {
                 try {
                     // Agent má právo číst klientské spisy -> dotážeme sémantické vyhledávání
                     // Best-effort kontext pro agenta — lexikální fallback zapnut,
                     // ať RAG precedenty fungují i při vypnutém modelu (degradovaně).
-                    const matches = await searchSimilar(step.instruction, 2, ragFilters, { lexicalFallback: true });
-                    highConfidence = matches.filter(m => m.score >= 0.70);
+                    // B1: přidej znalostní bázi agenta + judikaturní politiku k základním
+                    // ragFilters (obor/spisy). Když selže, degraduj na holé ragFilters.
+                    let stepFilters = ragFilters;
+                    try {
+                        const scoped = applyAgentScope(ragFilters, agent, {});
+                        if (scoped) stepFilters = scoped;
+                    } catch (scopeErr) {
+                        console.warn(`⚠️ Sandbox: applyAgentScope selhal pro ${agent.name}:`, scopeErr.message);
+                    }
+                    const matches = await searchSimilar(step.instruction, 2, stepFilters, { lexicalFallback: true });
+                    highConfidence = matches.filter(m => m.score >= RAG_MIN_SCORE);
                     if (highConfidence.length > 0) {
                         ragContext = highConfidence
                             .map(m => `[Precedent ze spisu: ${m.fileName}]:\n${m.text}`)
@@ -151,7 +197,7 @@ class ChiefOrchestrator {
                 const response = await ollama.chat({
                     model: stepModel,
                     messages: messages,
-                    options: { temperature: 0.2 }
+                    options: { temperature: agentTemperature(agent, 0.2), num_ctx: agentNumCtx() }
                 });
 
                 const stepResult = response.message.content;
@@ -210,6 +256,20 @@ class ChiefOrchestrator {
             }
         }
 
+        // --- KROK 2.5: Kritika → revize (bounded, 1 průchod; #3) ---------------------
+        // Dřív se výstupy jen zřetězily; Kontrolorovy připomínky se nikam nezapracovaly.
+        // Teď: má-li plán koncept od Spisovatele, Kontrolor ho oponuje a Spisovatel
+        // vytvoří JEDNU revizi. Revidovaný text jde do syntézy. Best-effort + přepínatelné.
+        let revisionInfo = null;
+        try {
+            revisionInfo = await this._reviewReviseLoop({ agents, stepsLog, onStepProgress });
+            if (revisionInfo && revisionInfo.revisedText) {
+                accumulatedContext += `\n--- Revidovaný koncept (Spisovatel po oponentuře Kontrolora): ---\n${revisionInfo.revisedText}\n`;
+            }
+        } catch (revErr) {
+            console.warn('⚠️ Kritika→revize selhala (nekritické):', revErr.message);
+        }
+
         // --- KROK 3: Syntéza (Synthesis) ---
         if (onStepProgress) {
             onStepProgress({ status: "synthesizing", message: "Provádím finální syntézu a kompletaci výsledků swarmu..." });
@@ -238,7 +298,7 @@ class ChiefOrchestrator {
             const response = await ollama.chat({
                 model: globalModel,
                 messages: synthesisMessages,
-                options: { temperature: 0.1 }
+                options: { temperature: 0.1, num_ctx: agentNumCtx() }
             });
             finalResponse = response.message.content;
 
@@ -272,6 +332,21 @@ class ChiefOrchestrator {
             finalResponse = `Omlouvám se, nepodařilo se provést finální syntézu. Zde jsou alespoň dílčí nasbírané výstupy:\n\n${accumulatedContext}`;
         }
 
+        if (pseudoMap && typeof finalResponse === 'string') finalResponse = restorePseudonyms(finalResponse, pseudoMap);
+        // Tajné hodnoty serveru se do odpovědi nedostanou ani přes orchestraci (lib/leak_guard.js).
+        if (typeof finalResponse === 'string') { try { finalResponse = require('./leak_guard').guardLeaks(finalResponse, { instructions: [] }).text; } catch (e) { /* best-effort */ } }
+
+        // Deterministické dorovnání: chybný název zákona u správného čísla + vynechané výpočty lhůt.
+        if (typeof finalResponse === 'string') {
+            try {
+                const { fixLawNames, buildWarnings } = require('./output_guard');
+                const lf = fixLawNames(finalResponse, require('./kb_law_index').getKbLawIndex());
+                finalResponse = lf.text + require('./date_facts').dateFactsAppendix(lf.text, dateFacts) +
+                    require('./procedural_facts').proceduralAppendix(lf.text, procFacts) +
+                    buildWarnings({ lawIssues: lf.issues, lawFixed: lf.fixed });
+            } catch (e) { /* doplněk nesmí shodit orchestraci */ }
+        }
+
         const durationMs = Date.now() - startTime;
         console.log(`🏁 Chief Orchestrator: Kompletní orchestrace úspěšně dokončena za ${durationMs}ms.`);
 
@@ -280,7 +355,11 @@ class ChiefOrchestrator {
         let citationCheck = null;
         try {
             const { verifyCitationsWithSources } = require('./citation_verifier');
-            citationCheck = await verifyCitationsWithSources(finalResponse, {});
+            const { getKbLawIndex } = require('./kb_law_index');
+            citationCheck = await verifyCitationsWithSources(finalResponse, {
+                contextChunks: [prompt, context].filter(Boolean).map(t => ({ text: String(t), fileName: 'zadání' })),
+                kbIndex: getKbLawIndex()
+            });
         } catch (e) { citationCheck = null; }
 
         return {
@@ -288,6 +367,7 @@ class ChiefOrchestrator {
             prompt,
             steps: stepsLog,
             finalOutput: finalResponse,
+            revision: revisionInfo,
             citationCheck: citationCheck ? {
                 total: citationCheck.total,
                 unverifiedCount: citationCheck.unverifiedCount,
@@ -298,6 +378,81 @@ class ChiefOrchestrator {
             durationMs,
             timestamp: new Date().toISOString()
         };
+    }
+
+    /**
+     * #3: jedno volání agenta nad hotovým textem (kritika/revize) + zápis do
+     * green/transparency logu (AI Act). RAG se zde nezapojuje — pracuje se s
+     * poskytnutým konceptem. Teplota dle agenta.
+     */
+    async _callAgent(agent, model, messages, logLabel) {
+        const usedModel = model || this.defaultModel;
+        const t0 = Date.now();
+        const response = await ollama.chat({
+            model: usedModel,
+            messages: messages,
+            options: { temperature: agentTemperature(agent, 0.2), num_ctx: agentNumCtx() }
+        });
+        const content = (response && response.message && response.message.content) || '';
+        const durationMs = Date.now() - t0;
+        try {
+            const greenMetrics = calculateInferenceMetrics(durationMs);
+            db.insert('green_logs', { agentId: agent.id, model: usedModel, timestamp: new Date().toISOString(), ...greenMetrics });
+            const forLog = anonymizeText(messages.map(m => m.content).join('\n'));
+            db.insert('transparency_logs', {
+                agentId: agent.id, agentName: agent.name, model: usedModel,
+                prompt: logLabel, systemPrompt: forLog,
+                systemPromptHash: crypto.createHash('sha256').update(forLog).digest('hex'),
+                ragSources: [], timestamp: new Date().toISOString(), humanApproved: false,
+                greenMetrics: { energyWh: greenMetrics.energyWh, co2Grams: greenMetrics.co2Grams }
+            });
+        } catch (e) { /* logování je best-effort */ }
+        return content;
+    }
+
+    /**
+     * #3: smyčka kritika→revize. Kontrolor oponuje poslední koncept Spisovatele;
+     * pokud najde vady, Spisovatel vytvoří JEDNU revidovanou verzi. Bounded (1×),
+     * best-effort, přepínatelné (AGENT_REVISE_LOOP=0). Vrací
+     * { critiqued, revised, issues, revisedText } nebo null (smyčka se nespustila).
+     */
+    async _reviewReviseLoop({ agents, stepsLog, onStepProgress }) {
+        if (!_reviseEnabled()) return null;
+        const kontrolor = agents && agents.kontrolor;
+        const spisovatel = agents && agents.spisovatel;
+        if (!kontrolor || !spisovatel) return null;
+
+        const draftEntry = [...stepsLog].reverse().find(s => s.agentId === 'spisovatel' && s.output && String(s.output).trim());
+        if (!draftEntry) return null;
+        const draft = String(draftEntry.output);
+
+        if (onStepProgress) onStepProgress({ status: 'reviewing', agentName: kontrolor.name, agentEmoji: kontrolor.emoji, message: 'Kontrolor oponuje koncept…' });
+
+        const critiqueInstruction = 'Vypiš KONKRÉTNÍ, číslované právní i formální vady níže uvedeného KONCEPTU ' +
+            '(chybějící náležitosti, vymyšlené/nepřesné §, rozpory, slabá místa). Pokud koncept nemá vady, ' +
+            "napiš přesně 'BEZ VÝHRAD'. Nepřepisuj celý dokument, jen seznam připomínek.";
+        const critique = await this._callAgent(kontrolor, kontrolor.preferredModel,
+            [{ role: 'system', content: kontrolor.systemPrompt },
+             { role: 'user', content: critiqueInstruction + '\n\nKONCEPT:\n' + draft }],
+            'Kritika konceptu (Kontrolor)');
+        stepsLog.push({ step: 'revize-kritika', agentId: 'kontrolor', agentName: kontrolor.name, agentEmoji: kontrolor.emoji, instruction: 'Oponentura konceptu', output: critique });
+
+        if (/BEZ\s+VÝHRAD/i.test(critique)) {
+            return { critiqued: true, revised: false, issues: critique, revisedText: null };
+        }
+
+        if (onStepProgress) onStepProgress({ status: 'revising', agentName: spisovatel.name, agentEmoji: spisovatel.emoji, message: 'Spisovatel zapracovává připomínky…' });
+
+        const reviseInstruction = 'Zapracuj do KONCEPTU níže uvedené PŘIPOMÍNKY a vrať CELÝ opravený text ' +
+            'dokumentu — bez komentářů, bez uvození, bez seznamu změn. Chybějící konkrétní údaje nevymýšlej, ' +
+            'ponech [Doplnit...].';
+        const revisedText = await this._callAgent(spisovatel, spisovatel.preferredModel,
+            [{ role: 'system', content: spisovatel.systemPrompt },
+             { role: 'user', content: reviseInstruction + '\n\nPŘIPOMÍNKY:\n' + critique + '\n\nKONCEPT:\n' + draft }],
+            'Revize konceptu dle připomínek (Spisovatel)');
+        stepsLog.push({ step: 'revize-oprava', agentId: 'spisovatel', agentName: spisovatel.name, agentEmoji: spisovatel.emoji, instruction: 'Revize dle připomínek Kontrolora', output: revisedText });
+
+        return { critiqued: true, revised: true, issues: critique, revisedText: revisedText };
     }
 
     /**
@@ -335,7 +490,7 @@ Vytvoř maximálně 2 až 4 logické a vysoce efektivní kroky tak, aby na sebe 
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: prompt }
                 ],
-                options: { temperature: 0.1 }
+                options: { temperature: 0.1, num_ctx: agentNumCtx() }
             });
 
             const contentText = response.message.content.trim();
@@ -348,15 +503,25 @@ Vytvoř maximálně 2 až 4 logické a vysoce efektivní kroky tak, aby na sebe 
             }
             jsonText = jsonText.trim();
             
-            const steps = JSON.parse(jsonText);
-            if (Array.isArray(steps) && steps.length > 0) {
-                return steps;
+            const parsed = JSON.parse(jsonText);
+            // #1: očisti a zvaliduj kroky (zahoď neznámé agenty, ořízni na 1..4).
+            const clean = sanitizeSteps(parsed);
+            if (clean.length > 0) {
+                return clean;
             }
+            console.warn("⚠️ Dekompozice: LLM vrátil neplatné/prázdné kroky → deterministický router.");
         } catch (e) {
-            console.warn("⚠️ Selhala inteligentní dekompozice, vracím výchozí lineární plán:", e.message);
+            console.warn("⚠️ Selhala inteligentní dekompozice → deterministický router:", e.message);
         }
 
-        // Safe deterministic fallback decomposition if LLM fails formatting
+        // #1: deterministický router z klíčových slov (respektuje záměr, offline).
+        const routed = routeByIntent(prompt);
+        if (routed && routed.length > 0) {
+            console.log(`🧭 Router: deterministický plán (${routed.map(s => s.agentId).join(' → ')}).`);
+            return routed;
+        }
+
+        // Poslední pojistka: obecný lineární plán, když nelze určit záměr.
         return [
             {
                 step: 1,

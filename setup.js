@@ -19,9 +19,15 @@ const WATCH_DIR = path.join(process.env.HOME || process.env.USERPROFILE, 'Deskto
 
 async function main() {
     try {
-        // 1. Kontrola Node.js
+        // 1. Kontrola Node.js (verze + podporované rozpětí)
         console.log(`\x1b[32m[1/5]\x1b[0m Ověřuji prostředí Node.js...`);
-        console.log(`   - Verze: ${process.version} \x1b[32m[OK]\x1b[0m`);
+        const { warnIfUnsupported } = require('./backend/lib/node_check');
+        const nodeInfo = warnIfUnsupported('   ');
+        if (nodeInfo.ok) {
+            console.log(`   - Verze: ${process.version} \x1b[32m[OK]\x1b[0m`);
+        } else {
+            console.log(`   - Verze: ${process.version} \x1b[33m[NEPODPOROVANÁ — pokračuji, ale doporučuji Node 22 LTS]\x1b[0m`);
+        }
 
         // 2. Vytvoření složky pro spisy
         console.log(`\x1b[32m[2/5]\x1b[0m Příprava složky pro spisy na Vaší ploše...`);

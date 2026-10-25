@@ -10,9 +10,16 @@ const { WATCH_DIR } = require('./lib/config');
 const { loadAgents } = require('./lib/agents');
 const HearingsWatcher = require('./lib/hearings');
 const pairing = require('./lib/pairing'); // LexisLink párování (LAN)
+const aiProvider = require('./lib/ai_provider'); // AI backend + pojistka mlčenlivosti (local-only)
+
+// Preflight: varuj na nepodporovanou verzi Node.js (25+ opakovaně nativně padal).
+// Jen varování, nikdy neblokuje běh.
+require('./lib/node_check').warnIfUnsupported();
 
 const app = express();
+app.disable('x-powered-by'); // neprozrazovat technologii serveru
 const PORT = process.env.PORT || 4000;
+app.locals.port = PORT;
 // Vazba na rozhraní: VÝCHOZÍ loopback (127.0.0.1) — bezpečné pro solo režim,
 // nedostupné z LAN. Firemní/vícouživatelský režim vědomě nastaví BIND_HOST=0.0.0.0
 // (nebo konkrétní IP) a MUSÍ zapnout vynucení tokenu + TLS.
@@ -82,10 +89,23 @@ app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
+    // HSTS jen při HTTPS (na http://localhost by prohlížeč zbytečně vynucoval TLS).
+    if (req.secure || process.env.USE_HTTPS === 'true') {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+    }
     next();
 });
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Chybné tělo požadavku (nevalidní JSON, příliš velké) → stručná JSON chyba. Dřív Express
+// vrátil HTML se stack trace a cestami na serveru (test 2. 10. 2026).
+app.use((err, req, res, next) => {
+    if (err && (err.type === 'entity.parse.failed' || err.type === 'entity.too.large' || err instanceof SyntaxError)) {
+        const tooLarge = err.type === 'entity.too.large';
+        return res.status(tooLarge ? 413 : 400).json({ error: tooLarge ? 'Požadavek je příliš velký.' : 'Neplatný JSON v těle požadavku.' });
+    }
+    return next(err);
+});
 // Je požadavek z loopbacku (stejný stroj)? Jen tehdy je bezpečné vstříknout
 // token přímo do HTML — přes LAN by to byl únik tokenu komukoli na síti.
 // Pozn.: běžíme bez reverzní proxy, takže se díváme na skutečnou remoteAddress
@@ -136,12 +156,22 @@ const { safePathInWatchDir, sanitizeFileName } = require('./lib/pathsafe');
 // bezstavová, pokrytá testy). Vynucení je opt-in (ENFORCE_TOKEN, viz výše).
 const { checkAuth } = require('./lib/auth');
 const { resolvePrincipal } = require('./lib/principal');
+const requestContext = require('./lib/request_context');
+const authz = require('./lib/authz');
 const authenticate = (req, res, next) => {
-    // Aditivně: určíme „kdo volá" (identita + scopy) pro budoucí per-user logiku.
-    // Nemění rozhodnutí allow/deny níže — solo = implicitní uživatel s plnými právy.
+    // Kdo volá: uživatel kanceláře (vlastní token na zařízení), hlavní token správce,
+    // agent, nebo implicitní uživatel v solo režimu (bez vynucení tokenu).
     req.principal = resolvePrincipal(req, { apiToken: API_TOKEN, enforceToken: ENFORCE_TOKEN });
-    if (!ENFORCE_TOKEN) return next();
-    if (checkAuth(API_TOKEN, req).allowed) return next();
+    // Role uživatele (čtení / zápis / správa) — jen pro principaly druhu 'user'.
+    const az = authz.authorize(req.principal, req.method, req.path);
+    if (!az.allowed) {
+        return res.status(403).json({ error: authz.SCOPE_MSG[az.scope] || 'Přístup odepřen.', code: 'forbidden_role', requiredScope: az.scope });
+    }
+    const go = () => requestContext.run({ principal: req.principal }, next);
+    if (!ENFORCE_TOKEN) return go();
+    if (checkAuth(API_TOKEN, req).allowed) return go();
+    // Uživatelé kanceláře mají vlastní tokeny (agentí tokeny bránou NEPROJDOU — mají jen své cesty).
+    if (req.principal && req.principal.kind === 'user') return go();
     console.warn(`🔒 Nepovolený přístup k API: ${req.method} ${req.path}`);
     return res.status(401).json({ error: "Přístup odepřen: Neplatný nebo chybějící API token." });
 };
@@ -152,8 +182,25 @@ app.use(authenticate);
 // klient s tokenem (v praxi dashboard/pair na loopbacku). Vrací kód + hotové
 // URL do QR (http://<LAN-IP>:PORT/m?pair=<kód>). Token v odpovědi NENÍ.
 app.post('/api/pair/new', (req, res) => {
-    const { code, ttl } = pairing.createCode(API_TOKEN);
-    res.json({ code, ttl, urls: pairing.buildUrls(PORT, code) });
+    // Párovací kód nese token TOHO, kdo páruje: uživatel kanceláře dostane nové zařízení
+    // na svůj účet (nikdy hlavní token správce → žádné povýšení práv přes párování).
+    let pairToken = API_TOKEN;
+    const p = req.principal;
+    if (p && p.kind === 'user') {
+        try {
+            const label = String((req.body && req.body.deviceLabel) || 'Spárované zařízení').slice(0, 60);
+            pairToken = require('./lib/users').addDevice(p.userId, label).token;
+        } catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+    } else if (p && p.kind === 'agent') {
+        return res.status(403).json({ error: 'Agent nemůže párovat zařízení.' });
+    }
+    const { code, ttl } = pairing.createCode(pairToken);
+    const isHttps = req.secure || process.env.USE_HTTPS === 'true';
+    // Pro LexisEditor: odkaz s otiskem klíče serveru (párování bez slepé důvěry v certifikát).
+    const tlsPin = isHttps ? (app.locals.tlsPin || null) : null;
+    const tlsId = require('./lib/tls_identity');
+    res.json({ code, ttl, urls: pairing.buildUrls(PORT, code, { https: isHttps, host: req.headers.host }),
+        editor: tlsPin ? { connectUrl: tlsId.buildConnectUrl({ host: req.headers.host, pin: tlsPin, code }), pin: tlsPin, pinShort: tlsId.shortPin(tlsPin) } : null });
 });
 
 // ─── Modulární routery (postupné rozbití monolitu) ───────────────────────────
@@ -168,6 +215,7 @@ app.use('/api/judikatura', require('./routes/judikatura'));
 app.use('/api/managerial', require('./routes/managerial'));
 app.use('/api/alerts', require('./routes/alerts'));
 app.use('/api/rag', require('./routes/rag'));
+app.use('/api/readiness', require('./routes/readiness'));
 app.use('/api/watcher', require('./routes/watcher'));
 app.use('/api/calendar', require('./routes/calendar'));
 app.use('/api/models', require('./routes/models'));
@@ -180,15 +228,28 @@ app.use('/api/case', require('./routes/case'));
 app.use('/api/campaigns', require('./routes/campaigns'));
 app.use('/api/inbox', require('./routes/inbox'));
 app.use('/api/spisy', require('./routes/spisy'));
+app.use('/api/drafts', require('./routes/drafts'));
+app.use('/api/users', require('./routes/users').admin);   // správa uživatelů (jen správce, viz lib/authz.js)
+app.use('/api/me', require('./routes/users').me);         // kdo jsem + moje zařízení // sdílené koncepty (webový LexisEditor Lite)
 app.use('/api/citations', require('./routes/citations'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/lhutnik', require('./routes/lhutnik'));
 app.use('/api/skartace', require('./routes/skartace'));
 app.use('/api/fakturace', require('./routes/fakturace'));
+app.use('/api/client-updates', require('./routes/clientUpdates'));
+app.use('/api/codexis', require('./routes/codexis'));
 app.use('/api/aml', require('./routes/aml'));
 app.use('/api/agent', require('./routes/agent'));
 app.use('/api/agent-swarm', require('./routes/agentSwarm'));
 app.use('/api/agent-knowledge', require('./routes/agentKnowledge'));
+app.use('/api/knowledge', require('./routes/knowledge')); // oborová báze (dělený RAG)
+
+// Poslední záchranná síť: neošetřená chyba v routě → 500 bez stack trace a cest.
+app.use((err, req, res, next) => {
+    console.error(`❌ Neošetřená chyba ${req.method} ${req.path}:`, err && err.stack || err);
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: 'Interní chyba serveru.' });
+});
 
 // Root Status
 app.get('/api/status', (req, res) => {
@@ -198,7 +259,8 @@ app.get('/api/status', (req, res) => {
         project: "LexisLocal AI Ecosystem",
         version: "1.2.0",
         watcherDir: WATCH_DIR,
-        activeAgents: Object.keys(agents)
+        activeAgents: Object.keys(agents),
+        aiProvider: aiProvider.providerInfo() // { chat, embed, localOnly, compliant } — indikátor mlčenlivosti v UI
     });
 });
 
@@ -206,20 +268,62 @@ app.get('/api/status', (req, res) => {
 // Pod testy (JEST_WORKER_ID) NEspouštět — jinak timer drží event loop a jest
 // nemůže korektně skončit. V produkci timer .unref(), ať nikdy neblokuje ukončení.
 if (typeof process.env.JEST_WORKER_ID === 'undefined') {
-    const _hearingsTimer = setInterval(() => {
-        HearingsWatcher.checkAllHearings(WATCH_DIR).catch(err => {
-            console.error("⚠️ Background monitored hearings check error:", err.message);
-        });
-    }, 60 * 60 * 1000);
+    // Hlídač: 1) ověř sledovaná jednání, 2) najdi nová jednání v aktivních spisech.
+    // Interval LEXIS_HEARINGS_INTERVAL_MIN (výchozí 60). Při výpadku InfoJednání
+    // eviduje lib/hearings_health.js a po LEXIS_HEARINGS_OUTAGE_ALERT_H upozorní.
+    const _runHearings = () => HearingsWatcher.checkAllHearings(WATCH_DIR)
+        .then(() => HearingsWatcher.checkSpisy(WATCH_DIR))
+        // 3) insolvenční řízení (ISIR) u spisů se sp. zn. „… INS …“ — změna stavu → upozornění
+        .then(() => require('./lib/isir_cases').checkInsolvencySpisy())
+        .catch(err => console.error("⚠️ Background monitored hearings check error:", err.message));
+    // Datová schránka: stažení doručených zpráv každých LEXIS_ISDS_INTERVAL_MIN (výchozí 15)
+    // minut — jen když je přístup nastavený a stahování výslovně zapnuté (přihlášení = doručení).
+    const _isdsTimer = setInterval(() => {
+        const ib = require('./lib/isds_inbox');
+        const c = ib.config();
+        if (!c.enabled || !c.login || !c.password) return;
+        ib.pollOnce().catch(err => console.error('⚠️ Datová schránka: chyba stahování:', err.message));
+    }, (parseInt(process.env.LEXIS_ISDS_INTERVAL_MIN || '', 10) || 15) * 60 * 1000);
+    if (_isdsTimer && typeof _isdsTimer.unref === 'function') _isdsTimer.unref();
+    const _hearingsTimer = setInterval(_runHearings,
+        (parseInt(process.env.LEXIS_HEARINGS_INTERVAL_MIN || '', 10) || 60) * 60 * 1000);
+    // První kontrola krátce po startu (po obnovení serveru se nečeká hodinu).
+    const _hearingsFirst = setTimeout(_runHearings, 2 * 60 * 1000);
+    if (_hearingsFirst && typeof _hearingsFirst.unref === 'function') _hearingsFirst.unref();
     if (_hearingsTimer && typeof _hearingsTimer.unref === 'function') _hearingsTimer.unref();
 }
 
 const USE_HTTPS = process.env.USE_HTTPS === 'true';
 
-const SSL_KEY_PATH = process.env.SSL_KEY_PATH || 'key.pem';
-const SSL_CERT_PATH = process.env.SSL_CERT_PATH || 'cert.pem';
+let SSL_KEY_PATH = process.env.SSL_KEY_PATH || 'key.pem';
+let SSL_CERT_PATH = process.env.SSL_CERT_PATH || 'cert.pem';
 
 if (require.main === module) {
+    // Pojistka mlčenlivosti: v lokálním/pilotním režimu (LEXIS_PILOT_LOCAL_ONLY)
+    // NESMÍ běžet cloudový AI provider — jinak by klientská data (vč. RAG chunků)
+    // odešla mimo stroj. Fail-fast: raději nenastartovat než tiše porušit mlčenlivost.
+    const _aiComp = aiProvider.assertLocalCompliance();
+    if (!_aiComp.compliant) {
+        console.error('\n🛑 LOKÁLNÍ REŽIM (LEXIS_PILOT_LOCAL_ONLY) je zapnutý, ale AI je nastavené na CLOUD:');
+        for (const v of _aiComp.violations) {
+            console.error(`   • ${v.kind}: provider „${v.provider}" — klientská data by opustila stroj (mlčenlivost).`);
+        }
+        console.error('   Oprava: AI_CHAT_PROVIDER=ollama a AI_EMBED_PROVIDER=ollama (lokální model), nebo vypni LEXIS_PILOT_LOCAL_ONLY.');
+        console.error('   Server se z bezpečnostních důvodů NESPUSTÍ.\n');
+        process.exit(1);
+    }
+    if (_aiComp.localOnly) {
+        console.log('🔒 Lokální režim mlčenlivosti AKTIVNÍ — AI běží jen lokálně (chat: ' + _aiComp.chat + ', embed: ' + _aiComp.embed + '). Klientská data neopouští stroj.');
+    } else if (_aiComp.chat !== 'ollama' || _aiComp.embed !== 'ollama') {
+        console.warn('⚠️  AI běží přes CLOUD (chat: ' + _aiComp.chat + ', embed: ' + _aiComp.embed + '). Pro advokátní mlčenlivost bez smlouvy o zpracování zapni LEXIS_PILOT_LOCAL_ONLY=1 (vynutí lokální Ollamu).');
+    }
+
+    // #6: Preflight modelů — hlasitě varuj, když role-model není v Ollamě stažený
+    // (jinak agenti tiše spadnou na simulovaný fallback). Best-effort, neblokuje start.
+    try {
+        require('./lib/model_preflight').preflightModels().catch(() => {});
+    } catch (e) { console.warn('⚠️ Preflight modelů se nepodařilo spustit:', e.message); }
+
     // IMAP příjem e-mailů (jen při přímém spuštění serveru; nikdy pod testy).
     try {
         const db = require('./lib/database');
@@ -245,6 +349,23 @@ if (require.main === module) {
         }
     }
 
+    // HTTPS bez certifikátu: dřív tichý pád na HTTP. Teď si server vytvoří dlouhodobý
+    // self-signed certifikát (adresář klíčů) a jeho otisk se použije pro párování editoru.
+    if (USE_HTTPS && !(fs.existsSync(SSL_KEY_PATH) && fs.existsSync(SSL_CERT_PATH)) && !process.env.SSL_KEY_PATH) {
+        const tlsId = require('./lib/tls_identity').ensureCertificate();
+        if (tlsId.error) console.warn('⚠️ ' + tlsId.error);
+        else {
+            SSL_KEY_PATH = tlsId.keyPath; SSL_CERT_PATH = tlsId.certPath;
+            if (tlsId.created) console.log(`🔐 Vytvořen certifikát serveru (${require('./lib/tls_identity').CERT_DAYS} dní): ${tlsId.certPath}`);
+        }
+    }
+    if (USE_HTTPS && fs.existsSync(SSL_KEY_PATH) && fs.existsSync(SSL_CERT_PATH)) {
+        try {
+            const pin = require('./lib/tls_identity').spkiPin(fs.readFileSync(SSL_CERT_PATH));
+            app.locals.tlsPin = pin;
+            console.log(`🔑 Otisk klíče serveru (pro párování LexisEditoru): ${pin}`);
+        } catch (e) { console.warn('⚠️ Otisk certifikátu nejde spočítat:', e.message); }
+    }
     if (USE_HTTPS && fs.existsSync(SSL_KEY_PATH) && fs.existsSync(SSL_CERT_PATH)) {
         try {
             const https = require('https');
@@ -268,6 +389,12 @@ if (require.main === module) {
         app.listen(PORT, BIND_HOST, () => {
             console.log(`🚀 LexisLocal AI backend běží na http://${BIND_HOST}:${PORT}`);
         });
+    }
+    // Znalostní báze (zákony + judikatura) do paměti hned po startu, ne až při prvním dotazu.
+    require('./lib/rag').warmKnowledgeBases().catch(e => console.warn('⚠️ RAG: předehřátí bází selhalo:', e.message));
+    // Odložené zápisy bází (RAG_KB_SAVE_DEBOUNCE_MS) zapsat i při zastavení služby (systemd → SIGTERM, Ctrl+C).
+    for (const sig of ['SIGTERM', 'SIGINT']) {
+        process.once(sig, () => { try { require('./lib/rag').flushPendingSaves(); } catch (e) { /* best-effort */ } process.exit(0); });
     }
 }
 

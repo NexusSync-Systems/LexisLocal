@@ -55,9 +55,23 @@ function lanIPv4() {
     return out;
 }
 
-/** Sestaví URL do QR: http://<LANIP>:<port>/m?pair=<code> pro každou LAN IP. */
-function buildUrls(port, code) {
-    return lanIPv4().map(ip => `http://${ip}:${port}/m?pair=${encodeURIComponent(code)}`);
+/**
+ * Sestaví URL do QR: <schéma>://<LANIP>:<port>/m?pair=<code> pro každou LAN IP.
+ * opts.https → https:// (test 2. 10. 2026: server na HTTPS/443 dával http://…:443 →
+ * telefon se nespojil). opts.host → navíc adresa, přes kterou je panel právě otevřený
+ * (veřejná IP / doména), jako PRVNÍ — LAN IP serveru v cloudu z kanceláře nedosáhne.
+ */
+function buildUrls(port, code, opts = {}) {
+    const scheme = opts.https ? 'https' : 'http';
+    const q = `/m?pair=${encodeURIComponent(code)}`;
+    const defPort = (opts.https && Number(port) === 443) || (!opts.https && Number(port) === 80);
+    const hp = ip => defPort ? ip : `${ip}:${port}`;
+    const urls = lanIPv4().map(ip => `${scheme}://${hp(ip)}${q}`);
+    if (opts.host && /^[A-Za-z0-9.\-:\[\]]+$/.test(opts.host)) {
+        const u = `${scheme}://${opts.host}${q}`;
+        if (!urls.includes(u)) urls.unshift(u);
+    }
+    return urls;
 }
 
 module.exports = { createCode, claim, lanIPv4, buildUrls, TTL_MS };

@@ -16,12 +16,20 @@ const { safePathInWatchDir } = require('../lib/pathsafe');
 const { loadAuditLogs } = require('../lib/audit');
 const HearingsWatcher = require('../lib/hearings');
 const db = require('../lib/database');
+const fileAcl = require('../lib/file_acl');
+
+// Firemní režim: dokument zařazený do spisu jen s přístupem ke spisu (lib/file_acl.js).
+function denyFile(res, fileData, level) {
+    if (fileAcl.canAccessFile(fileData, undefined, level)) return false;
+    res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
+    return true;
+}
 
 // GET /api/inbox - Retrieve unread parsed documents
 router.get('/', async (req, res) => {
     try {
         const inbox = await loadInbox();
-        const unreadFiles = Object.values(inbox.files).filter(f => f.status === 'unread');
+        const unreadFiles = fileAcl.filterFiles(Object.values(inbox.files).filter(f => f.status === 'unread'));
         res.json({
             inbox: unreadFiles
         });
@@ -40,6 +48,7 @@ router.post('/mark-read', async (req, res) => {
     try {
         const inbox = await loadInbox();
         if (inbox.files[fileName]) {
+            if (denyFile(res, inbox.files[fileName], 'write')) return;
             inbox.files[fileName].status = 'read';
             await saveInbox(inbox);
             res.json({ success: true, message: `Soubor ${fileName} byl označen za vyřízený.` });
@@ -56,7 +65,7 @@ router.get('/all', async (req, res) => {
     try {
         const inbox = await loadInbox();
         res.json({
-            inbox: Object.values(inbox.files)
+            inbox: fileAcl.filterFiles(Object.values(inbox.files))
         });
     } catch (err) {
         res.status(500).json({ error: `Chyba při načítání kompletní doručené pošty: ${err.message}` });
@@ -68,6 +77,12 @@ router.get('/case/:caseNum/timeline', async (req, res) => {
     const { caseNum } = req.params;
     try {
         const timeline = [];
+
+        // Firemní režim: timeline spisu jen s přístupem ke spisu.
+        const caseSpis = require('../lib/spisy').findByCase(caseNum);
+        if (caseSpis && !require('../lib/access').canAccess(caseSpis, req.principal, 'read')) {
+            return res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
+        }
 
         // 1. Get files belonging to this case in the inbox
         const inboxData = (await loadInbox()) || { files: {} };
@@ -165,6 +180,7 @@ router.post('/delete', async (req, res) => {
 
         if (inbox.files[key]) {
             const fileData = inbox.files[key];
+            if (denyFile(res, fileData, 'write')) return;
 
             // Delete physical file if it exists
             if (fileData.filePath && fs.existsSync(fileData.filePath)) {
@@ -202,6 +218,24 @@ router.post('/upload', async (req, res) => {
         return res.status(400).json({ error: "Název souboru a base64 obsah jsou povinné." });
     }
 
+    // Datová zpráva (.zfo z Datovky / webu ISDS): rozbalí přílohy a vezme datum doručení.
+    if (/\.zfo$/i.test(String(fileName))) {
+        try {
+            const buf = Buffer.from(String(base64).replace(/^data:.*?;base64,/, ''), 'base64');
+            const r = await require('../lib/isds_inbox').importZfo(buf);
+            if (!r.ok) return res.status(400).json({ error: r.reason });
+            if (r.duplicate) return res.json({ success: true, processed: true, duplicate: true, message: `Zpráva ${r.dmID} už byla dříve načtena.` });
+            const failed = r.files.filter(f => typeof f.processed === 'string');
+            return res.status(failed.length ? 202 : 200).json({
+                success: true, processed: !failed.length, dmID: r.dmID, delivery: r.delivery, files: r.files,
+                message: `Datová zpráva ${r.dmID}: ${r.files.length} příloh, doručeno ${r.delivery.date || '?'} (${r.delivery.how}).`,
+                warning: failed.length ? `Nepodařilo se zpracovat: ${failed.map(f => f.file).join(', ')}` : undefined
+            });
+        } catch (e) {
+            return res.status(500).json({ error: `Import datové zprávy selhal: ${e.message}` });
+        }
+    }
+
     let filePath;
     try {
         filePath = safePathInWatchDir(fileName);
@@ -217,14 +251,28 @@ router.post('/upload', async (req, res) => {
         await fs.promises.writeFile(filePath, buffer);
         console.log(`📥 Nahraný soubor uložen na disk: ${filePath}`);
 
+        // Uložené jméno (po sanitizaci) — dřív odpověď opakovala surový vstup, např. „../../x“.
+        const storedName = path.basename(filePath);
+
         // Trigger manual file processing immediately
+        let processingError = null;
         try {
-            await processDocument(filePath);
+            const pr = await processDocument(filePath);
+            if (pr && pr.ok === false) processingError = pr.reason;
         } catch (procErr) {
-            console.warn(`⚠️ Watcher: Nepodařilo se vynutit okamžité zpracování souboru ${fileName}:`, procErr.message);
+            processingError = procErr.message;
+            console.warn(`⚠️ Watcher: Nepodařilo se vynutit okamžité zpracování souboru ${storedName}:`, procErr.message);
         }
 
-        res.json({ success: true, message: `Soubor ${fileName} byl úspěšně nahrán a zařazen ke zpracování.` });
+        if (processingError) {
+            // Soubor je uložený (watcher ho zkusí znovu), ale advokát musí vědět, že
+            // metadata/lhůty zatím nejsou — dřív API hlásilo úspěch i při chybě.
+            return res.status(202).json({
+                success: true, processed: false, fileName: storedName,
+                warning: `Soubor ${storedName} byl uložen, ale zpracování selhalo: ${processingError}. Lhůty a metadata zatím nejsou k dispozici.`
+            });
+        }
+        res.json({ success: true, processed: true, fileName: storedName, message: `Soubor ${storedName} byl úspěšně nahrán a zpracován.` });
     } catch (err) {
         res.status(500).json({ error: `Chyba při nahrávání souboru: ${err.message}` });
     }
@@ -243,24 +291,20 @@ router.get('/content', async (req, res) => {
         if (!fileData) {
             return res.status(404).json({ error: "Soubor nebyl nalezen v indexu." });
         }
+        if (denyFile(res, fileData, 'read')) return;
 
         const filePath = fileData.filePath;
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({ error: "Fyzický soubor na disku neexistuje." });
         }
 
-        const ext = path.extname(filePath).toLowerCase();
-        let content = "";
+        // Přečtený text (PDF, DOCX, OCR skenu) — ne surový soubor. Dřív se DOCX/PNG
+        // četly jako UTF-8 a vracely binární data (test 2. 10. 2026).
+        const { getOrExtract } = require('../lib/text_cache');
+        const content = await getOrExtract(filePath);
 
-        if (ext === '.pdf') {
-            const pdf = require('pdf-parse');
-            const dataBuffer = await fs.promises.readFile(filePath);
-            const parsedPdf = await pdf(dataBuffer);
-            content = parsedPdf.text;
-        } else {
-            content = await fs.promises.readFile(filePath, 'utf-8');
-        }
-
+        const fileSpis = fileAcl.spisForFile(fileData);
+        require('../lib/audit').logRead('Čtení dokumentu', fileName, fileSpis ? fileSpis.id : null);
         res.json({
             fileName: fileName,
             content: content

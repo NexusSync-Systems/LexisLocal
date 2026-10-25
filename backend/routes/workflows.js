@@ -22,7 +22,12 @@ router.get('/rules', (req, res) => {
 // POST /api/workflows/rules - Create new custom workflow rule
 router.post('/rules', (req, res) => {
     try {
-        const rule = WorkflowEngine.addRule(req.body);
+        const b = req.body || {};
+        // Prázdné tělo dřív vytvořilo „Nové pravidlo“ s výchozí akcí (test 2. 10. 2026).
+        if (typeof b.name !== 'string' || !b.name.trim()) {
+            return res.status(400).json({ error: 'Pravidlo musí mít název (name).' });
+        }
+        const rule = WorkflowEngine.addRule(b);
         res.json({ success: true, rule });
     } catch (err) {
         res.status(500).json({ error: `Nelze vytvořit pravidlo workflow: ${err.message}` });

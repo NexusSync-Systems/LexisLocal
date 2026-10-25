@@ -10,6 +10,10 @@
 function isPublicPath(method, pathname) {
     if (method === 'OPTIONS') return true;
     if (pathname === '/' || pathname === '/index.html') return true;
+    // API NIKDY není veřejné podle přípony — dřív prošlo bez tokenu cokoli končící
+    // .js/.css/.ico, např. DELETE /api/agent-knowledge/<agent>/<soubor>.js (nález 2. 10. 2026).
+    const p = String(pathname || '').toLowerCase();
+    if (p === '/api' || p.startsWith('/api/')) return false;
     return pathname.endsWith('.css') || pathname.endsWith('.js') || pathname.endsWith('.ico');
 }
 

@@ -34,6 +34,23 @@ async function main() {
         `poskytovatel: ${info.embed}; ${embedOk ? 'dosažitelný (vektory OK)' : 'NEDOSAŽITELNÝ — RAG běží jen lexikálně (' + (embedErr || 'bez modelu') + ')'}`);
     say(R.part, 'Chat model', `poskytovatel: ${info.chat} (dosažitelnost neověřuji — probe jen u embeddingu)`);
 
+    // 2b) Pojistka mlčenlivosti (LOCAL-ONLY): v pilotním režimu smí běžet jen lokální provider.
+    if (ai && ai.assertLocalCompliance) {
+        const comp = ai.assertLocalCompliance();
+        if (comp.localOnly) {
+            say(comp.compliant ? R.ok : R.no, 'Mlčenlivost (local-only)',
+                comp.compliant
+                    ? 'ZAPNUTO a v souladu — AI jen lokálně (Ollama), klientská data neopouští stroj'
+                    : 'ZAPNUTO, ale AI míří do cloudu: ' + comp.violations.map(v => v.kind + '=' + v.provider).join(', ') + ' — server se nespustí');
+        } else {
+            const cloud = comp.chat !== 'ollama' || comp.embed !== 'ollama';
+            say(cloud ? R.part : R.ok, 'Mlčenlivost (local-only)',
+                cloud
+                    ? 'VYPNUTO a AI míří do cloudu (chat: ' + comp.chat + ', embed: ' + comp.embed + ') — pro mlčenlivost zapni LEXIS_PILOT_LOCAL_ONLY=1'
+                    : 'VYPNUTO, ale AI běží lokálně (Ollama) — data neopouští stroj. Pro vynucení zapni LEXIS_PILOT_LOCAL_ONLY=1');
+        }
+    }
+
     // 3) Znalostní báze agentů (per-agent RAG)
     if (agents && rag && rag.listKnowledge && agents.loadAgents) {
         const a = agents.loadAgents();

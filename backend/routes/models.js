@@ -7,6 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const ollama = require('../lib/ollama_client');
+const { preflightModels } = require('../lib/model_preflight'); // #6: kontrola role-modelů
 
 // GET /api/models - Seznam stažených modelů (s fallbackem, když Ollama neběží)
 router.get('/', async (req, res) => {
@@ -42,6 +43,21 @@ router.post('/pull', async (req, res) => {
         res.json({ success: true, message: `Model ${model} byl úspěšně stažen.` });
     } catch (err) {
         res.status(500).json({ error: `Chyba při stahování modelu ${model}: ${err.message}` });
+    }
+});
+
+// GET /api/models/preflight - Které role-modely (CHAT/FAST/DRAFT/REVIEW/EMBEDDING)
+// jsou reálně v Ollamě stažené. UI podle toho může varovat, že agenti spadnou na
+// simulovaný fallback. Best-effort; při nedostupné Ollamě vrací ok:false s varováním.
+router.get('/preflight', async (req, res) => {
+    try {
+        const report = await preflightModels({ logger: { log() {}, warn() {} } });
+        if (!report) {
+            return res.json({ ok: false, skipped: true, warnings: ['Preflight přeskočen (cloud provider nebo Ollama nedostupná).'] });
+        }
+        res.json(report);
+    } catch (err) {
+        res.status(200).json({ ok: false, error: err.message, warnings: ['Preflight modelů selhal: ' + err.message] });
     }
 });
 

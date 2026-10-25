@@ -17,7 +17,7 @@ const DEFAULT_AGENTS = {
         name: "Rešeršník",
         emoji: "📚",
         role: "Vyhledávání v zákonech a judikatuře. Formulace právních argumentů.",
-        systemPrompt: "Jsi zkušený český advokátní koncipient zaměřený na rešerše. Tvým úkolem je na základě zadaných právních předpisů a judikátů vypracovat objektivní právní rozbor.",
+        systemPrompt: "Jsi zkušený český advokátní koncipient zaměřený na rešerše. Tvým úkolem je na základě zadaných právních předpisů a judikátů vypracovat objektivní právní rozbor. U každého paragrafu vždy uveď i zákon, ke kterému patří (např. „§ 2248 OZ“, „§ 204 o. s. ř.“ nebo „§ 2248 zákona č. 89/2012 Sb.“) — holé „§ 629“ nelze ověřit, protože stejné číslo má více zákonů.",
         isSystem: true,
         preferredModel: CHAT_MODEL,
         permissions: {
@@ -45,9 +45,10 @@ const DEFAULT_AGENTS = {
         name: "Kontrolor",
         emoji: "⚖️",
         role: "Detekce rizik, protimluvů a slabých míst v argumentaci.",
-        systemPrompt: "Jsi oponentní právní zástupce. Tvým úkolem je kriticky zhodnotit předložený text, najít v něm logické chyby, slabá místa a navrhnout protiargumenty.",
+        systemPrompt: "Jsi oponentní právní zástupce. Tvým úkolem je kriticky zhodnotit předložený text, najít v něm logické chyby, slabá místa a navrhnout protiargumenty. U každého paragrafu vždy uveď i zákon, ke kterému patří (např. „§ 2248 OZ“, „§ 204 o. s. ř.“ nebo „§ 2248 zákona č. 89/2012 Sb.“) — holé „§ 629“ nelze ověřit, protože stejné číslo má více zákonů.",
         isSystem: true,
-        preferredModel: "mistral",
+        // Model řídí ROLE_MODEL (REVIEW_MODEL) přes normalizeAgent; tady jen bezpečný default.
+        preferredModel: CHAT_MODEL,
         permissions: {
             read_files: true,
             query_registries: false,
@@ -74,7 +75,7 @@ const DEFAULT_AGENTS = {
         name: "Spisovatel",
         emoji: "📝",
         role: "Tvorba a úprava právních dokumentů (žaloby, smlouvy, odvolání) na míru.",
-        systemPrompt: "Jsi zkušený český advokát a autor právních dokumentů (Lexis Writing Agent). Piš VÝHRADNĚ česky, věcně a přímo použitelně. NEJDŘÍV rozpoznej TYP dokumentu ze zadání a použij odpovídající strukturu — NIKDY nevnucuj strukturu smlouvy jinému typu:\n• PŘEDŽALOBNÍ VÝZVA / VÝZVA K ÚHRADĚ: záhlaví (odesílatel/zastupující advokát a adresát s poli [Doplnit...]), místo a datum, oslovení, vylíčení skutku (vznik a výše dluhu), právní důvod, výzva ke splnění s konkrétní lhůtou, následky nesplnění (podání žaloby), závěr a podpis advokáta.\n• ŽALOBA / NÁVRH SOUDU: označení soudu, žalobce a žalovaný, sp. zn. (je-li), označení věci, I. skutková tvrzení, II. právní posouzení, III. žalobní petit (čeho se žalobce domáhá), IV. důkazy, datum a podpis.\n• ODVOLÁNÍ: záhlaví, napadené rozhodnutí, rozsah a důvody odvolání, odvolací návrh, podpis.\n• SMLOUVA/DOHODA: teprve zde použij články I–X (Smluvní strany, Předmět, Doba a místo plnění, Cena a platební podmínky, Práva a povinnosti, Předání a převzetí, Odpovědnost za vady, Smluvní pokuty, Závěrečná ustanovení, Podpisový blok).\n• JINÉ PODÁNÍ: logická struktura dle povahy.\nChybějící konkrétní údaje (jména, adresy, IČO, čísla účtů, data) NEVYMÝŠLEJ — vlož [Doplnit...]. Právní ustanovení uváděj jen tehdy, jsi-li si jistý; NEVYMÝŠLEJ čísla paragrafů — když si nejsi jistý přesným §, odkaž obecně (např. \u201adle občanského zákoníku, zák. č. 89/2012 Sb.\u2018) a nech ověření na kontroloru. Žádné neformální komentáře, žádná angličtina.",
+        systemPrompt: "Jsi zkušený český advokát a autor právních dokumentů (Lexis Writing Agent). Piš VÝHRADNĚ česky, věcně a přímo použitelně. NEJDŘÍV rozpoznej TYP dokumentu ze zadání a použij odpovídající strukturu — NIKDY nevnucuj strukturu smlouvy jinému typu:\n• PŘEDŽALOBNÍ VÝZVA / VÝZVA K ÚHRADĚ: záhlaví (odesílatel/zastupující advokát a adresát s poli [Doplnit...]), místo a datum, oslovení, vylíčení skutku (vznik a výše dluhu), právní důvod, výzva ke splnění s konkrétní lhůtou, následky nesplnění (podání žaloby), závěr a podpis advokáta.\n• ŽALOBA / NÁVRH SOUDU: označení soudu, žalobce a žalovaný, sp. zn. (je-li), označení věci, I. skutková tvrzení, II. právní posouzení, III. žalobní petit (čeho se žalobce domáhá), IV. důkazy, datum a podpis.\n• ODVOLÁNÍ: záhlaví, napadené rozhodnutí, rozsah a důvody odvolání, odvolací návrh, podpis.\n• SMLOUVA/DOHODA: teprve zde použij články I–X (Smluvní strany, Předmět, Doba a místo plnění, Cena a platební podmínky, Práva a povinnosti, Předání a převzetí, Odpovědnost za vady, Smluvní pokuty, Závěrečná ustanovení, Podpisový blok).\n• JINÉ PODÁNÍ: logická struktura dle povahy.\nChybějící konkrétní údaje (jména, adresy, IČO, čísla účtů, data) NEVYMÝŠLEJ — vlož [Doplnit...]. Právní ustanovení uváděj jen tehdy, jsi-li si jistý; NEVYMÝŠLEJ čísla paragrafů — když si nejsi jistý přesným §, odkaž obecně (např. \u201adle občanského zákoníku, zák. č. 89/2012 Sb.\u2018) a nech ověření na kontroloru. Částky, data a období z podkladů přebírej DOSLOVNĚ (např. „27 000 Kč“, „03–08/2026“) — nepřepočítávej je a nedomýšlej jiné měsíční částky; když podklady uvádějí součet, použij ho. Žádné neformální komentáře, žádná angličtina.",
         isSystem: true,
         preferredModel: CHAT_MODEL,
         permissions: {
@@ -123,6 +124,17 @@ const ROLE_MODEL = {
     kontrolor:  () => process.env.REVIEW_MODEL || process.env.DRAFT_MODEL || process.env.CHAT_MODEL || 'llama3'
 };
 
+// Teplota dle role (per-agent): faktické/oponentní role nízko (přesnost),
+// stylista výš (plynulý přepis). Slouží jako default pro systémové agenty;
+// vlastní agent si drží svou hodnotu, když ji má nastavenou.
+const ROLE_TEMP = { resersnik: 0.1, kontrolor: 0.1, spisovatel: 0.2, sekretarka: 0.3, stylista: 0.5 };
+
+// Bezpečné vytažení teploty agenta (0..1); jinak fallback volajícího.
+function agentTemperature(agent, fallback) {
+    const v = agent && agent.temperature;
+    return (typeof v === 'number' && v >= 0 && v <= 1) ? v : fallback;
+}
+
 function normalizeAgent(agent) {
     if (!agent || typeof agent !== 'object') return agent;
     const id = agent.id || 'agent';
@@ -131,9 +143,27 @@ function normalizeAgent(agent) {
         const readFiles = !!(agent.permissions && agent.permissions.read_files);
         agent.spisAccess = readFiles ? 'full' : 'none';
     }
+    // Přepínač „používat judikaturu" (společná/oborová báze). Default dle read_files
+    // (rešeršní/koncipientské role z ní čerpají; stylista/sekretářka ne).
+    if (typeof agent.useJudikatura !== 'boolean') {
+        agent.useJudikatura = !!(agent.permissions && agent.permissions.read_files);
+    }
+    // Teplota per-agent: nastavenou (validní) hodnotu zachovej; jinak default dle role
+    // (jen systémové role v ROLE_TEMP). Vlastní agent bez hodnoty → undefined → route fallback.
+    if (typeof agent.temperature === 'number') {
+        if (!(agent.temperature >= 0 && agent.temperature <= 1)) agent.temperature = undefined;
+    } else if (ROLE_TEMP[id] != null) {
+        agent.temperature = ROLE_TEMP[id];
+    }
     // Systémové agenty: model dle role z konfigurace (přebije i stará data v .agents.json).
     if (agent.isSystem && ROLE_MODEL[id]) {
         agent.preferredModel = ROLE_MODEL[id]();
+    }
+    // Vzorové výstupy (few-shot, lib/agent_examples.js): systémoví agenti dostanou výchozí
+    // ukázky, dokud si je kancelář neupraví (pak se drží uložený seznam, i prázdný).
+    if (!Array.isArray(agent.examples)) {
+        const defs = agent.isSystem ? require('./agent_examples').DEFAULT_EXAMPLES[id] : null;
+        agent.examples = defs ? JSON.parse(JSON.stringify(defs)) : [];
     }
     // Systémové agenty: systemPrompt/role/emoji/name jsou řízené KÓDEM (DEFAULT_AGENTS),
     // aby vylepšení promptů platila bez ruční úpravy .agents.json.
@@ -200,12 +230,28 @@ function saveAgent(agentId, agentData) {
         },
         // Per-agent RAG: vlastní znalostní báze + úroveň přístupu ke spisům.
         knowledgeScope: agentData.knowledgeScope || KB_PREFIX + cleanId,
-        spisAccess: SPIS_ACCESS_LEVELS.includes(agentData.spisAccess) ? agentData.spisAccess : undefined
+        spisAccess: SPIS_ACCESS_LEVELS.includes(agentData.spisAccess) ? agentData.spisAccess : undefined,
+        useJudikatura: typeof agentData.useJudikatura === 'boolean' ? agentData.useJudikatura : undefined,
+        // Teplota per-agent (0..1); mimo rozsah / nezadáno → undefined (normalizeAgent doplní dle role).
+        temperature: (typeof agentData.temperature === 'number' && agentData.temperature >= 0 && agentData.temperature <= 1)
+            ? agentData.temperature : undefined,
+        // Vzorové výstupy: běžná úprava agenta je nesmaže (mění se přes /examples).
+        examples: Array.isArray(agentData.examples) ? require('./agent_examples').validateExamples(agentData.examples)
+            : (agents[cleanId] && Array.isArray(agents[cleanId].examples) ? agents[cleanId].examples : undefined)
     };
 
     normalizeAgent(agents[cleanId]); // doplní/opraví spisAccess (když přišlo undefined)
     saveAllAgents(agents);
     return agents[cleanId];
+}
+
+/** Uloží jen vzorové výstupy agenta (validované). Vrací uložený seznam. */
+function saveExamples(agentId, list) {
+    const agents = loadAgents();
+    if (!agents[agentId]) throw Object.assign(new Error('Agent nebyl nalezen.'), { status: 404 });
+    agents[agentId].examples = require('./agent_examples').validateExamples(list);
+    saveAllAgents(agents);
+    return agents[agentId].examples;
 }
 
 /**
@@ -240,6 +286,9 @@ function resetAgentToDefault(agentId) {
 module.exports = {
     loadAgents,
     saveAgent,
+    saveExamples,
+    agentTemperature,
+    ROLE_TEMP,
     deleteAgent,
     resetAgentToDefault,
     normalizeAgent,

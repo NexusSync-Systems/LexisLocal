@@ -1,0 +1,30 @@
+{
+  "topK": 10,
+  "cases": [
+    {
+      "label": "daňové — ručení za nezaplacenou DPH",
+      "scope": "_kb_obor_danove_a_financni_pravo",
+      "query": "Ručení příjemce zdanitelného plnění za daň nezaplacenou poskytovatelem."
+    },
+    {
+      "label": "insolvenční — neúčinné právní jednání",
+      "scope": "_kb_obor_insolvencni_pravo",
+      "query": "Neúčinnost právních jednání dlužníka bez přiměřeného protiplnění a odporovatelnost."
+    },
+    {
+      "label": "náhrada škody — vada výrobku",
+      "scope": "_kb_obor_nahrada_skody_a_odpovednost",
+      "query": "Odpovědnost výrobce za škodu způsobenou vadou výrobku."
+    },
+    {
+      "label": "rodinné — popření otcovství",
+      "scope": "_kb_obor_rodinne_pravo",
+      "query": "Popření otcovství a lhůty k jeho uplatnění."
+    },
+    {
+      "label": "spotřebitelské — neplatná rozhodčí doložka",
+      "scope": "_kb_obor_spotrebitelske_pravo",
+      "query": "Neplatnost rozhodčí doložky sjednané ve spotřebitelské smlouvě."
+    }
+  ]
+}

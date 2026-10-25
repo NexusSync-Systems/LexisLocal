@@ -22,12 +22,27 @@ function requireAccess(req, res, spis, level) {
     }
     return true;
 }
-const { logEvent } = require('../lib/audit');
+const { logEvent, logRead } = require('../lib/audit');
+
+// Načte spis podle :id a ověří přístup. Vrací spis, nebo null (odpověď už odeslaná).
+// Nález 14. 10. 2026: detail, úprava, stav, deník, zařazení dokumentu a smazání spisu
+// ACL neověřovaly — kolega bez sdílení spis přečetl/změnil přímo přes ID.
+function gate(req, res, level) {
+    const spis = spisy.getSpis(req.params.id);
+    if (!spis) { res.status(404).json({ error: 'Spis nenalezen.' }); return null; }
+    return requireAccess(req, res, spis, level) ? spis : null;
+}
 
 // GET /api/spisy — seznam všech spisů
 router.get('/', (req, res) => {
     try {
-        res.json({ spisy: spisy.listSpisy() });
+        let list = spisy.listSpisy();
+        // Firemní režim: seznam jen spisů, ke kterým má volající přístup (fail-closed).
+        if (access.isFirmMode()) {
+            const p = req.principal || principalLib.resolvePrincipal(req, { apiToken: process.env.API_TOKEN, enforceToken: true });
+            list = list.filter(s => access.canAccess(s, p, 'read'));
+        }
+        res.json({ spisy: list });
     } catch (err) {
         res.status(500).json({ error: `Chyba při načtení spisů: ${err.message}` });
     }
@@ -36,11 +51,36 @@ router.get('/', (req, res) => {
 // POST /api/spisy — založení nového spisu
 router.post('/', (req, res) => {
     try {
-        const spis = spisy.createSpis(req.body || {});
+        const data = Object.assign({}, req.body || {});
+        // Vlastník = uživatel kanceláře: odpovědný advokát, pokud je to jméno účtu, jinak ten, kdo spis zakládá.
+        const p = req.principal;
+        if (!data.owner && p && p.kind === 'user') {
+            const byName = data.odpovednyAdvokat ? require('../lib/users').findByName(data.odpovednyAdvokat) : null;
+            data.owner = byName ? byName.id : p.userId;
+        }
+        delete data.access; // ACL se nedá podstrčit při založení
+        const spis = spisy.createSpis(data);
         logEvent('Spisová služba', 'Založení spisu', spis.spisZn || spis.nazev, { id: spis.id });
         res.status(201).json({ spis });
     } catch (err) {
         res.status(400).json({ error: err.message });
+    }
+});
+
+// POST /api/spisy/import { csv, dryRun } — import stávajících spisů z CSV (lib/spisy_import.js).
+// Náhled (dryRun) nic nezakládá; vlastníkem nových spisů je importující uživatel.
+router.post('/import', (req, res) => {
+    try {
+        const b = req.body || {};
+        if (typeof b.csv !== 'string' || !b.csv.trim()) return res.status(400).json({ error: 'Chybí obsah CSV.' });
+        if (b.csv.length > 5 * 1024 * 1024) return res.status(413).json({ error: 'CSV je větší než 5 MB.' });
+        const p = req.principal;
+        const r = require('../lib/spisy_import').importCsv(b.csv, { dryRun: !!b.dryRun, owner: p && p.kind === 'user' ? p.userId : null });
+        if (!r.ok) return res.status(400).json({ error: r.reason, header: r.header });
+        if (!r.dryRun) logEvent('Spisová služba', 'Import spisů z CSV', `${r.summary.nove} nových`, r.summary);
+        res.json(r);
+    } catch (err) {
+        res.status(500).json({ error: `Import selhal: ${err.message}` });
     }
 });
 
@@ -76,13 +116,16 @@ router.get('/nezarazeno-drafts', (req, res) => {
 
 // GET /api/spisy/:id — kompletní detail spisu se vším navázaným obsahem
 router.get('/:id', (req, res) => {
+    if (!gate(req, res, 'read')) return;
     const detail = spisy.getSpisDetail(req.params.id);
     if (!detail) return res.status(404).json({ error: 'Spis nenalezen.' });
+    logRead('Otevření spisu', detail.spisZn || detail.nazev || req.params.id, req.params.id);
     res.json(detail);
 });
 
 // PATCH /api/spisy/:id — úprava údajů spisu
 router.patch('/:id', (req, res) => {
+    if (!gate(req, res, 'write')) return;
     try {
         const updated = spisy.updateSpis(req.params.id, req.body || {});
         if (!updated) return res.status(404).json({ error: 'Spis nenalezen.' });
@@ -94,10 +137,11 @@ router.patch('/:id', (req, res) => {
 
 // POST /api/spisy/:id/stav — změna stavu (aktivni | archiv | skartace)
 router.post('/:id/stav', (req, res) => {
+    if (!gate(req, res, 'write')) return;
     try {
         const updated = spisy.setStav(req.params.id, (req.body && req.body.stav));
         if (!updated) return res.status(404).json({ error: 'Spis nenalezen.' });
-        logEvent('Spisová služba', 'Změna stavu spisu', updated.spisZn || updated.nazev, { stav: updated.stav });
+        logEvent('Spisová služba', 'Změna stavu spisu', updated.spisZn || updated.nazev, { stav: updated.stav, spisId: updated.id });
         res.json({ spis: updated });
     } catch (err) {
         res.status(400).json({ error: err.message });
@@ -106,6 +150,7 @@ router.post('/:id/stav', (req, res) => {
 
 // POST /api/spisy/:id/event — přidání úkonu do spisového deníku
 router.post('/:id/event', (req, res) => {
+    if (!gate(req, res, 'write')) return;
     try {
         const spis = spisy.getSpis(req.params.id);
         if (!spis) return res.status(404).json({ error: 'Spis nenalezen.' });
@@ -118,6 +163,7 @@ router.post('/:id/event', (req, res) => {
 
 // POST /api/spisy/:id/assign-file — ruční zařazení dokumentu do spisu { fileId }
 router.post('/:id/assign-file', (req, res) => {
+    if (!gate(req, res, 'write')) return;
     try {
         const file = spisy.assignFileToSpis((req.body && req.body.fileId), req.params.id);
         logEvent('Spisová služba', 'Zařazení dokumentu do spisu', file.fileName || file.id, { spisId: req.params.id });
@@ -133,6 +179,45 @@ router.get('/:id/timeline', (req, res) => {
     if (!spis) return res.status(404).json({ error: 'Spis nenalezen.' });
     if (!requireAccess(req, res, spis, 'read')) return;
     res.json(spisy.getSpisTimeline(req.params.id));
+});
+
+// GET /api/spisy/:id/skartace-inventar — co o spisu leží v LexisLocal a co se stane při
+// skartaci (smazat / ponechat ze zákona / pseudonymizovat). Jen čte. Vlastník nebo správce.
+router.get('/:id/skartace-inventar', (req, res) => {
+    const spis = gate(req, res, 'admin'); if (!spis) return;
+    try { res.json(require('../lib/skartace_inventory').inventory(spis.id)); }
+    catch (err) { res.status(500).json({ error: `Inventář se nepodařilo sestavit: ${err.message}` }); }
+});
+
+// GET /api/spisy/:id/audit?format=json|csv|docx — auditní stopa spisu (kdo, kdy, co: změny i čtení).
+// Jen vlastník spisu nebo správce (ukazuje i činnost kolegů). Samotný export se audituje.
+router.get('/:id/audit', async (req, res) => {
+    const spis = gate(req, res, 'admin'); if (!spis) return;
+    try {
+        const ax = require('../lib/audit_export');
+        const fmt = String(req.query.format || 'json').toLowerCase();
+        const rows = ax.rowsForSpis(spis.id);
+        const label = spis.spisZn || spis.nazev || spis.id;
+        const safe = String(label).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\-]+/g, '_').slice(0, 60) || 'spis';
+        const chain = require('../lib/audit').verifyAuditChain();
+        if (fmt === 'csv') {
+            logEvent('Spisová služba', 'Export auditní stopy spisu (CSV)', label, { spisId: spis.id, rows: rows.length });
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="audit_${safe}.csv"`);
+            return res.send(ax.toCsv(rows));
+        }
+        if (fmt === 'docx') {
+            const actor = require('../lib/request_context').currentActor();
+            const buf = await ax.toDocx(spis, rows, chain, actor && actor.name);
+            logEvent('Spisová služba', 'Export auditní stopy spisu (DOCX)', label, { spisId: spis.id, rows: rows.length });
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+            res.setHeader('Content-Disposition', `attachment; filename="audit_${safe}.docx"`);
+            return res.send(buf);
+        }
+        res.json({ spisId: spis.id, chain, rows });
+    } catch (err) {
+        res.status(500).json({ error: `Export auditní stopy selhal: ${err.message}` });
+    }
 });
 
 // POST /api/spisy/:id/folder — idempotentně založí fyzickou složku spisu + vizitku
@@ -193,7 +278,26 @@ router.post('/:id/share', (req, res) => {
         const spis = spisy.getSpis(req.params.id);
         if (!spis) return res.status(404).json({ error: 'Spis nenalezen.' });
         if (!requireAccess(req, res, spis, 'admin')) return;
-        const updated = spisy.shareSpis(req.params.id, req.body && req.body.userId, req.body && req.body.level);
+        const target = req.body && req.body.userId;
+        const usersLib = require('../lib/users');
+        if (usersLib.listUsers().length && !usersLib.getUser(target)) return res.status(400).json({ error: 'Sdílet lze jen s uživatelem kanceláře.' });
+        const updated = spisy.shareSpis(req.params.id, target, req.body && req.body.level);
+        res.json({ success: true, access: spisy.getSpisAccess(req.params.id), spis: updated });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// POST /api/spisy/:id/owner — změna vlastníka { userId } (vlastník nebo správce)
+router.post('/:id/owner', (req, res) => {
+    try {
+        const spis = spisy.getSpis(req.params.id);
+        if (!spis) return res.status(404).json({ error: 'Spis nenalezen.' });
+        if (access.isFirmMode()) { if (!requireAccess(req, res, spis, 'admin')) return; }
+        const uid = req.body && req.body.userId;
+        const u = uid && require('../lib/users').getUser(uid);
+        if (!u || u.disabled) return res.status(400).json({ error: 'Vlastníkem může být jen aktivní uživatel kanceláře.' });
+        const updated = spisy.setSpisOwner(req.params.id, uid);
         res.json({ success: true, access: spisy.getSpisAccess(req.params.id), spis: updated });
     } catch (err) {
         res.status(400).json({ error: err.message });
@@ -215,6 +319,7 @@ router.post('/:id/revoke', (req, res) => {
 
 // DELETE /api/spisy/:id — odstranění spisové hlavičky (jen ve stavu skartace)
 router.delete('/:id', (req, res) => {
+    if (!gate(req, res, 'admin')) return; // jen vlastník nebo správce
     try {
         const removed = spisy.deleteSpis(req.params.id);
         if (!removed) return res.status(404).json({ error: 'Spis nenalezen.' });

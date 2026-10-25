@@ -32,21 +32,21 @@ Object.assign(LexisLocalApp.prototype, {
                     </div>
                     <div>
                         <h4 style="margin: 0; color: #fca5a5; font-size: 0.95rem; font-weight: 700;">
-                            DETEKOVÁNA INSOLVENCE: ${alert.name} (IČO: ${alert.ico})
+                            DETEKOVÁNA INSOLVENCE: ${escapeHtml(alert.name)} (IČO: ${escapeHtml(alert.ico)})
                         </h4>
                         <p style="margin: 4px 0 0 0; color: var(--text-muted); font-size: 0.82rem;">
-                            Sledovaný subjekt vstoupil do úpadku. Spisová značka: <b style="color: white;">${alert.caseNumber}</b> | Stav: <span style="color: #fca5a5;">${alert.insolvencyStatus}</span>
+                            Sledovaný subjekt vstoupil do úpadku. Spisová značka: <b style="color: var(--text-primary);">${escapeHtml(alert.caseNumber)}</b> | Stav: <span style="color: #fca5a5;">${escapeHtml(alert.insolvencyStatus)}</span>
                         </p>
                         <p style="margin: 2px 0 0 0; color: var(--text-muted); font-size: 0.75rem;">
-                            Související spisy: ${alert.citedFiles.join(', ')}
+                            Související spisy: ${escapeHtml(alert.citedFiles.join(', '))}
                         </p>
                     </div>
                 </div>
                 <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-secondary" onclick="window.appInstance.sendTextToLexisEditor('POZOR: Sledovaný subjekt ${alert.name} (IČO: ${alert.ico}) je v INSOLVENCI! Spisová značka: ${alert.caseNumber}, Stav: ${alert.insolvencyStatus}. Bezodkladně přihlaste pohledávky.', 'Insolvenční varování')" style="font-size: 0.8rem; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02);">
+                    <button class="btn btn-secondary" onclick="window.appInstance.sendTextToLexisEditor('${_lexEscJsAttr(`POZOR: Sledovaný subjekt ${alert.name} (IČO: ${alert.ico}) je v INSOLVENCI! Spisová značka: ${alert.caseNumber}, Stav: ${alert.insolvencyStatus}. Bezodkladně přihlaste pohledávky.`)}', 'Insolvenční varování')" style="font-size: 0.8rem; padding: 6px 12px; border: 1px solid var(--border-glass); background: var(--sf-02);">
                         ✍️ Odeslat do Editoru
                     </button>
-                    <button class="btn btn-primary" onclick="window.appInstance.dismissAlert('${alert.id}')" style="font-size: 0.8rem; padding: 6px 12px; background: rgba(239, 68, 68, 0.8); border: none;">
+                    <button class="btn btn-primary" onclick="window.appInstance.dismissAlert('${safeId(alert.id)}')" style="font-size: 0.8rem; padding: 6px 12px; background: rgba(239, 68, 68, 0.8); border: none;">
                         Skrýt ✕
                     </button>
                 </div>
@@ -193,9 +193,9 @@ Object.assign(LexisLocalApp.prototype, {
                 else document.body.appendChild(badge);
             }
             if (r && r.ok) {
-                badge.innerHTML = `🔒 <span style="color:#22c55e;">Auditní řetěz neporušen</span> <span style="opacity:0.5;">(${r.checked} ověřeno${r.legacy ? ', ' + r.legacy + ' starších' : ''})</span>`;
+                badge.innerHTML = `🔒 <span style="color:#22c55e;">Auditní řetěz neporušen</span> <span style="opacity:0.5;">(${escapeHtml(String(r.checked))} ověřeno${r.legacy ? ', ' + escapeHtml(String(r.legacy)) + ' starších' : ''})</span>`;
             } else {
-                badge.innerHTML = `⚠️ <span style="color:#ef4444;">Auditní řetěz PORUŠEN</span> <span style="opacity:0.6;">(${escapeHtml((r && r.reason) || 'neznámo')}${(r && r.brokenAt != null) ? ', záznam #' + r.brokenAt : ''})</span>`;
+                badge.innerHTML = `⚠️ <span style="color:#ef4444;">Auditní řetěz PORUŠEN</span> <span style="opacity:0.6;">(${escapeHtml((r && r.reason) || 'neznámo')}${(r && r.brokenAt != null) ? ', záznam #' + escapeHtml(String(r.brokenAt)) : ''})</span>`;
             }
         } catch (e) { /* tiché — badge se nezobrazí */ }
     },
@@ -229,9 +229,16 @@ Object.assign(LexisLocalApp.prototype, {
         durationEl.textContent = `${totalDurationS}s`;
     },
 
-    renderAuditLogs(logs) {
+    // Vykresluje se po stránkách (200 řádků) — celý log (tisíce záznamů) zbytečně zdržoval záložku.
+    // keepLimit=true jen u „Zobrazit další“; nové načtení / filtr začíná od první stránky.
+    renderAuditLogs(logs, keepLimit) {
         const tbody = document.getElementById('audit-log-table-body');
         if (!tbody) return;
+        const PAGE = 200;
+        if (!keepLimit) this._auditLimit = PAGE;
+        this._auditRendered = logs;
+        const total = logs.length;
+        logs = logs.slice(0, this._auditLimit || PAGE);
 
         if (logs.length === 0) {
             tbody.innerHTML = `
@@ -263,40 +270,50 @@ Object.assign(LexisLocalApp.prototype, {
             let detailsHtml = '';
             if (log.details) {
                 if (log.details.durationMs !== undefined) {
-                    detailsHtml += `<span style="color: #fb7185; font-weight: 500;">⚡ ${log.details.durationMs}ms</span>`;
+                    detailsHtml += `<span style="color: #fb7185; font-weight: 500;">⚡ ${escapeHtml(String(log.details.durationMs))}ms</span>`;
                 }
                 if (log.details.charactersCount !== undefined) {
                     detailsHtml += detailsHtml ? ' | ' : '';
-                    detailsHtml += `<span style="opacity:0.8;">📄 ${log.details.charactersCount} zn.</span>`;
+                    detailsHtml += `<span style="opacity:0.8;">📄 ${escapeHtml(String(log.details.charactersCount))} zn.</span>`;
                 }
                 if (log.details.model) {
                     detailsHtml += detailsHtml ? ' | ' : '';
-                    detailsHtml += `<span style="color: var(--accent-blue);">🤖 ${log.details.model}</span>`;
+                    detailsHtml += `<span style="color: var(--accent-blue);">🤖 ${escapeHtml(log.details.model)}</span>`;
                 }
                 if (log.details.successCount !== undefined) {
                     detailsHtml += detailsHtml ? ' | ' : '';
-                    detailsHtml += `<span style="color: var(--accent-green);">✓ ${log.details.successCount} spisy</span>`;
+                    detailsHtml += `<span style="color: var(--accent-green);">✓ ${escapeHtml(String(log.details.successCount))} spisy</span>`;
                 }
             }
             if (!detailsHtml) detailsHtml = '<span style="opacity: 0.5;">—</span>';
 
             return `
-                <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); hover: background-color: rgba(255,255,255,0.01);">
+                <tr style="border-bottom: 1px solid var(--border-glass); hover: background-color: var(--sf-01);">
                     <td style="padding: 12px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; opacity: 0.9;">${formattedDate}</td>
-                    <td style="padding: 12px;"><span style="font-weight: 500; opacity: 0.8;">${log.user}</span></td>
-                    <td style="padding: 12px;"><span class="audit-badge ${badgeClass}">${log.operation}</span></td>
-                    <td style="padding: 12px; font-weight: 500;">${log.target}</td>
+                    <td style="padding: 12px;"><span style="font-weight: 500; opacity: 0.8;">${escapeHtml(log.user)}</span>${log.actor && log.actor.name ? `<span style="display:block;font-size:0.72rem;opacity:0.75;margin-top:2px;" title="${escapeHtml(log.actor.device ? 'Zařízení: ' + log.actor.device : '')}">👤 ${escapeHtml(log.actor.name)}</span>` : ''}</td>
+                    <td style="padding: 12px;"><span class="audit-badge ${badgeClass}">${escapeHtml(log.operation)}</span></td>
+                    <td style="padding: 12px; font-weight: 500;">${escapeHtml(log.target)}</td>
                     <td style="padding: 12px; font-size: 0.85rem;">${detailsHtml}</td>
                 </tr>
             `;
         }).join('');
+        if (total > logs.length) {
+            const more = document.createElement('tr');
+            more.innerHTML = `<td colspan="5" style="text-align:center;padding:14px;"><button class="btn btn-secondary" id="audit-more-btn" style="padding:6px 14px;font-size:0.8rem;">Zobrazit dalších ${Math.min(PAGE, total - logs.length)} (zobrazeno ${logs.length} z ${total})</button></td>`;
+            tbody.appendChild(more);
+            more.querySelector('#audit-more-btn').addEventListener('click', () => {
+                this._auditLimit = (this._auditLimit || PAGE) + PAGE;
+                this.renderAuditLogs(this._auditRendered, true);
+            });
+        }
     },
 
     async clearAuditLogs() {
         try {
             const res = await fetch(`${this.apiBase}/audit/clear`, {
                 method: 'POST',
-                headers: this.getHeaders()
+                headers: this.getHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ confirm: 'SMAZAT' })
             });
             const data = await res.json();
             
@@ -304,7 +321,7 @@ Object.assign(LexisLocalApp.prototype, {
                 this.auditLogs = [];
                 this.renderAuditLogs([]);
                 this.updateAuditStats([]);
-                alert("✓ Provozní auditní logy byly kompletně vymazány.");
+                alert("✓ Auditní log byl archivován" + (data.archive ? " (" + data.archive + ")" : "") + " a vyprázdněn.");
             } else {
                 alert("❌ Chyba při mazání logů: " + data.error);
             }
@@ -325,7 +342,7 @@ Object.assign(LexisLocalApp.prototype, {
 
         const filtered = this.auditLogs.filter(log => {
             const timeStr = new Date(log.timestamp).toLocaleString('cs-CZ').toLowerCase();
-            const userStr = log.user.toLowerCase();
+            const userStr = (String(log.user || '') + ' ' + ((log.actor && log.actor.name) || '')).toLowerCase();
             const opStr = log.operation.toLowerCase();
             const targetStr = log.target.toLowerCase();
             
