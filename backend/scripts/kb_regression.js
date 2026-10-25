@@ -157,7 +157,7 @@ async function main() {
     const chybi = gold.length - cases.length;
     if (a.limit) cases = cases.slice(0, a.limit);
     console.log(`\n⚖️  Zákony: ${cases.length} dotazů${chybi ? ` (${chybi} vynecháno — paragraf není v bázi)` : ''}`);
-    const K = 5, KA = 3;
+    const K = 5, KA = rag.agentRagK(); // kolik pasáží dostane agent (RAG_AGENT_K; výchozí 3 bez rerankeru)
     const stat = () => ({ h1: 0, h3: 0, h5: 0, mrr: 0, judTop3: 0, lawTop3: 0, vytlaceno: 0, lat: [] });
     const S = { jenZakony: stat(), plna: stat(), bezMixu: stat() };
     const embLat = [];
