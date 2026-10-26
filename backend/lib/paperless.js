@@ -170,18 +170,10 @@ function runRegexExtractor(title, tags, text) {
     if (caseTag) {
         metadata.caseNumber = caseTag.trim();
     } else {
-        // Fallback case number regex
-        const caseReg = /(?:sp\s*zn\.?|č\s*j\.?|spisová\s*značka)\s*[:\-]?\s*(\d+\s*[A-Za-zČŠŽčšž]+\s*\d+\/\d+)/i;
-        const matchCase = text.match(caseReg) || title.match(caseReg);
-        if (matchCase) {
-            metadata.caseNumber = matchCase[1].replace(/\s+/g, ' ').trim();
-        } else {
-            const broadCaseReg = /(\d+\s*[A-Za-zČŠŽčšž]+\s*\d+\/\d+)/;
-            const matchBroad = text.match(broadCaseReg) || title.match(broadCaseReg);
-            if (matchBroad) {
-                metadata.caseNumber = matchBroad[1].replace(/\s+/g, ' ').trim();
-            }
-        }
+        // Fallback: sp. zn. z textu nebo názvu (lib/case_number.js — i rejstříky „P a Nc“)
+        const cn = require('./case_number');
+        const found = cn.findCaseNumber(text) || cn.findCaseNumber(title);
+        if (found) metadata.caseNumber = found;
     }
 
     // Lhůta v dnech

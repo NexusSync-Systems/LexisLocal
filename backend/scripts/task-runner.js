@@ -155,14 +155,16 @@ const ULOHY = {
         if (!/^ami-[0-9a-f]{8,17}$/.test(ami)) throw new Error(`nepovolené AMI „${ami}"`);
         // Zóna dostupnosti (26. 10. 2026: „InsufficientInstanceCapacity“ pro g6.xlarge ve výchozí zóně).
         const az = oneOf(p.az, ['a', 'b', 'c'], null);
+        // Profil: judikatura = serverový test 1.2.0, kancelar = simulace dne v kanceláři (office_day.js, ~10 h).
+        const profil = oneOf(p.profil, ['judikatura', 'kancelar'], 'judikatura');
         return {
             cmd: 'aws',
             args: ['ec2', 'run-instances', '--region', AWS_REGION, '--image-id', ami, '--instance-type', 'g6.xlarge', '--count', '1',
                 '--iam-instance-profile', 'Name=lexis-bench-ec2', '--security-group-ids', AWS_TEST_SG,
                 '--instance-initiated-shutdown-behavior', 'terminate',
                 '--block-device-mappings', '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":200,"VolumeType":"gp3","DeleteOnTermination":true}}]',
-                '--user-data', 'file://scripts/aws/bootstrap-judikatura.sh',
-                '--tag-specifications', 'ResourceType=instance,Tags=[{Key=Name,Value=lexis-test-1.2.0-judikatura}]',
+                '--user-data', `file://scripts/aws/bootstrap-${profil}.sh`,
+                '--tag-specifications', `ResourceType=instance,Tags=[{Key=Name,Value=lexis-test-1.2.0-${profil}}]`,
                 ...(az ? ['--placement', `AvailabilityZone=${AWS_REGION}${az}`] : []),
                 '--query', 'Instances[0].[InstanceId,State.Name,LaunchTime,Placement.AvailabilityZone]', '--output', 'text'],
         };

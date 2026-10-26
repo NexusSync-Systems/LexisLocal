@@ -1,0 +1,878 @@
+#!/usr/bin/env node
+/**
+ * office_day.js — simulace zavedení LexisLocalu v kanceláři a jednoho celého pracovního dne.
+ *
+ * Co se děje (vše přes HTTP API jako skutečné klienty, každý uživatel svým tokenem):
+ *   0  ZAVEDENÍ   správce založí účty (3 advokáti, koncipient, asistentka), zapne firemní režim,
+ *                 advokáti naimportují své spisy z CSV, správce nastaví sdílení, nahraje interní
+ *                 postupy do báze rešeršníka, asistentka digitalizuje stávající dokumenty
+ *                 (PDF, DOCX, skeny, e-maily) → kontrola zařazení do spisů, lhůt a doručení.
+ *   1  DEN        8:00–16:30 v reálném čase (--hours 8; zhuštěně --hours 3): podatelna přijímá
+ *                 datové zprávy (.zfo) a další písemnosti, asistentka zakládá nové věci (po
+ *                 kontrole střetu zájmů), rezervuje schůzky, fakturuje, hlídá lhůtník; advokáti
+ *                 a koncipient dělají rešerše (i nad spisem), kontroly smluv, koncepty podání,
+ *                 schvalují koncepty, odpovídají klientům; prohlížeče se dotazují na novinky.
+ *                 Každý člověk čeká na odpověď, než udělá další krok (fronta na uživatele).
+ *                 Volitelně v poledne restart serveru (--restart-cmd) — výpadek a obnova dat.
+ *   2  KONEC DNE  úplnost dat (dokumenty, spisy, koncepty), oprávnění (kdo co vidí, únik přes
+ *                 doručenou poštu a vyhledávání), auditní řetězec, chybovost a odezvy po hodinách,
+ *                 deaktivace účtu (odchod zaměstnance).
+ *
+ *   node backend/scripts/office_day.js --base https://127.0.0.1 --token <správce> --insecure \
+ *     [--hours 8] [--dataset backend/eval/office_day/dataset-v1.tar.gz] [--out <dir>] [--label kancelar]
+ *     [--restart-cmd "systemctl restart lexislocal" --restart-at 4.5] [--model qwen2.5:7b]
+ *     [--smoke]   (rychlá zkouška: 20 min den, 30 + 30 dokumentů)
+ *
+ * Výstup: <out>/office_day_<čas>_<label>.json (vše vč. odpovědí agentů) + .md (souhrn česky).
+ * Tokeny uživatelů jen v paměti procesu, nikam se nezapisují. Data jsou SYNTETICKÁ
+ * (backend/eval/office_day/generate_dataset.py), jen pro vlastní testovací server.
+ * Bez závislostí kromě node-forge (sestavení .zfo; je v závislostech aplikace). Node ≥ 18.
+ */
+'use strict';
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const http = require('http');
+const https = require('https');
+const { execSync } = require('child_process');
+
+const ROOT = path.join(__dirname, '..');
+const DEF_DATASET = path.join(ROOT, 'eval', 'office_day', 'dataset-v1.tar.gz');
+
+// ─── argumenty ───────────────────────────────────────────────────────────────
+function parseArgs(argv) {
+    const o = { base: null, token: process.env.LEXIS_API_TOKEN || '', insecure: false, hours: 8, dataset: DEF_DATASET,
+        out: path.join(ROOT, '..', 'bench-results'), label: 'kancelar', restartCmd: '', restartAt: 4.5, model: '', seed: 20261103,
+        smoke: false, uploadConcurrency: 2, pollS: 60, agentTimeoutMs: 15 * 60 * 1000, maxOnboarding: 0, maxDen: 0, firm: true };
+    for (let i = 0; i < argv.length; i++) {
+        const a = argv[i], n = () => argv[++i];
+        if (a === '--base') o.base = String(n()).replace(/\/+$/, '');
+        else if (a === '--token') o.token = n();
+        else if (a === '--insecure') o.insecure = true;
+        else if (a === '--hours') o.hours = parseFloat(n());
+        else if (a === '--dataset') o.dataset = n();
+        else if (a === '--out') o.out = n();
+        else if (a === '--label') o.label = n();
+        else if (a === '--restart-cmd') o.restartCmd = n();
+        else if (a === '--restart-at') o.restartAt = parseFloat(n());
+        else if (a === '--model') o.model = n();
+        else if (a === '--seed') o.seed = parseInt(n(), 10);
+        else if (a === '--upload-concurrency') o.uploadConcurrency = Math.max(1, parseInt(n(), 10));
+        else if (a === '--poll-s') o.pollS = parseInt(n(), 10);
+        else if (a === '--max-onboarding') o.maxOnboarding = parseInt(n(), 10);
+        else if (a === '--max-den') o.maxDen = parseInt(n(), 10);
+        else if (a === '--no-firm') o.firm = false;
+        else if (a === '--smoke') o.smoke = true;
+        else if (a === '-h' || a === '--help') o.help = true;
+    }
+    if (o.smoke) { o.hours = o.hours === 8 ? 1 / 3 : o.hours; o.maxOnboarding = o.maxOnboarding || 30; o.maxDen = o.maxDen || 30; o.pollS = Math.min(o.pollS, 20); }
+    return o;
+}
+
+// ─── deterministický generátor ───────────────────────────────────────────────
+function rng(seed) {
+    let s = seed >>> 0;
+    const f = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    f.int = (a, b) => a + Math.floor(f() * (b - a + 1));
+    f.pick = arr => arr[Math.floor(f() * arr.length)];
+    f.chance = p => f() < p;
+    return f;
+}
+
+// ─── HTTP ────────────────────────────────────────────────────────────────────
+let O = null;
+function request(method, urlPath, { body, token, timeout = 120000 } = {}) {
+    return new Promise((resolve) => {
+        const u = new URL(O.base + urlPath);
+        const lib = u.protocol === 'https:' ? https : http;
+        const data = body === undefined ? null : Buffer.from(JSON.stringify(body));
+        const h = {};
+        if (token) h['X-API-Token'] = token;
+        if (data) { h['Content-Type'] = 'application/json'; h['Content-Length'] = data.length; }
+        const t0 = Date.now();
+        const req = lib.request({ method, hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80),
+            path: u.pathname + u.search, rejectUnauthorized: !O.insecure, timeout, headers: h }, (res) => {
+            const chunks = [];
+            res.on('data', c => chunks.push(c));
+            res.on('end', () => {
+                const text = Buffer.concat(chunks).toString('utf8');
+                let json = null; try { json = JSON.parse(text); } catch (e) { /* ne-JSON */ }
+                resolve({ status: res.statusCode, ms: Date.now() - t0, text, json });
+            });
+        });
+        req.on('timeout', () => req.destroy(new Error('timeout')));
+        req.on('error', e => resolve({ status: 0, ms: Date.now() - t0, error: e.message, text: '', json: null }));
+        if (data) req.write(data);
+        req.end();
+    });
+}
+
+// ─── evidence ────────────────────────────────────────────────────────────────
+const T0 = Date.now();
+let dayStart = null, dayMs = 1;
+const ops = [];        // každý požadavek: { phase, at, clock, user, action, status, ms, ok, note }
+const checks = [];     // { phase, id, name, ok, severity, detail }
+const agentRuns = [];  // výstupy agentů + hodnocení
+const telemetry = [];  // vzorky /api/system/telemetry
+let restartWindow = null; // { from, to }
+let phase = '0';
+
+const ok2 = s => s >= 200 && s < 300;
+const short = (s, n = 200) => String(s == null ? '' : s).replace(/\s+/g, ' ').slice(0, n);
+function clock(ts = Date.now()) {
+    if (!dayStart || ts < dayStart) return '';
+    const vm = Math.round((ts - dayStart) / dayMs * 510);
+    return `${String(8 + Math.floor(vm / 60)).padStart(2, '0')}:${String(vm % 60).padStart(2, '0')}`;
+}
+function check(id, name, ok, { severity = 'medium', detail = '' } = {}) {
+    checks.push({ phase, id, name, ok: !!ok, severity, detail: String(detail) });
+    console.log(`  ${ok ? '✓' : '✗'} [${phase}/${id}] ${name}${detail ? ' — ' + short(detail, 180) : ''}`);
+}
+
+// Uživatelé (tokeny jen v paměti)
+const U = {};        // key → { key, name, role, id, token }
+let ADMIN = null;
+
+async function call(user, action, method, p, body, opt = {}) {
+    const tok = user === 'admin' ? O.token : (U[user] && U[user].token);
+    const r = await request(method, p, { body, token: tok, timeout: opt.timeout || (action.startsWith('agent') ? O.agentTimeoutMs : 300000) });
+    const at = Date.now();
+    // požadavek zasažený restartem: jeho průběh [start, konec] se překrývá s oknem restartu
+    const inRestart = !!restartWindow && at >= restartWindow.from && (at - r.ms) <= (restartWindow.to || at);
+    const expected = opt.expect ? opt.expect.includes(r.status) : ok2(r.status);
+    ops.push({ phase, at: at - T0, clock: clock(at), user, action, status: r.status, ms: r.ms, ok: expected, restart: !!inRestart,
+        note: expected ? undefined : short(r.error || (r.json && r.json.error) || r.text, 160) });
+    return r;
+}
+const get = (u, a, p, opt) => call(u, a, 'GET', p, undefined, opt);
+const post = (u, a, p, b, opt) => call(u, a, 'POST', p, b, opt);
+
+// ─── data ────────────────────────────────────────────────────────────────────
+function loadDataset(src) {
+    let dir = src;
+    if (/\.t(ar\.)?gz$/.test(src)) {
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lexis-officeday-'));
+        execSync(`tar -xzf ${JSON.stringify(path.resolve(src))} -C ${JSON.stringify(dir)}`);
+    }
+    const m = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+    m.dir = dir;
+    return m;
+}
+function zfoFor(doc, text, dmID) {
+    const forge = require('node-forge');
+    const z = doc.zfo;
+    const xml = '<?xml version="1.0" encoding="UTF-8"?><p:MessageDownloadResponse xmlns:p="http://isds.czechpoint.cz/v20"><p:dmReturnedMessage><p:dmDm>' +
+        `<p:dmID>${dmID}</p:dmID><p:dmSender>${z.sender}</p:dmSender><p:dmAnnotation>${z.annotation}</p:dmAnnotation><p:dmFiles>` +
+        `<p:dmFile dmMimeType="text/plain" dmFileMetaType="main" dmFileDescr="${z.attachment}"><p:dmEncodedContent>${Buffer.from(text).toString('base64')}</p:dmEncodedContent></p:dmFile>` +
+        `</p:dmFiles></p:dmDm><p:dmDeliveryTime>${z.deliveryTime}</p:dmDeliveryTime><p:dmAcceptanceTime>${z.acceptanceTime}</p:dmAcceptanceTime>` +
+        '<p:dmMessageStatus>6</p:dmMessageStatus></p:dmReturnedMessage><p:dmStatus><p:dmStatusCode>0000</p:dmStatusCode></p:dmStatus></p:MessageDownloadResponse>';
+    const keys = zfoFor._keys || (zfoFor._keys = forge.pki.rsa.generateKeyPair(1024));
+    const cert = forge.pki.createCertificate();
+    cert.publicKey = keys.publicKey; cert.serialNumber = '01';
+    cert.validity.notBefore = new Date(Date.now() - 864e5); cert.validity.notAfter = new Date(Date.now() + 864e5);
+    const a = [{ name: 'commonName', value: 'SIMULACE ISDS' }]; cert.setSubject(a); cert.setIssuer(a); cert.sign(keys.privateKey);
+    const p7 = forge.pkcs7.createSignedData();
+    p7.content = forge.util.createBuffer(forge.util.encodeUtf8(xml));
+    p7.addCertificate(cert);
+    p7.addSigner({ key: keys.privateKey, certificate: cert, digestAlgorithm: forge.pki.oids.sha256 });
+    p7.sign();
+    return Buffer.from(forge.asn1.toDer(p7.toAsn1()).getBytes(), 'binary');
+}
+
+// Stav simulace
+const S = {
+    spisByZn: {},       // spisZn → { id, ownerKey, data }
+    shared: {},         // spisZn → { krejci: 'write'|'read', simkova: 'write', <adv>: 'read' }
+    uploaded: {},       // manifest file → { storedName, status, dmID, ms, processed }
+    drafts: [],         // { id, spisZn, author, status }
+    nove: [],           // výsledky nových věcí
+    cases: [],          // sada cases.json (rešerše bez spisu)
+    preRestart: null
+};
+
+function spisOwnerKey(spisRow) { return spisRow.advokatKey; }
+const keyOfName = name => (Object.values(U).find(u => u.name === name) || {}).key;
+function readable(userKey, spisZn) {
+    const s = S.spisByZn[spisZn]; if (!s) return false;
+    if (s.ownerKey === userKey) return true;
+    return !!(S.shared[spisZn] && S.shared[spisZn][userKey]);
+}
+function writable(userKey, spisZn) {
+    const s = S.spisByZn[spisZn]; if (!s) return false;
+    if (s.ownerKey === userKey) return true;
+    return S.shared[spisZn] && S.shared[spisZn][userKey] === 'write';
+}
+
+// ─── 0: zavedení ─────────────────────────────────────────────────────────────
+async function onboarding(M, R) {
+    phase = '0';
+    console.log('\n0 — ZAVEDENÍ V KANCELÁŘI');
+    const t0 = Date.now();
+    const st = await get('admin', 'status', '/api/status');
+    check('Z1', 'Server odpovídá, token správce platí', ok2(st.status), { severity: 'critical', detail: `${st.status} ${short(st.json && st.json.version)}` });
+    if (!ok2(st.status)) throw new Error('Server nedostupný nebo neplatný token správce.');
+    if (!O.model) O.model = '';
+
+    // účty
+    const lu = await get('admin', 'users_list', '/api/users');
+    const existing = ((lu.json && lu.json.users) || []).map(u => u.name);
+    const clash = M.kancelar.uzivatele.filter(u => existing.includes(u.name));
+    if (clash.length) throw new Error(`Účty simulace už existují (${clash.map(u => u.name).join(', ')}) — spusť na čisté instalaci.`);
+    for (const u of M.kancelar.uzivatele) {
+        const r = await post('admin', 'users_create', '/api/users', { name: u.name, role: u.role, deviceLabel: 'Simulace – prohlížeč' });
+        if (ok2(r.status) && r.json && r.json.token) U[u.key] = { key: u.key, name: u.name, role: u.role, id: r.json.user.id, token: r.json.token };
+    }
+    check('Z2', 'Založení 5 účtů (role advokát / koncipient / asistent)', Object.keys(U).length === M.kancelar.uzivatele.length,
+        { severity: 'critical', detail: Object.values(U).map(u => `${u.name} (${u.role})`).join(', ') });
+    if (Object.keys(U).length !== M.kancelar.uzivatele.length) throw new Error('Nepodařilo se založit účty.');
+    const me = await get('krejci', 'me', '/api/me');
+    check('Z3', 'Nový uživatel se přihlásí svým tokenem (/api/me)', ok2(me.status) && me.json && /Krej/.test(JSON.stringify(me.json)), { severity: 'high', detail: me.status });
+
+    if (O.firm) {
+        const fm = await post('admin', 'firm_mode', '/api/settings/firm-mode', { enabled: true });
+        const fs2 = await get('admin', 'firm_mode', '/api/settings/firm-mode');
+        check('Z4', 'Firemní režim zapnut (spisy jen vlastník + sdílení)', fs2.json && fs2.json.enabled === true, { severity: 'critical', detail: `${fm.status} ${short(fs2.text, 160)}` });
+    }
+
+    // import spisů: každý advokát svůj seznam
+    let imported = 0; const impMs = [];
+    for (const adv of M.kancelar.uzivatele.filter(u => u.role === 'advokat')) {
+        const csv = fs.readFileSync(path.join(M.dir, `spisy_${adv.key}.csv`), 'utf8');
+        const rows = csv.trim().split(/\r?\n/).length - 1;
+        const dry = await post(adv.key, 'spisy_import', '/api/spisy/import', { csv, dryRun: true });
+        const imp = await post(adv.key, 'spisy_import', '/api/spisy/import', { csv });
+        impMs.push(imp.ms);
+        const nove = imp.json && imp.json.summary ? imp.json.summary.nove : 0;
+        imported += nove;
+        check('Z5-' + adv.key, `Import spisů z CSV: ${adv.name} (${rows} spisů)`, dry.json && dry.json.summary && dry.json.summary.nove === rows && nove === rows,
+            { severity: 'high', detail: `náhled ${short(JSON.stringify(dry.json && dry.json.summary), 100)} · import ${imp.status} za ${imp.ms} ms` });
+    }
+    const all = await get('admin', 'spisy_list', '/api/spisy');
+    const list = (all.json && all.json.spisy) || [];
+    for (const row of M.spisy) {
+        const s = list.find(x => x.spisZn === row.spisZn);
+        if (s) S.spisByZn[row.spisZn] = { id: s.id, ownerKey: spisOwnerKey(row), row };
+    }
+    check('Z6', 'Všechny spisy z CSV jsou v evidenci', Object.keys(S.spisByZn).length === M.spisy.length, { severity: 'high', detail: `${Object.keys(S.spisByZn).length}/${M.spisy.length}` });
+
+    // sdílení: asistentka zapisuje do všech, koncipient do ~40 %, advokáti si občas půjčí spis kolegy ke čtení
+    let shareFail = 0; const advKeys = M.kancelar.uzivatele.filter(u => u.role === 'advokat').map(u => u.key);
+    for (const zn of Object.keys(S.spisByZn)) {
+        const s = S.spisByZn[zn]; S.shared[zn] = {};
+        const grants = [['simkova', 'write']];
+        if (R.chance(0.4)) grants.push(['krejci', 'write']);
+        if (R.chance(0.1)) grants.push([R.pick(advKeys.filter(k => k !== s.ownerKey)), 'read']);
+        for (const [k, level] of grants) {
+            // sdílí vlastník spisu (advokát), ne správce — jak to bude v praxi
+            const r = await post(s.ownerKey, 'spis_share', `/api/spisy/${s.id}/share`, { userId: U[k].id, level });
+            if (ok2(r.status)) S.shared[zn][k] = level; else shareFail++;
+        }
+    }
+    check('Z7', 'Sdílení spisů vlastníkem (asistentka všechny, koncipient ~40 %, kolegové občas)', shareFail === 0,
+        { severity: 'high', detail: `chyb ${shareFail}; koncipient má ${Object.values(S.shared).filter(x => x.krejci).length} spisů` });
+
+    // interní postupy → báze rešeršníka
+    let kbOk = 0; const kbFiles = fs.readdirSync(path.join(M.dir, 'knowhow'));
+    for (const f of kbFiles) {
+        const r = await post('admin', 'kb_upload', '/api/agent-knowledge/resersnik', { fileName: 'SIMULACE_' + f, text: fs.readFileSync(path.join(M.dir, 'knowhow', f), 'utf8') });
+        if (ok2(r.status)) kbOk++;
+    }
+    check('Z8', 'Interní postupy kanceláře v bázi rešeršníka', kbOk === kbFiles.length, { severity: 'medium', detail: `${kbOk}/${kbFiles.length}` });
+
+    // digitalizace stávajících dokumentů (asistentka)
+    let docs = M.dokumenty.filter(d => d.phase === 'onboarding');
+    if (O.maxOnboarding) docs = docs.slice(0, O.maxOnboarding);
+    const tUp = Date.now();
+    await pool(docs, O.uploadConcurrency, d => uploadDoc('simkova', d, M));
+    const upMin = (Date.now() - tUp) / 60000;
+    const fails = docs.filter(d => !S.uploaded[d.file] || !ok2(S.uploaded[d.file].status));
+    const unprocessed = docs.filter(d => S.uploaded[d.file] && S.uploaded[d.file].status === 202);
+    check('Z9', `Digitalizace: nahráno ${docs.length} dokumentů`, fails.length === 0,
+        { severity: 'high', detail: `${upMin.toFixed(1)} min (${(docs.length / Math.max(upMin, 0.01)).toFixed(1)} dok./min), chyb ${fails.length}, nezpracováno (202) ${unprocessed.length}` });
+    await verifyDocs(docs, 'Z10', 'po digitalizaci');
+    const after = await get('admin', 'spisy_list', '/api/spisy');
+    const nAfter = ((after.json && after.json.spisy) || []).length;
+    check('Z11', 'Digitalizace nezaložila duplicitní spisy', nAfter === M.spisy.length, { severity: 'medium', detail: `spisů ${nAfter} (čekáno ${M.spisy.length})` });
+    S.onboardingMin = (Date.now() - t0) / 60000;
+    console.log(`  zavedení trvalo ${S.onboardingMin.toFixed(1)} min`);
+}
+
+async function pool(items, n, fn) {
+    let i = 0;
+    await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const it = items[i++]; await fn(it); } }));
+}
+
+let dmCounter = 0;
+async function uploadDoc(user, d, M) {
+    const fp = path.join(M.dir, d.file);
+    let fileName = path.basename(d.file), buf;
+    let dmID = null;
+    if (d.zfo) {
+        dmID = String(7100000 + (++dmCounter) + (O.seed % 1000) * 1000);
+        buf = zfoFor(d, fs.readFileSync(fp, 'utf8'), dmID);
+        fileName = `DZ_${dmID}.zfo`;
+    } else buf = fs.readFileSync(fp);
+    const r = await post(user, d.zfo ? 'prijem_zfo' : (d.phase === 'den' ? 'prijem_dokument' : 'digitalizace'), '/api/inbox/upload',
+        { fileName, base64: buf.toString('base64') }, { timeout: 600000 });
+    S.uploaded[d.file] = { storedName: (r.json && r.json.fileName) || fileName, status: r.status, dmID, ms: r.ms,
+        attachments: r.json && r.json.files ? r.json.files.map(f => f.file || f.relativePath || f.name).filter(Boolean) : null };
+    // Smlouva od klienta nemá sp. zn. → asistentka ji ručně zařadí do spisu (Nezařazené → Zařadit).
+    // Do té doby je to „podatelna“ a v doručené poště / vyhledávání ji vidí všichni.
+    if (d.kind === 'smlouva' && d.spisZn && ok2(r.status) && S.spisByZn[d.spisZn]) {
+        const un = await get(user, 'nezarazene', '/api/spisy/unfiled');
+        const f = ((un.json && un.json.files) || []).find(x => x.fileName === S.uploaded[d.file].storedName || x.id === S.uploaded[d.file].storedName || x.relativePath === S.uploaded[d.file].storedName);
+        const as = f ? await post(user, 'zarazeni_do_spisu', `/api/spisy/${S.spisByZn[d.spisZn].id}/assign-file`, { fileId: f.id }) : null;
+        S.uploaded[d.file].assigned = !!(as && ok2(as.status));
+        S.assign = S.assign || { ok: 0, fail: [] };
+        if (S.uploaded[d.file].assigned) S.assign.ok++; else S.assign.fail.push(`${d.file}: ${f ? as.status + ' ' + short(as.text, 80) : 'není mezi nezařazenými'}`);
+    }
+    return r;
+}
+
+// Ověření zpracování: zařazení do spisu, lhůta, doručení — vůči očekávání z manifestu
+async function verifyDocs(docs, id, label) {
+    const inbox = await get('admin', 'inbox_all', '/api/inbox/all', { timeout: 300000 });
+    const items = (inbox.json && (inbox.json.inbox || inbox.json.files)) || [];
+    const find = d => {
+        const u = S.uploaded[d.file]; if (!u) return null;
+        if (u.dmID) return items.find(it => it.isds && String(it.isds.dmID) === u.dmID);
+        return items.find(it => it.fileName === u.storedName || it.relativePath === u.storedName);
+    };
+    const st = { n: 0, nalezeno: 0, spzn: [0, 0], lhutaDni: [0, 0], doruceni: [0, 0], konecLhuty: [0, 0], ocr: [0, 0], chyby: [] };
+    for (const d of docs) {
+        if (!S.uploaded[d.file]) continue;
+        st.n++;
+        const it = find(d);
+        if (!it) { st.chyby.push(`${d.file}: v doručené poště chybí`); continue; }
+        st.nalezeno++;
+        d._item = it;
+        const e = d.expect || {};
+        const norm = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        if (e.caseNumber) { st.spzn[1]++; if (norm(it.caseNumber) === norm(e.caseNumber)) st.spzn[0]++; else st.chyby.push(`${d.file}: sp. zn. „${it.caseNumber}“ ≠ „${e.caseNumber}“`); }
+        if (e.deadlineDays) { st.lhutaDni[1]++; if (Number(it.deadlineDays) === e.deadlineDays) st.lhutaDni[0]++; else st.chyby.push(`${d.file}: lhůta ${it.deadlineDays} ≠ ${e.deadlineDays} dnů`); }
+        if (e.deliveryDate) { st.doruceni[1]++; if (it.deliveryDate === e.deliveryDate) st.doruceni[0]++; else st.chyby.push(`${d.file}: doručeno ${it.deliveryDate} ≠ ${e.deliveryDate}`); }
+        if (e.deadlineDate) { st.konecLhuty[1]++; if (it.deadlineDate === e.deadlineDate) st.konecLhuty[0]++; else st.chyby.push(`${d.file}: konec lhůty ${it.deadlineDate} ≠ ${e.deadlineDate}`); }
+        if (e.ocr) { st.ocr[1]++; if (e.caseNumber && norm(it.caseNumber) === norm(e.caseNumber)) st.ocr[0]++; }
+    }
+    const pct = ([a, b]) => b ? `${a}/${b} (${Math.round(a / b * 100)} %)` : '—';
+    const rate = ([a, b]) => b ? a / b : 1;
+    check(id + 'a', `Dokumenty ${label} jsou v doručené poště`, st.nalezeno === st.n, { severity: 'high', detail: `${st.nalezeno}/${st.n}` });
+    check(id + 'b', `Zařazení do spisu podle sp. zn. ${label}`, rate(st.spzn) >= 0.95, { severity: 'high', detail: pct(st.spzn) });
+    check(id + 'c', `Délka lhůty rozpoznána ${label}`, rate(st.lhutaDni) >= 0.9, { severity: 'high', detail: pct(st.lhutaDni) });
+    check(id + 'd', `Datum doručení ${label}`, rate(st.doruceni) >= 0.9, { severity: 'high', detail: pct(st.doruceni) });
+    if (st.konecLhuty[1]) check(id + 'e', `Konec lhůty (pracovní den) ${label}`, rate(st.konecLhuty) >= 0.9, { severity: 'high', detail: pct(st.konecLhuty) });
+    if (st.ocr[1]) check(id + 'f', `Skeny (OCR) — sp. zn. přečtena ${label}`, rate(st.ocr) >= 0.8, { severity: 'medium', detail: pct(st.ocr) });
+    (S.docErrors = S.docErrors || []).push(...st.chyby.map(c => `${label}: ${c}`));
+    return st;
+}
+
+// ─── hodnocení agentů ────────────────────────────────────────────────────────
+const rx = s => new RegExp(s, 'iu');
+function scoreCase(c, resp) {
+    const miss = [], hit = [];
+    for (const p of c.must || []) if (!rx(p).test(resp)) miss.push(p);
+    if (c.anyOf && !c.anyOf.some(p => rx(p).test(resp))) miss.push('anyOf(' + c.anyOf.join(' | ') + ')');
+    for (const p of c.mustNot || []) if (p !== '__TOKEN__' && rx(p).test(resp)) hit.push(p);
+    const total = (c.must || []).length + (c.anyOf ? 1 : 0) + (c.mustNot || []).filter(p => p !== '__TOKEN__').length;
+    return { miss, hit, score: total ? (total - miss.length - hit.length) / total : 1, pass: !miss.length && !hit.length };
+}
+const simulated = (r, resp) => /Simulovan/i.test((r.json && r.json.model) || '') || /ZAD[AÁ]N[IÍ] NEBYLO ZPRACOV/i.test(resp);
+
+async function runAgent(user, kind, agent, body, grade) {
+    const r = await post(user, 'agent_' + kind, `/api/agent/${agent}`, Object.assign({}, body, O.model ? { model: O.model } : {}));
+    const resp = (r.json && r.json.response) || '';
+    const g = grade ? grade(resp, r) : { pass: ok2(r.status) && resp.length > 80, score: resp.length > 80 ? 1 : 0 };
+    const run = Object.assign({ id: body._caseId || `OD-${kind}-${agentRuns.length + 1}`, attempt: 1, at: clock(), user, role: U[user].role, kind, agent,
+        status: r.status, ms: r.ms, simulated: simulated(r, resp), prompt: body.prompt, response: resp,
+        draftId: r.json && r.json.draft && r.json.draft.id, citations: r.json && r.json.citationCheck ? summarizeCit(r.json.citationCheck) : null }, g);
+    run.pass = run.pass && ok2(r.status) && !run.simulated;
+    delete run._caseId;
+    agentRuns.push(run);
+    return { r, run };
+}
+function summarizeCit(cc) {
+    const items = cc.items || cc.citations || [];
+    const bad = items.filter(i => i && (i.status === 'unverified' || i.status === 'missing' || i.ok === false));
+    return { celkem: items.length, neovereno: bad.length };
+}
+
+// ─── 1: den ──────────────────────────────────────────────────────────────────
+const HOUR_W = [1.5, 1.4, 1.2, 1.0, 0.45, 0.9, 1.1, 1.0, 0.6]; // 8–9 … 16–16:30
+function schedule(rate, R, fromMin = 0, toMin = 510) {
+    // Poissonovský proces s denním profilem: rate = akcí za hodinu v průměrné hodině
+    const out = [];
+    for (let m = fromMin; m < toMin; m++) {
+        const w = HOUR_W[Math.min(8, Math.floor(m / 60))];
+        if (R() < rate * w / 60) out.push(m + R());
+    }
+    return out;
+}
+
+function buildPlan(M, R) {
+    const ev = []; // { min, user, kind, arg }
+    let denDocs = M.dokumenty.filter(d => d.phase === 'den');
+    if (O.maxDen) denDocs = denDocs.slice(0, O.maxDen);
+    for (const d of denDocs) ev.push({ min: d.t, user: 'podatelna', kind: 'prijem', arg: d });
+    M.noveSpisy.forEach((s, i) => ev.push({ min: s.t != null ? s.t : 60 + Math.round((i + 0.5) * 360 / M.noveSpisy.length), user: 'simkova', kind: 'nova_vec', arg: s }));
+    const roles = {
+        advokat: [['resersnik_spis', 1.2], ['resersnik_obecne', 0.7], ['kontrola_smlouvy', 0.5], ['koncept', 0.4], ['otevrit_spis', 4], ['lhutnik', 1],
+            ['koncepty_schvalit', 0.6], ['hledani', 0.6], ['kalendar', 1], ['odpoved_klientovi', 0.4], ['cizi_spis', 0.25]],
+        koncipient: [['resersnik_spis', 1.2], ['resersnik_obecne', 1], ['koncept', 1], ['anonymizace', 0.4], ['citace', 0.4], ['otevrit_spis', 3], ['vysvetleni_klientovi', 0.3]],
+        asistent: [['kalendar_rezervace', 1], ['fakturace', 0.4], ['lhutnik', 1.2], ['otevrit_spis', 2], ['schuzka_dotaz', 0.3]]
+    };
+    for (const u of Object.values(U)) {
+        for (const [kind, rate] of roles[u.role] || []) for (const m of schedule(rate, R)) ev.push({ min: m, user: u.key, kind });
+    }
+    ev.push({ min: 300, user: 'krejci', kind: 'schvalit_bez_opravneni' });
+    ev.push({ min: 120, user: 'admin', kind: 'readiness' });
+    return ev.sort((a, b) => a.min - b.min);
+}
+
+function pickSpis(user, R, needWrite) {
+    const zns = Object.keys(S.spisByZn).filter(zn => needWrite ? writable(user, zn) : readable(user, zn));
+    return zns.length ? R.pick(zns) : null;
+}
+
+async function act(ev, M, R) {
+    const u = ev.user;
+    switch (ev.kind) {
+        case 'prijem': {
+            const d = ev.arg;
+            await uploadDoc('simkova', d, M);
+            return;
+        }
+        case 'nova_vec': {
+            const s = ev.arg;
+            const cf = await post('simkova', 'stret_zajmu', '/api/conflicts/check', { clientName: s.klient, counterpartyName: s.protistrana });
+            const rep = (cf.json && cf.json.report) || {};
+            // high/medium = střet hlášen; unknown = prověření se nezdařilo (nelze vyloučit) → asistentka nezakládá
+            const level = String(rep.riskLevel || '');
+            const flagged = level === 'high' || level === 'medium';
+            const rec = { spisZn: s.spisZn, expectConflict: !!s.expectConflict, flagged, riskLevel: level || null, ms: cf.ms };
+            if (level === 'none' || level === 'low') {
+                const cr = await post('simkova', 'spis_novy', '/api/spisy', { spisZn: s.spisZn, nazev: s.nazev, klient: s.klient, protistrana: s.protistrana, soud: s.soud, odpovednyAdvokat: s.advokat, agenda: s.agenda });
+                rec.created = cr.status;
+                if (cr.json && cr.json.spis) {
+                    S.spisByZn[s.spisZn] = { id: cr.json.spis.id, ownerKey: keyOfName(s.advokat) || 'simkova', row: s, novy: true };
+                    S.shared[s.spisZn] = {};
+                    // asistentka hned po založení: vidí spis, který založila pro advokáta?
+                    const vis = await get('simkova', 'otevrit_spis', `/api/spisy/${cr.json.spis.id}`, { expect: [200, 403] });
+                    rec.asistentkaVidi = vis.status;
+                    // advokát (vlastník) jí spis nasdílí
+                    const own = S.spisByZn[s.spisZn].ownerKey;
+                    if (U[own] && own !== 'simkova') {
+                        const sh = await post(own, 'spis_share', `/api/spisy/${cr.json.spis.id}/share`, { userId: U.simkova.id, level: 'write' });
+                        if (ok2(sh.status)) S.shared[s.spisZn].simkova = 'write';
+                    }
+                }
+            }
+            S.nove.push(rec);
+            return;
+        }
+        case 'resersnik_spis': {
+            const zn = pickSpis(u, R); if (!zn) return;
+            const row = S.spisByZn[zn].row;
+            const q = R.pick([
+                `Shrň stav věci ${zn} a navrhni další procesní postup.`,
+                `Jaké lhůty běží ve věci ${zn} a co z nich plyne pro klienta ${row.klient}?`,
+                `Na co se zaměřit v odvolání ve věci ${zn} (${row.predmet})? Uveď relevantní ustanovení.`,
+                `Připrav podklady pro poradu ke spisu ${zn}: strany, předmět, poslední písemnosti.`]);
+            await runAgent(u, 'resersnik_spis', 'resersnik', { prompt: q, ragFilters: { caseNumber: zn } },
+                (resp, r) => ({ pass: ok2(r.status) && resp.length > 150, score: resp.length > 150 ? 1 : 0, spisZn: zn,
+                    zminkaSpisu: resp.includes(zn) || resp.includes(row.klient) }));
+            return;
+        }
+        case 'resersnik_obecne': {
+            const pool2 = S.cases.filter(c => c.agent === 'resersnik' && !c.doc);
+            if (!pool2.length) return;
+            const c = R.pick(pool2);
+            await runAgent(u, 'resersnik_obecne', 'resersnik', { prompt: c.prompt, _caseId: c.id }, resp => scoreCase(c, resp));
+            return;
+        }
+        case 'kontrola_smlouvy': {
+            const cands = M.dokumenty.filter(d => d.kind === 'smlouva' && S.uploaded[d.file] && (!d.spisZn || readable(u, d.spisZn)));
+            if (!cands.length) return;
+            const d = R.pick(cands);
+            const c = await get(u, 'dokument_obsah', '/api/inbox/content?fileName=' + encodeURIComponent(S.uploaded[d.file].storedName));
+            const text = (c.json && (c.json.content || c.json.text)) || '';
+            if (!text) return;
+            const rizika = (d.expect && d.expect.rizika) || [];
+            await runAgent(u, 'kontrola_smlouvy', 'kontrolor', { prompt: 'Zkontroluj přiloženou smlouvu pro našeho klienta (objednatele). Vypiš rizika a nevyvážená ustanovení s odkazem na článek a zákon.', context: text },
+                resp => { const found = rizika.filter(p => rx(p).test(resp)); return { pass: found.length >= Math.ceil(rizika.length * 0.67), score: rizika.length ? found.length / rizika.length : 1, rizika: `${found.length}/${rizika.length}`, doc: d.file }; });
+            return;
+        }
+        case 'koncept': {
+            const zn = pickSpis(u, R, true); if (!zn) return;
+            const row = S.spisByZn[zn].row;
+            const typ = R.pick(['předžalobní výzvu k zaplacení', 'vyjádření k žalobě', 'žádost o odročení jednání', 'odvolání proti rozsudku (blanketní)']);
+            const { r } = await runAgent(u, 'koncept', 'spisovatel', { prompt: `Sepiš ${typ} ve věci ${zn} (${row.predmet}). Klient: ${row.klient}, protistrana: ${row.protistrana}, soud: ${row.soud}. Chybějící údaje označ [Doplnit].`,
+                saveDraft: true, spisId: S.spisByZn[zn].id, draftTitle: `${typ} – ${zn}` },
+                (resp, rr) => ({ pass: ok2(rr.status) && !!(rr.json && rr.json.draft && rr.json.draft.id), score: rr.json && rr.json.draft ? 1 : 0, spisZn: zn }));
+            if (r.json && r.json.draft && r.json.draft.id) S.drafts.push({ id: r.json.draft.id, spisZn: zn, author: u, status: r.json.draft.status || 'ke_kontrole' });
+            return;
+        }
+        case 'koncepty_schvalit': {
+            const mine = S.drafts.filter(d => d.status !== 'schvaleno' && S.spisByZn[d.spisZn] && S.spisByZn[d.spisZn].ownerKey === u);
+            if (!mine.length) { await get(u, 'koncepty', '/api/drafts'); return; }
+            const d = mine[0];
+            const dd = await get(u, 'koncept_otevrit', '/api/drafts/' + d.id);
+            await post(u, 'koncept_pripominka', `/api/drafts/${d.id}/comments`, { text: 'Doplnit přesné vyčíslení příslušenství.' });
+            const ap = await post(u, 'koncept_schvalit', `/api/drafts/${d.id}/status`, { status: 'schvaleno' });
+            if (ok2(ap.status)) d.status = 'schvaleno'; else d.approveError = `${ap.status} ${short(ap.text, 80)}`;
+            d.openStatus = dd.status;
+            return;
+        }
+        case 'schvalit_bez_opravneni': {
+            let d = S.drafts.find(x => x.status !== 'schvaleno' && writable('krejci', x.spisZn));
+            if (!d) {
+                // koncipient si koncept napíše sám (bez AI) a zkusí ho schválit
+                const zn = pickSpis('krejci', R, true);
+                const c = zn ? await post('krejci', 'koncept_rucne', '/api/drafts', { title: `Vyjádření – ${zn}`, text: 'VYJÁDŘENÍ ŽALOVANÉHO\nNávrh koncipienta ke kontrole.', spisId: S.spisByZn[zn].id }) : null;
+                if (!c || !ok2(c.status) || !c.json || !c.json.id) { S.koncipientApprove = 'koncept nešlo založit'; return; }
+                d = { id: c.json.id, spisZn: zn, author: 'krejci', status: c.json.status || 'koncept' }; S.drafts.push(d);
+            }
+            const ap = await post('krejci', 'koncept_schvalit_koncipient', `/api/drafts/${d.id}/status`, { status: 'schvaleno' }, { expect: [403] });
+            S.koncipientApprove = ap.status;
+            return;
+        }
+        case 'otevrit_spis': {
+            const zn = pickSpis(u, R); if (!zn) { await get(u, 'spisy_list', '/api/spisy'); return; }
+            const id = S.spisByZn[zn].id;
+            await get(u, 'otevrit_spis', `/api/spisy/${id}`);
+            if (R.chance(0.5)) await get(u, 'spis_timeline', `/api/spisy/${id}/timeline`);
+            return;
+        }
+        case 'cizi_spis': {
+            // advokát zkusí otevřít spis kolegy, který mu NENÍ sdílen → 403; sdílený ke čtení → 200
+            const foreign = Object.keys(S.spisByZn).filter(zn => S.spisByZn[zn].ownerKey !== u && !S.spisByZn[zn].novy);
+            const zn = R.pick(foreign); if (!zn) return;
+            const exp = readable(u, zn) ? [200] : [403];
+            const r = await get(u, 'cizi_spis', `/api/spisy/${S.spisByZn[zn].id}`, { expect: exp });
+            (S.aclProbes = S.aclProbes || []).push({ user: u, spisZn: zn, expected: exp[0], got: r.status });
+            return;
+        }
+        case 'lhutnik': await get(u, 'lhutnik', '/api/lhutnik'); return;
+        case 'kalendar': await get(u, 'kalendar', '/api/calendar/events'); return;
+        case 'hledani': {
+            const zn = pickSpis(u, R); if (!zn) return;
+            await get(u, 'hledani', '/api/rag/search?query=' + encodeURIComponent(S.spisByZn[zn].row.predmet) + '&caseNumber=' + encodeURIComponent(zn));
+            return;
+        }
+        case 'odpoved_klientovi': case 'schuzka_dotaz': {
+            const cands = M.dokumenty.filter(d => d.kind === 'email' && S.uploaded[d.file] && d.spisZn && readable(u, d.spisZn));
+            if (!cands.length) return;
+            const d = R.pick(cands);
+            const c = await get(u, 'dokument_obsah', '/api/inbox/content?fileName=' + encodeURIComponent(S.uploaded[d.file].storedName));
+            const text = (c.json && (c.json.content || c.json.text)) || '';
+            await runAgent(u, 'odpoved_klientovi', 'sekretarka', { prompt: 'Navrhni krátkou odpověď klientovi na tento e-mail (k odeslání až po schválení advokátem).', context: text, ragFilters: { caseNumber: d.spisZn } });
+            return;
+        }
+        case 'vysvetleni_klientovi': {
+            const zn = pickSpis(u, R); if (!zn) return;
+            await runAgent(u, 'vysvetleni', 'stylista', { prompt: `Vysvětli klientovi srozumitelně (2 odstavce, bez právnického žargonu), co znamená doručený rozsudek a lhůta k odvolání ve věci ${zn}.`, ragFilters: { caseNumber: zn } });
+            return;
+        }
+        case 'anonymizace': {
+            const zn = pickSpis(u, R); if (!zn) return;
+            const row = S.spisByZn[zn].row;
+            const r = await post(u, 'anonymizace', '/api/document/anonymize', { text: `Žalobce ${row.klient}, bytem ${'Masarykova 12, Jihlava'}, tel. 603 123 456, e-mail klient@example.cz, proti ${row.protistrana}.` });
+            (S.anon = S.anon || []).push({ ok: ok2(r.status) && r.json && !String(JSON.stringify(r.json)).includes('603 123 456') });
+            return;
+        }
+        case 'citace': await post(u, 'citace', '/api/citations/verify', { text: 'Podle § 2051 zákona č. 89/2012 Sb. a § 204 o. s. ř. a § 9999 zákona č. 89/2012 Sb.' }); return;
+        case 'kalendar_rezervace': {
+            const day = new Date(Date.parse(M.den) + R.int(1, 10) * 864e5).toISOString().slice(0, 10);
+            const zn = pickSpis(u, R);
+            await post(u, 'kalendar_rezervace', '/api/calendar/book', { title: `Porada s klientem ${zn || ''}`.trim(), date: day, time: `${R.int(9, 15)}:${R.pick(['00', '30'])}`, durationMin: 60, spisId: zn ? S.spisByZn[zn].id : undefined }, { expect: [201, 409] });
+            return;
+        }
+        case 'fakturace': {
+            const zn = pickSpis(u, R); if (!zn) return;
+            const row = S.spisByZn[zn].row;
+            await post(u, 'fakturace', '/api/fakturace', { klient: row.klient, spisId: S.spisByZn[zn].id, items: [{ popis: `Právní služby ve věci ${zn}`, amount: R.int(2, 30) * 1000 }] });
+            return;
+        }
+        case 'readiness': await get('admin', 'readiness', '/api/readiness'); return;
+        default: return;
+    }
+}
+
+// Prohlížeče uživatelů: periodické dotazy na novinky (jako otevřená aplikace)
+function startPolling(stopAt) {
+    const timers = [];
+    for (const u of Object.values(U)) {
+        const tick = async () => {
+            if (Date.now() >= stopAt) return;
+            await get(u.key, 'poll', '/api/alerts', { timeout: 60000 });
+            await get(u.key, 'poll', '/api/activity/today', { timeout: 60000 });
+            if (u.role === 'asistent') await get(u.key, 'poll', '/api/inbox', { timeout: 60000 });
+        };
+        timers.push(setInterval(tick, O.pollS * 1000 * (0.8 + Math.random() * 0.4)));
+    }
+    // telemetrie serveru každých 10 min (zkráceně úměrně délce dne)
+    const telInt = Math.max(30000, dayMs / 51);
+    const tel = async () => { const r = await get('admin', 'telemetrie', '/api/system/telemetry', { timeout: 60000 }); telemetry.push({ clock: clock(), data: r.json }); };
+    tel(); timers.push(setInterval(tel, telInt));
+    return () => timers.forEach(clearInterval);
+}
+
+async function snapshot() {
+    const sp = await get('admin', 'snapshot', '/api/spisy');
+    const ib = await get('admin', 'snapshot', '/api/inbox/all', { timeout: 300000 });
+    const dr = await get('admin', 'snapshot', '/api/drafts');
+    const arr = j => Array.isArray(j) ? j : (j && (j.drafts || j.items)) || [];
+    return { spisy: ((sp.json && sp.json.spisy) || []).length, dokumenty: ((ib.json && (ib.json.inbox || ib.json.files)) || []).length, koncepty: arr(dr.json).length };
+}
+
+async function doRestart() {
+    console.log(`  ↻ ${clock()} restart serveru: ${O.restartCmd}`);
+    S.preRestart = await snapshot();
+    const t = Date.now();
+    restartWindow = { from: t, to: null };
+    try { execSync(O.restartCmd, { stdio: 'ignore', timeout: 300000 }); } catch (e) { S.restartError = e.message; }
+    let up = false;
+    while (Date.now() - t < 10 * 60000) {
+        const r = await request('GET', '/api/status', { token: O.token, timeout: 5000 });
+        if (r.status === 200) { up = true; break; }
+        await sleep(1000);
+    }
+    restartWindow.to = Date.now();
+    S.restartS = (restartWindow.to - t) / 1000;
+    const post2 = await snapshot();
+    check('D1', 'Restart serveru v poledne: API zpět a data zachována', up && post2.spisy === S.preRestart.spisy && post2.dokumenty >= S.preRestart.dokumenty && post2.koncepty >= S.preRestart.koncepty,
+        { severity: 'critical', detail: `API po ${S.restartS.toFixed(0)} s; před ${JSON.stringify(S.preRestart)} po ${JSON.stringify(post2)}${S.restartError ? ' · ' + S.restartError : ''}` });
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function day(M, R) {
+    phase = '1';
+    console.log(`\n1 — PRACOVNÍ DEN (${O.hours} h reálného času = 8:00–16:30)`);
+    dayMs = O.hours * 3600e3;
+    dayStart = Date.now();
+    const plan = buildPlan(M, R);
+    console.log(`  plán: ${plan.length} akcí (${plan.filter(e => e.kind === 'prijem').length} příchozích písemností)`);
+    const stopPoll = startPolling(dayStart + dayMs);
+    const queues = {}; // uživatel → řetěz slibů (člověk dělá jednu věc po druhé)
+    const enqueue = (ev) => {
+        const key = ev.user;
+        const run = async () => { try { await act(ev, M, R); } catch (e) { ops.push({ phase, at: Date.now() - T0, clock: clock(), user: key, action: 'vyjimka_' + ev.kind, status: 0, ms: 0, ok: false, note: short(e.stack || e.message, 200) }); } };
+        queues[key] = (queues[key] || Promise.resolve()).then(run);
+    };
+    let restartDone = !O.restartCmd;
+    let lastLog = 0;
+    for (const ev of plan) {
+        const due = dayStart + ev.min / 510 * dayMs;
+        if (!restartDone && due >= dayStart + (O.restartAt / 8.5) * dayMs) {
+            await sleep(Math.max(0, dayStart + (O.restartAt / 8.5) * dayMs - Date.now()));
+            await doRestart(); restartDone = true;
+        }
+        const wait = due - Date.now();
+        if (wait > 0) await sleep(wait);
+        enqueue(ev);
+        if (Date.now() - lastLog > Math.max(60000, dayMs / 34)) {
+            lastLog = Date.now();
+            const busy = Object.keys(queues).length;
+            const done = ops.filter(o => o.phase === '1');
+            console.log(`  ${clock()}  požadavků ${done.length}, chyb ${done.filter(o => !o.ok && !o.restart).length}, agentů ${agentRuns.length}, front ${busy}`);
+        }
+    }
+    if (!restartDone) { await doRestart(); }
+    const remaining = dayStart + dayMs - Date.now();
+    if (remaining > 0) await sleep(remaining);
+    console.log(`  ${clock()} konec pracovní doby — čekám na rozdělanou práci`);
+    const tEnd = Date.now();
+    await Promise.all(Object.values(queues));
+    S.overtimeMin = (Date.now() - tEnd) / 60000;
+    stopPoll();
+    // nedodělky: kolik akcí skončilo po konci dne (fronta lidí čekajících na AI)
+    check('D2', 'Práce dne stihnutá v pracovní době (fronta nepřetekla)', S.overtimeMin < 15, { severity: 'medium', detail: `dobíhání po 16:30: ${S.overtimeMin.toFixed(1)} min` });
+}
+
+// ─── 2: konec dne ────────────────────────────────────────────────────────────
+async function endOfDay(M) {
+    phase = '2';
+    console.log('\n2 — KONEC DNE: kontrola dat, oprávnění, chyb');
+    let denDocs = M.dokumenty.filter(d => d.phase === 'den');
+    if (O.maxDen) denDocs = denDocs.slice(0, O.maxDen);
+    await verifyDocs(denDocs, 'K1', 'přijaté během dne');
+
+    // spisy: nové věci, střet zájmů, automaticky vzniklé spisy
+    const conflictsOk = S.nove.filter(n => n.expectConflict === n.flagged && n.riskLevel !== 'unknown').length;
+    check('K2', 'Kontrola střetu zájmů u nových věcí (střet odhalen, bez falešných poplachů a „nelze prověřit“)', conflictsOk === S.nove.length,
+        { severity: 'high', detail: S.nove.map(n => `${n.spisZn}: čekáno ${n.expectConflict ? 'STŘET' : 'ok'}, hlášeno ${n.flagged ? 'STŘET' : 'ok'} (${n.riskLevel})`).join('; ') });
+    const created = S.nove.filter(n => n.created && ok2(n.created));
+    check('K3', 'Asistentka založila nové spisy (bez střetu)', created.length === S.nove.filter(n => n.riskLevel === 'none' || n.riskLevel === 'low').length, { severity: 'medium', detail: `${created.length} založeno` });
+    const asVis = S.nove.filter(n => n.asistentkaVidi);
+    if (asVis.length) check('K4', 'Asistentka vidí spis, který sama založila pro advokáta', asVis.every(n => n.asistentkaVidi === 200),
+        { severity: 'low', detail: asVis.map(n => `${n.spisZn}: ${n.asistentkaVidi}`).join(', ') + ' (403 = musí počkat, až jí ho advokát nasdílí)' });
+    const sp = await get('admin', 'spisy_list', '/api/spisy');
+    const all = (sp.json && sp.json.spisy) || [];
+    const unknownZn = new Set(denDocs.filter(d => d.kind === 'neznama' && S.uploaded[d.file]).map(d => d.spisZn));
+    const auto = all.filter(s => unknownZn.has(s.spisZn));
+    check('K5', 'Písemnost k neznámé věci → automaticky vzniklý spis k zařazení', auto.length === unknownZn.size, { severity: 'low', detail: `${auto.length}/${unknownZn.size}` });
+    const keyZn = z => String(z || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const counts = {}; all.forEach(s => { const k = keyZn(s.spisZn); if (k) counts[k] = (counts[k] || 0) + 1; });
+    const dup = Object.entries(counts).filter(([, n]) => n > 1).map(([k]) => k);
+    const expected = new Set([...M.spisy.map(s => s.spisZn), ...created.map(n => n.spisZn), ...unknownZn].map(keyZn));
+    const missingZn = [...expected].filter(k => !counts[k]);
+    const extraZn = Object.keys(counts).filter(k => !expected.has(k));
+    check('K6', 'Spisy na konci dne: žádné duplicity, nic nechybí, nic navíc', !dup.length && !missingZn.length && !extraZn.length,
+        { severity: 'medium', detail: `${all.length} spisů · duplicit ${dup.length} · chybí ${missingZn.length} · navíc ${extraZn.length}${extraZn.length ? ' (' + extraZn.slice(0, 5).join(', ') + ')' : ''}` });
+    if (S.assign) check('K6b', 'Smlouvy bez sp. zn. ručně zařazeny do spisu', !S.assign.fail.length, { severity: 'medium', detail: `${S.assign.ok} zařazeno${S.assign.fail.length ? ' · ' + S.assign.fail.slice(0, 3).join('; ') : ''}` });
+
+    // oprávnění: kdo co vidí
+    if (O.firm) {
+        const leaks = [];
+        for (const u of Object.values(U)) {
+            const r = await get(u.key, 'spisy_list', '/api/spisy');
+            const seen = ((r.json && r.json.spisy) || []).map(s => s.spisZn);
+            const expected = Object.keys(S.spisByZn).filter(zn => readable(u.key, zn));
+            const extra = seen.filter(zn => S.spisByZn[zn] && !readable(u.key, zn));
+            const missing = expected.filter(zn => !seen.includes(zn));
+            if (extra.length || missing.length) leaks.push(`${u.name}: navíc ${extra.length}, chybí ${missing.length}`);
+            u.seen = seen.length;
+        }
+        check('K7', 'Seznam spisů každého uživatele = vlastní + sdílené', !leaks.length,
+            { severity: 'critical', detail: leaks.join('; ') || Object.values(U).map(u => `${u.name.split(' ').pop()} ${u.seen}`).join(', ') });
+        // doručená pošta koncipienta nesmí obsahovat dokumenty nesdílených spisů
+        const ib = await get('krejci', 'inbox_all', '/api/inbox/all', { timeout: 300000 });
+        const items = (ib.json && (ib.json.inbox || ib.json.files)) || [];
+        const norm = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const foreign = items.filter(it => { const zn = Object.keys(S.spisByZn).find(z => norm(z) === norm(it.caseNumber)); return zn && !readable('krejci', zn); });
+        check('K8', 'Doručená pošta koncipienta bez dokumentů cizích spisů', foreign.length === 0, { severity: 'critical', detail: `${items.length} viditelných, cizích ${foreign.length}` });
+        // vyhledávání: dotaz na klienta nesdíleného spisu nevrátí jeho dokumenty
+        const notShared = Object.keys(S.spisByZn).filter(zn => !readable('krejci', zn) && !S.spisByZn[zn].novy);
+        let ragLeak = 0, ragTried = 0;
+        // jen spisy, ke kterým už je nahraný dokument (jinak není co uniknout)
+        const withDocs = notShared.filter(zn => M.dokumenty.some(d => d.spisZn === zn && S.uploaded[d.file]));
+        for (const zn of withDocs.slice(0, 8)) {
+            const row = S.spisByZn[zn].row;
+            const names = M.dokumenty.filter(d => d.spisZn === zn && S.uploaded[d.file]).map(d => S.uploaded[d.file].storedName);
+            const r = await get('krejci', 'hledani', '/api/rag/search?limit=10&query=' + encodeURIComponent(`${row.klient} ${row.predmet}`));
+            ragTried++;
+            const matches = (r.json && r.json.matches) || [];
+            if (matches.some(m => { const t = JSON.stringify(m); return names.some(n => t.includes(n)) || t.includes(zn); })) ragLeak++;
+        }
+        check('K9', 'Vyhledávání koncipienta nevrací úryvky z nesdílených spisů', ragLeak === 0, { severity: 'critical', detail: `${ragLeak}/${ragTried} dotazů s únikem` });
+        const probes = S.aclProbes || [];
+        const badP = probes.filter(p => p.got !== p.expected);
+        check('K10', 'Advokát nevidí nesdílený spis kolegy (přímý odkaz)', badP.length === 0, { severity: 'critical', detail: `${probes.length} pokusů, odchylek ${badP.length}${badP.length ? ': ' + badP.slice(0, 3).map(p => `${p.user} ${p.spisZn} ${p.got}`).join(', ') : ''}` });
+    }
+    // koncepty
+    const appr = S.drafts.filter(d => d.status === 'schvaleno');
+    check('K11', 'Koncepty od AI vznikly ve spisech a advokáti je schvalují', S.drafts.length > 0 && S.drafts.every(d => !d.approveError),
+        { severity: 'high', detail: `vzniklo ${S.drafts.length}, schváleno ${appr.length}${S.drafts.filter(d => d.approveError).map(d => ' · ' + d.approveError).join('')}` });
+    if (S.koncipientApprove !== undefined) check('K12', 'Koncipient nesmí schválit koncept (403)', S.koncipientApprove === 403, { severity: 'high', detail: String(S.koncipientApprove) });
+    if (S.anon && S.anon.length) check('K13', 'Anonymizace odstraní telefon klienta', S.anon.every(a => a.ok), { severity: 'medium', detail: `${S.anon.filter(a => a.ok).length}/${S.anon.length}` });
+    // audit
+    const vc = await get('admin', 'audit', '/api/audit/verify-chain', { timeout: 300000 });
+    check('K14', 'Auditní řetězec po celém dni neporušen', ok2(vc.status) && vc.json && (vc.json.valid === true || vc.json.ok === true), { severity: 'critical', detail: short(vc.text, 160) });
+    const tv = await get('admin', 'audit', '/api/audit/transparency/verify', { timeout: 300000 });
+    check('K15', 'Záznamy transparentnosti AI neporušeny', ok2(tv.status) && tv.json && (tv.json.valid === true || tv.json.ok === true), { severity: 'high', detail: short(tv.text, 160) });
+    // odchod zaměstnance: deaktivace účtu → token přestane platit
+    const da = await call('admin', 'users_disable', 'PATCH', `/api/users/${U.krejci.id}`, { disabled: true });
+    const after = await get('krejci', 'spisy_list', '/api/spisy', { expect: [401, 403] });
+    check('K16', 'Deaktivovaný uživatel se už nepřihlásí', ok2(da.status) && (after.status === 401 || after.status === 403), { severity: 'critical', detail: `${da.status} → ${after.status}` });
+    // chyby a odezvy
+    const dayOps = ops.filter(o => o.phase === '1' && !o.restart);
+    const e5 = dayOps.filter(o => o.status >= 500 || o.status === 0);
+    check('K17', 'Během dne žádné chyby serveru (5xx / spadlé spojení)', e5.length === 0,
+        { severity: e5.length > 5 ? 'high' : 'medium', detail: `${e5.length} z ${dayOps.length}${e5.length ? ': ' + summarizeErrors(e5) : ''}` });
+    const e4 = dayOps.filter(o => !o.ok && o.status >= 400 && o.status < 500);
+    check('K18', 'Během dne žádné neočekávané odmítnutí (4xx)', e4.length === 0, { severity: 'medium', detail: `${e4.length}${e4.length ? ': ' + summarizeErrors(e4) : ''}` });
+}
+function summarizeErrors(list) {
+    const by = {};
+    list.forEach(o => { const k = `${o.action} ${o.status}`; by[k] = by[k] || { n: 0, note: o.note }; by[k].n++; });
+    return Object.entries(by).sort((a, b) => b[1].n - a[1].n).slice(0, 6).map(([k, v]) => `${k} ×${v.n} (${short(v.note, 60)})`).join('; ');
+}
+
+// ─── report ──────────────────────────────────────────────────────────────────
+const pctl = (arr, p) => { if (!arr.length) return null; const s = arr.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p / 100 * s.length))]; };
+const fmtS = ms => ms == null ? '—' : (ms >= 10000 ? (ms / 1000).toFixed(0) : (ms / 1000).toFixed(1)) + ' s';
+
+function writeReport(meta) {
+    fs.mkdirSync(O.out, { recursive: true });
+    const stamp = new Date(T0).toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const base = path.join(O.out, `office_day_${stamp}_${O.label}`);
+    const dayOps = ops.filter(o => o.phase === '1');
+    const byAction = {};
+    dayOps.forEach(o => { (byAction[o.action] = byAction[o.action] || []).push(o); });
+    const actRows = Object.entries(byAction).sort((a, b) => b[1].length - a[1].length).map(([a, l]) => {
+        const ms = l.filter(o => o.ok).map(o => o.ms);
+        return { action: a, n: l.length, chyby: l.filter(o => !o.ok && !o.restart).length, p50: pctl(ms, 50), p95: pctl(ms, 95), max: ms.length ? Math.max(...ms) : null };
+    });
+    const hours = [];
+    for (let h = 8; h <= 16; h++) {
+        const l = dayOps.filter(o => o.clock && parseInt(o.clock, 10) === h);
+        const ag = l.filter(o => o.action.startsWith('agent_') && o.ok).map(o => o.ms);
+        hours.push({ hodina: `${h}:00`, pozadavku: l.length, chyb: l.filter(o => !o.ok && !o.restart).length, agentu: ag.length, agentP50: pctl(ag, 50), agentP95: pctl(ag, 95),
+            prijem: l.filter(o => /^prijem/.test(o.action)).length });
+    }
+    const byKind = {};
+    agentRuns.forEach(r => { const k = r.kind; byKind[k] = byKind[k] || { n: 0, pass: 0, ms: [], sim: 0 }; byKind[k].n++; if (r.pass) byKind[k].pass++; if (r.simulated) byKind[k].sim++; byKind[k].ms.push(r.ms); });
+    const failed = checks.filter(c => !c.ok);
+    const SEV = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+    failed.sort((a, b) => SEV[a.severity] - SEV[b.severity]);
+    const json = { meta, checks, hours, actions: actRows, agentKinds: Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, { n: v.n, pass: v.pass, simulated: v.sim, p50: pctl(v.ms, 50), p95: pctl(v.ms, 95) }])),
+        nove: S.nove, drafts: S.drafts, docErrors: S.docErrors || [], aclProbes: S.aclProbes || [], telemetry, agentRuns, ops };
+    fs.writeFileSync(base + '.json', JSON.stringify(json, null, 1));
+
+    const L = [];
+    L.push(`# Simulace dne v kanceláři — ${meta.label}`, '');
+    L.push(`Server ${meta.base} · verze ${meta.version || '?'} · model ${meta.model || 'výchozí'} · den ${meta.hours} h reálného času · data: ${meta.dataset}`);
+    L.push(`Start ${meta.start} · konec ${meta.end} · zavedení ${S.onboardingMin ? S.onboardingMin.toFixed(1) : '?'} min · restart ${S.restartS != null ? S.restartS.toFixed(0) + ' s' : 'ne'} · dobíhání po 16:30 ${S.overtimeMin != null ? S.overtimeMin.toFixed(1) + ' min' : '?'}`, '');
+    L.push(`**Kontroly: ${checks.filter(c => c.ok).length}/${checks.length} v pořádku.** Požadavků během dne ${dayOps.length}, z toho agentů ${agentRuns.length}.`, '');
+    if (failed.length) {
+        L.push('## Nálezy', '', '| Závažnost | Kontrola | Detail |', '|---|---|---|');
+        failed.forEach(c => L.push(`| ${c.severity} | ${c.id} ${c.name} | ${String(c.detail).replace(/\|/g, '/').slice(0, 400)} |`));
+        L.push('');
+    }
+    L.push('## Všechny kontroly', '', '| | Fáze | Kontrola | Detail |', '|---|---|---|---|');
+    checks.forEach(c => L.push(`| ${c.ok ? '✓' : '✗'} | ${c.phase} | ${c.id} ${c.name} | ${String(c.detail).replace(/\|/g, '/').slice(0, 300)} |`));
+    L.push('', '## Den po hodinách', '', '| Hodina | Požadavků | Chyb | Přijato písemností | Odpovědí AI | AI p50 | AI p95 |', '|---|---|---|---|---|---|---|');
+    hours.forEach(h => L.push(`| ${h.hodina} | ${h.pozadavku} | ${h.chyb} | ${h.prijem} | ${h.agentu} | ${fmtS(h.agentP50)} | ${fmtS(h.agentP95)} |`));
+    L.push('', '## Asistenti AI', '', '| Úloha | Počet | Prošlo kontrolou | p50 | p95 |', '|---|---|---|---|---|');
+    Object.entries(json.agentKinds).forEach(([k, v]) => L.push(`| ${k} | ${v.n} | ${v.pass} (${Math.round(v.pass / Math.max(1, v.n) * 100)} %)${v.simulated ? ` · simulováno ${v.simulated}` : ''} | ${fmtS(v.p50)} | ${fmtS(v.p95)} |`));
+    L.push('', '## Akce (odezva)', '', '| Akce | Počet | Chyb | p50 | p95 | max |', '|---|---|---|---|---|---|');
+    actRows.forEach(a => L.push(`| ${a.action} | ${a.n} | ${a.chyby} | ${fmtS(a.p50)} | ${fmtS(a.p95)} | ${fmtS(a.max)} |`));
+    if ((S.docErrors || []).length) { L.push('', '## Odchylky ve zpracování dokumentů (prvních 40)', ''); S.docErrors.slice(0, 40).forEach(e => L.push('- ' + e)); }
+    L.push('', '_Všechna data jsou syntetická (generate_dataset.py). Úplné odpovědi agentů a každý požadavek jsou v .json._');
+    fs.writeFileSync(base + '.md', L.join('\n') + '\n');
+    return base;
+}
+
+async function main() {
+    O = parseArgs(process.argv.slice(2));
+    if (O.help || !O.base || !O.token) {
+        console.log('Použití: node backend/scripts/office_day.js --base https://127.0.0.1 --token <token správce> [--insecure] [--hours 8] [--smoke] [--restart-cmd "…"]');
+        process.exit(O.help ? 0 : 2);
+    }
+    const R = rng(O.seed);
+    const M = loadDataset(O.dataset);
+    try { S.cases = JSON.parse(fs.readFileSync(path.join(ROOT, 'eval', 'server_suite', 'cases.json'), 'utf8')).cases; } catch (e) { S.cases = []; }
+    console.log(`office_day: ${M.spisy.length} spisů, ${M.dokumenty.length} dokumentů, ${M.kancelar.uzivatele.length} uživatelů · den ${O.hours} h${O.smoke ? ' (SMOKE)' : ''}`);
+    const meta = { label: O.label, base: O.base, model: O.model, hours: O.hours, dataset: path.basename(O.dataset), seed: O.seed, smoke: O.smoke,
+        start: new Date(T0).toISOString(), restartCmd: O.restartCmd ? 'ano' : 'ne', firm: O.firm };
+    let fatal = null;
+    try {
+        const st = await request('GET', '/api/status', { token: O.token });
+        meta.version = st.json && st.json.version;
+        await onboarding(M, R);
+        await day(M, R);
+        await endOfDay(M);
+    } catch (e) {
+        fatal = e; phase = 'X';
+        check('X', 'Simulace doběhla', false, { severity: 'critical', detail: e.message });
+    }
+    meta.end = new Date().toISOString();
+    const base = writeReport(meta);
+    console.log(`\nReport: ${base}.md (+ .json)`);
+    console.log(`Kontroly: ${checks.filter(c => c.ok).length}/${checks.length} v pořádku`);
+    if (/^lexis-officeday-/.test(path.basename(M.dir))) try { fs.rmSync(M.dir, { recursive: true, force: true }); } catch (e) { /* tmp */ }
+    process.exit(fatal ? 1 : 0);
+}
+
+if (require.main === module) main();
+module.exports = { parseArgs, rng, schedule, scoreCase, pctl };

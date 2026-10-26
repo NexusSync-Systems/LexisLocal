@@ -84,6 +84,12 @@ describe('task-runner — schválené úlohy', () => {
         }
         expect(R.sestav({ uloha: 'aws_spust_test', parametry: { az: 'b' } }).args).toEqual(expect.arrayContaining(['--placement', 'AvailabilityZone=eu-central-1b']));
         expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { az: 'us-east-1a' } })).toThrow(/nepovolená hodnota/);
+        // profil: jen připravené user data (simulace dne v kanceláři), nic jiného
+        const k = R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'kancelar' } }).args;
+        expect(k[k.indexOf('--user-data') + 1]).toBe('file://scripts/aws/bootstrap-kancelar.sh');
+        expect(k.join(' ')).toContain('Value=lexis-test-1.2.0-kancelar');
+        for (const zly of ['../x', 'judikatura; rm', 'plny']) expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { profil: zly } })).toThrow(/nepovolená hodnota/);
+        expect(require('fs').existsSync(require('path').join(__dirname, '..', '..', 'scripts', 'aws', 'bootstrap-kancelar.sh'))).toBe(true);
         // typ ani počet z požadavku nejde změnit
         const b = R.sestav({ uloha: 'aws_spust_test', parametry: { typ: 'p5.48xlarge', count: 10 } }).args;
         expect(b[b.indexOf('--instance-type') + 1]).toBe('g6.xlarge');

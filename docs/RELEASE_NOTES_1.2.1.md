@@ -29,8 +29,22 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
 
 ## Opravy
 
+- **Spisové značky s rejstříkem o více slovech** („19 P a Nc 57/2026“ — opatrovnické věci) se
+  rozpoznají; dřív dokument zůstal bez spisu. „Sp. zn.“ s tečkou se nově bere jako označení
+  (přednost před první zmínkou jiné věci v textu). Společně pro doručenou poštu, Paperless a datové
+  zprávy (`lib/case_number.js`).
+- **Nahraný dokument se zpracuje jen jednou**: nahrání přes aplikaci a hlídání složky dřív zpracovalo
+  tentýž soubor dvakrát (2× vytěžení přes AI, 2× indexace, 2× záznam v auditu) — zdvojená zátěž
+  modelu při každém nahrání.
 - Stahování Sbírky NS: opakování při přechodné chybě serveru (5xx).
 - Instalace báze: názvy souborů s diakritikou sjednocené (NFC) — tar na macOS je rozbaluje rozložené.
+
+## Testování
+
+- **Simulace dne v kanceláři** (`backend/scripts/office_day.js`, `docs/SIMULACE_KANCELARE.md`): zavedení
+  (účty, firemní režim, import spisů, digitalizace) a celý pracovní den 5 lidí nad syntetickými daty
+  (150 spisů, 400 dokumentů) s kontrolou dat, oprávnění, lhůt, auditu a odezvy. Na serveru profil
+  `kancelar` (úloha spouštěče `aws_spust_test` s `{"profil":"kancelar"}`).
 
 ## Známá omezení
 
@@ -38,3 +52,6 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
   NS do jeho opravy neproběhne (ostatní zdroje ano).
 - Kaskádové mazání při skartaci čeká na schválení pravidel (`docs/kancelar/6_Pravidla_skartace_navrh.docx`).
 - Bedrock otestován proti specifikaci a testovacím vektorům AWS, ne proti živému účtu.
+- Firemní režim: **nezařazený dokument** (bez sp. zn., např. smlouva od klienta) vidí v doručené poště
+  a ve vyhledávání všichni, dokud ho někdo nezařadí do spisu („sdílená podatelna“). Kdo založí spis
+  pro jiného advokáta (asistentka), ztratí k němu přístup, dokud mu ho vlastník nenasdílí.

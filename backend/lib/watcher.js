@@ -145,7 +145,21 @@ async function saveInbox(inbox) {
 }
 
 // Combined Heuristic and AI extraction engine
-async function processDocument(filePath, opts = {}) {
+// Souběh nahrání a sledování složky: POST /api/inbox/upload zapíše soubor a hned volá
+// processDocument, chokidar mezitím ohlásí „add“ — záznam v doručené poště ještě není,
+// takže se tentýž dokument zpracoval DVAKRÁT (2× vytěžení přes AI, 2× indexace, 2× audit).
+// Zjištěno simulací dne v kanceláři 26. 10. 2026. Běžící zpracování téhož souboru se proto
+// sdílí: druhý volající dostane stejný výsledek, nic se nespouští znovu.
+const _inFlight = new Map();
+function processDocument(filePath, opts = {}) {
+    const key = path.resolve(String(filePath));
+    if (_inFlight.has(key)) return _inFlight.get(key);
+    const p = _processDocument(filePath, opts).finally(() => { _inFlight.delete(key); });
+    _inFlight.set(key, p);
+    return p;
+}
+
+async function _processDocument(filePath, opts = {}) {
     const fileName = path.basename(filePath);
     // Příloha zprávy z datové schránky: datum DORUČENÍ z ISDS (lib/isds_inbox.js) má
     // přednost před datem nalezeným v textu. Watcher (bez opts) si metadata dohledá sám.
@@ -366,8 +380,9 @@ function applyIsdsDelivery(metadata, isds) {
         metadata.deadlineDate = calculateDeadlineDate(metadata.deadlineDays, isds.deliveryDate);
         metadata.deadlineBase = `doručení do datové schránky ${isds.deliveryHow || ''}`.trim() + (isds.deliveryExact === false ? ' — OVĚŘIT' : '');
     }
-    if ((!metadata.caseNumber) && isds.senderRefNumber && /\d+\s*[A-Za-zČŠŽčšž]+\s*\d+\/\d{4}/.test(isds.senderRefNumber)) {
-        metadata.caseNumber = isds.senderRefNumber.match(/\d+\s*[A-Za-zČŠŽčšž]+\s*\d+\/\d{4}/)[0].replace(/\s+/g, ' ');
+    if ((!metadata.caseNumber) && isds.senderRefNumber) {
+        const ref = require('./case_number').findCaseNumber(isds.senderRefNumber);
+        if (ref) metadata.caseNumber = ref;
     }
     metadata.isdsTextDates = textDates;
     if (metadata.summary && metadata.deadlineDate) metadata.summary = metadata.summary.replace(/vyprší \d{4}-\d{2}-\d{2}/, 'vyprší ' + metadata.deadlineDate);
@@ -386,19 +401,9 @@ function runRegexExtractor(text) {
         ico: ""
     };
     
-    // 1. Spisová značka: e.g. 23 C 120/2026, 15 Co 45/2025, 4 T 12/2024
-    const caseReg = /(?:sp\s*zn\.?|č\s*j\.?|spisová\s*značka)\s*[:\-]?\s*(\d+\s*[A-Za-zČŠŽčšž]+\s*\d+\/\d+)/i;
-    const matchCase = text.match(caseReg);
-    if (matchCase) {
-        metadata.caseNumber = matchCase[1].replace(/\s+/g, ' ').trim();
-    } else {
-        // Fallback broad regex for case numbers
-        const broadCaseReg = /(\d+\s*[A-Za-zČŠŽčšž]+\s*\d+\/\d+)/;
-        const matchBroad = text.match(broadCaseReg);
-        if (matchBroad) {
-            metadata.caseNumber = matchBroad[1].replace(/\s+/g, ' ').trim();
-        }
-    }
+    // 1. Spisová značka: e.g. 23 C 120/2026, 15 Co 45/2025, 4 T 12/2024, 19 P a Nc 57/2026
+    const foundCase = require('./case_number').findCaseNumber(text);
+    if (foundCase) metadata.caseNumber = foundCase;
     
     // 2. Lhůta v dnech: e.g. "lhůta 15 dnů", "do 15 dnů", "ve lhůtě 8 dnů"
     const deadlineReg = /(?:lhůt[aěuouí-]+\s*(?:k\s*vyjádření\s*)?(?:činí|v\s*délce)?\s*|do\s*|ve\s*lhůtě\s*)(\d+)\s*(?:dn[ůía-z]*)/i;

@@ -40,6 +40,12 @@ BRANCH="release-prep"
 #               (podklad pro velikost RAM Mac mini), pak celý server_suite. Báze se bere z archivu
 #               KB_ARCHIVE_S3 (jen veřejná data; nahrát z Macu, viz docs/SERVER_TEST_1.2.0.md).
 #               První běh ~4–5 h (vektory se počítají), další s cache z S3 výrazně kratší.
+#   kancelar  — simulace zavedení v kanceláři a celého pracovního dne (backend/scripts/office_day.js):
+#               stejná báze a nastavení jako judikatura (pilot na Mac mini), pak 5 účtů, firemní režim,
+#               import 150 spisů, digitalizace 250 dokumentů, 8 h provozu (150 příchozích písemností,
+#               rešerše, kontroly smluv, koncepty, schvalování, lhůtník, kalendář, fakturace), v poledne
+#               restart serveru, na konci kontrola dat, oprávnění a auditu + záloha. OFFICE_HOURS=3 zhustí den.
+#               ~10 h, vypne se nejpozději po 11,5 h.
 PROFILE="${PROFILE:-plny}"
 # Reranker (cross-encoder) nad výsledky RAG — VÝCHOZÍ ZAPNUTÝ (vypnutí: export RERANK=0). Lokální služba
 # scripts/rerank_server.py na GPU, backend ho volá přes RAG_RERANK_URL (lib/rerank_service.js).
@@ -64,6 +70,16 @@ if [ "$PROFILE" = "judikatura" ]; then
   KB_SAVE_DEBOUNCE="${KB_SAVE_DEBOUNCE:-3000}"   # odložený zápis báze při plnění (24. 10.: bez něj ~1 soubor/s)
   AGENT_CHUNK_CONCURRENCY="${AGENT_CHUNK_CONCURRENCY:-2}"   # měření 10/2026: kontrola dlouhých smluv po částech souběžně (srovnat K4 s během 25. 10.: 55–63 s)
   MAX_MINUTES=480
+fi
+if [ "$PROFILE" = "kancelar" ]; then
+  OFFICE_HOURS="${OFFICE_HOURS:-8}"
+  MAX_MINUTES=$(( 210 + OFFICE_HOURS * 60 )); COMPARE_MODELS=""; SKIP_PROBE=1; RUN_SUITE=0; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
+  RERANK="${RERANK_JUD:-0}"; RAG_AGENT_K="${RAG_AGENT_K_JUD:-4}"
+  EMBED_MODEL_S3="${EMBED_MODEL_S3:-none}"
+  KB_ARCHIVE_S3="${KB_ARCHIVE_S3:-s3://$RESULTS_BUCKET/_cache/kb-1.2.0.tar.gz}"
+  NODE_HEAP="${NODE_HEAP:-8192}"
+  KB_SAVE_DEBOUNCE="${KB_SAVE_DEBOUNCE:-3000}"
+  # AGENT_CHUNK_CONCURRENCY záměrně nenastaveno = výchozí hodnota aplikace (jako u kanceláře)
 fi
 if [ "$PROFILE" = "integrace" ]; then
   # 3. 10. 2026: samotné nahrání OZ trvalo 43 min → 150 min nestačilo na celý suite.
@@ -359,6 +375,24 @@ if [ "$PROFILE" = "judikatura" ]; then
   if [ "${V_BAZI:-0}" = "$NAHRANO" ]; then echo "=== báze úplná: $V_BAZI dokumentů (nahráno $NAHRANO)"
   else echo "!! báze NEÚPLNÁ: v bázi ${V_BAZI:-?} dokumentů, nahráno $NAHRANO"; fi
   tail -n 25 "$OUT/kb_regression.log"; mem "po kb_regression"
+  upload
+fi
+
+if [ "$PROFILE" = "kancelar" ]; then
+  # Simulace dne v kanceláři. Paměť backendu a GPU každých 5 min do pamet.log (únik paměti za den?).
+  mem() { local p; p=$(systemctl show -p MainPID --value lexislocal); { echo "== $(date -Is) $1"; free -m | sed -n 2p; echo "backend RSS MB: $(( $(ps -o rss= -p "$p" 2>/dev/null || echo 0) / 1024 ))"; nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv,noheader 2>/dev/null; } >> "$OUT/pamet.log"; }
+  # Jako na Macu kanceláře: bez cache vektorů v paměti (ta slouží jen k rychlému naplnění báze).
+  sed -i '/^EMBED_CACHE_FILE=/d' /opt/LexisLocal/.env; systemctl restart lexislocal
+  for i in $(seq 1 120); do curl -sfk -H "X-API-Token: $TOKEN" https://127.0.0.1/api/status >/dev/null && break; sleep 2; done
+  sleep 120; mem "před simulací (studený start + předehřátí)"
+  ( while sleep 300; do mem "průběh"; done ) & MEM_PID=$!
+  echo "=== office_day start $(date -Is) (den $OFFICE_HOURS h)"
+  node backend/scripts/office_day.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
+    --hours "$OFFICE_HOURS" --restart-cmd "systemctl restart lexislocal" --restart-at 4.5 \
+    --out "$OUT/kancelar" --label server > "$OUT/office_day.log" 2>&1 || echo "!! office_day skončil s chybou (viz office_day.log)"
+  grep -E '^(  [✓✗]|Report|Kontroly)' "$OUT/office_day.log" | tail -n 70
+  kill "$MEM_PID" 2>/dev/null; mem "po simulaci"
+  echo "=== office_day hotovo $(date -Is)"
   upload
 fi
 
