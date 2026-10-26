@@ -82,6 +82,8 @@ describe('task-runner — schválené úlohy', () => {
         for (const zle of ['ami-x; rm', 'i-123', '--dry-run', 'ami-0123 --count 5']) {
             expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { ami: zle } })).toThrow(/AMI/);
         }
+        expect(R.sestav({ uloha: 'aws_spust_test', parametry: { az: 'b' } }).args).toEqual(expect.arrayContaining(['--placement', 'AvailabilityZone=eu-central-1b']));
+        expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { az: 'us-east-1a' } })).toThrow(/nepovolená hodnota/);
         // typ ani počet z požadavku nejde změnit
         const b = R.sestav({ uloha: 'aws_spust_test', parametry: { typ: 'p5.48xlarge', count: 10 } }).args;
         expect(b[b.indexOf('--instance-type') + 1]).toBe('g6.xlarge');

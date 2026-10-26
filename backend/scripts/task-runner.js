@@ -84,6 +84,7 @@ function behTestu(v) {
 }
 // AWS: jen ČTENÍ (stav instancí, seznam běhů, stažení výsledků) přes AWS CLI a přihlášení na Macu.
 // Nic se nespouští, nemaže ani nemění. _connect.txt (obsahuje token) se nestahuje.
+const CCC_ZIP = path.join(require('os').homedir(), 'Downloads', 'ccc_database.zip'); // dataset ÚS (Zenodo 11618008)
 const AWS_REGION = 'eu-central-1';
 const AWS_BUCKET = 'lexislocal-bench-results-485237569555';
 const AWS_TEST_AMI = 'ami-0bac4f1462de1bb51';   // Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04) 20261016
@@ -115,7 +116,9 @@ const ULOHY = {
     // Usnesení ÚS publikovaná ve Sbírce nálezů a usnesení (rozhodnutí 26. 10. 2026: jen publikovaná).
     fetch_us_usneseni: p => ({
         cmd: NODE,
-        args: ['backend/scripts/fetch-us.js', '--nalus', '--usneseni', '--jen-publikovana', '--od', datum(p.od, '01.01.1993'), '--out', './judikatura-us'],
+        args: ['backend/scripts/fetch-us.js', '--nalus', '--usneseni', '--jen-publikovana', '--od', datum(p.od, '01.01.1993'), '--out', './judikatura-us',
+            // starší usnesení NALUS má bez plného textu → doplní se z datasetu CCC, je-li stažený
+            ...(fs.existsSync(CCC_ZIP) ? ['--ccc', CCC_ZIP] : [])],
     }),
     fetch_nss: p => ({
         cmd: NODE,
@@ -150,6 +153,8 @@ const ULOHY = {
     aws_spust_test: p => {
         const ami = String(p.ami || AWS_TEST_AMI);
         if (!/^ami-[0-9a-f]{8,17}$/.test(ami)) throw new Error(`nepovolené AMI „${ami}"`);
+        // Zóna dostupnosti (26. 10. 2026: „InsufficientInstanceCapacity“ pro g6.xlarge ve výchozí zóně).
+        const az = oneOf(p.az, ['a', 'b', 'c'], null);
         return {
             cmd: 'aws',
             args: ['ec2', 'run-instances', '--region', AWS_REGION, '--image-id', ami, '--instance-type', 'g6.xlarge', '--count', '1',
@@ -158,7 +163,8 @@ const ULOHY = {
                 '--block-device-mappings', '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":200,"VolumeType":"gp3","DeleteOnTermination":true}}]',
                 '--user-data', 'file://scripts/aws/bootstrap-judikatura.sh',
                 '--tag-specifications', 'ResourceType=instance,Tags=[{Key=Name,Value=lexis-test-1.2.0-judikatura}]',
-                '--query', 'Instances[0].[InstanceId,State.Name,LaunchTime]', '--output', 'text'],
+                ...(az ? ['--placement', `AvailabilityZone=${AWS_REGION}${az}`] : []),
+                '--query', 'Instances[0].[InstanceId,State.Name,LaunchTime,Placement.AvailabilityZone]', '--output', 'text'],
         };
     },
     // Instalační balíček báze (backend/scripts/kb-balicek.js): stažení cache vektorů z S3,

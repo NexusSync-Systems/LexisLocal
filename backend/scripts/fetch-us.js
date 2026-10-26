@@ -535,6 +535,37 @@ function nalusTypeFields(a) {
     return f;
 }
 
+/**
+ * Plné texty z datasetu CCC pro rozhodnutí, která NALUS najde, ale text nemá (26. 10. 2026:
+ * 491 ze 743 publikovaných usnesení, hlavně 90. léta). Hlavička z NALUS (SbNU, populární
+ * název), text z CCC (s citací datasetu). Párování podle ECLI.
+ */
+async function textyZCcc(list, a, existing) {
+    const byEcli = new Map();
+    for (const x of list) {
+        const ecli = x.it.ecli || ecliFromSz(x.it.sz, x.it.rok);
+        if (ecli) byEcli.set(ecli, x);
+    }
+    console.log(`📝 Doplňuji ${byEcli.size} textů z datasetu CCC (${path.basename(a.ccc)})…`);
+    let saved = 0;
+    await readCsv(a.ccc, 'ccc_texts.csv', r => {
+        const x = byEcli.get(r.doc_id);
+        if (!x) return;
+        byEcli.delete(r.doc_id);
+        const text = cleanText(r.text);
+        if (text.length < 200) return;
+        const m = Object.assign(nalusMeta(x.it, x.url), { ecli: r.doc_id, zdrojDat: 'nalus+ccc' });
+        const name = fileNameFor(m);
+        if (existing.has(name)) return;
+        fs.writeFileSync(path.join(a.out, name), header(m) + text + '\n');
+        existing.add(name);
+        saved++;
+        if (byEcli.size === 0) return false;
+    });
+    console.log(`   z CCC doplněno ${saved}, bez textu i v CCC ${byEcli.size}`);
+    return { saved };
+}
+
 /** Soubor vznikl z NALUS (ne z datasetu) — jen takové smí --prepsat přepsat. */
 function _zNalus(file) {
     try { return !/^Data: /m.test(fs.readFileSync(file, 'utf8').slice(0, 8000)); } catch (e) { return false; }
@@ -544,7 +575,8 @@ async function importNalus(a) {
     const jar = path.join(os.tmpdir(), `nalus_${process.pid}.cookies`);
     fs.mkdirSync(a.out, { recursive: true });
     const existing = new Set(fs.readdirSync(a.out));
-    let saved = 0, already = 0, failed = 0, filtered = 0;
+    let saved = 0, already = 0, failed = 0, filtered = 0, bezMeta = 0, kratky = 0;
+    const bezTextu = []; // NALUS u starších usnesení plný text nemá → doplnit z datasetu CCC (--ccc)
     try {
         console.log(`🔎 NALUS: ${a.usneseni ? 'usnesení' : 'nálezy a stanoviska pléna'}${a.jenPublikovana ? ' (jen publikovaná ve SbNU)' : ''} od ${a.od || '01.01.2024'}${a.do ? ` do ${a.do}` : ''}…`);
         const prvni = await nalusSearch(a, jar);
@@ -574,7 +606,7 @@ async function importNalus(a) {
         console.log(`   metadata ${items.length}/${total}`);
         for (const it of items) {
             if (a.limit && saved >= a.limit) break;
-            if (!it.spisZn || !it.sz) { failed++; continue; }
+            if (!it.spisZn || !it.sz) { failed++; if (++bezMeta <= 3) console.log(`  ⚠️ řádek bez sp. zn./odkazu: ${JSON.stringify({ spisZn: it.spisZn, sz: it.sz, typ: it.typ, datum: it.datum }).slice(0, 200)}`); continue; }
             if (a.typy && a.typy.length && !a.typy.includes(it.typ)) { filtered++; continue; }
             const name = fileNameFor(it);
             if (existing.has(name) && !(a.prepsat && _zNalus(path.join(a.out, name)))) { already++; continue; }
@@ -587,7 +619,7 @@ async function importNalus(a) {
                 try { d = parseNalusText(curl(['-b', jar, url]), url); }
                 catch (e2) { console.log(`  ⚠️ ${it.spisZn}: ${String(e2.stderr || e2.message).trim().split('\n')[0]}`); failed++; continue; }
             }
-            if (!d.text || d.text.length < 200) { failed++; continue; }
+            if (!d.text || d.text.length < 200) { bezTextu.push({ it, url }); failed++; if (++kratky <= 3) console.log(`  ⚠️ ${it.spisZn}: text ${d.text ? d.text.length : 0} znaků (${url})`); continue; }
             const m = nalusMeta(it, url);
             if (!m.ecli) m.ecli = d.ecli;
             fs.writeFileSync(path.join(a.out, name), header(m) + d.text + '\n');
@@ -595,10 +627,14 @@ async function importNalus(a) {
             saved++;
             if (saved % 25 === 0) console.log(`  … ${saved} uloženo`);
         }
+        if (bezTextu.length && a.ccc && fs.existsSync(a.ccc)) {
+            const r2 = await textyZCcc(bezTextu, a, existing);
+            saved += r2.saved; failed -= r2.saved; kratky -= r2.saved;
+        } else if (bezTextu.length) console.log(`   ${bezTextu.length} rozhodnutí NALUS nemá s plným textem — doplníte z datasetu CCC: přidejte --ccc <ccc_database.zip>`);
     } finally {
         try { fs.unlinkSync(jar); } catch (e) { /* best-effort */ }
     }
-    console.log(`✅ Uloženo ${saved}, už staženo ${already}, mimo filtr ${filtered}, selhalo ${failed} → ${a.out}`);
+    console.log(`✅ Uloženo ${saved}, už staženo ${already}, mimo filtr ${filtered}, selhalo ${failed}${failed ? ` (bez sp. zn./odkazu ${bezMeta}, krátký text ${kratky}, chyba stažení ${failed - bezMeta - kratky})` : ''} → ${a.out}`);
     console.log(`   Další krok: node backend/scripts/seed-kb.js --agent resersnik --dir "${a.out}" --token-file ~/.lexislocal/api_token`);
 }
 
@@ -649,7 +685,7 @@ async function main() {
 if (require.main === module) main().catch(e => { console.error('❌ ' + e.message); process.exit(1); });
 
 module.exports = {
-    nalusTypeFields, parseArgs,
+    nalusTypeFields, parseArgs, textyZCcc,
     CsvParser, parseCsv, readCsv, rVector, formatSpZn, czDate, metaFromRow, matches, header, cleanText,
     fileNameFor, spZnFromEcli, parseResultsPage, szFromNalusZn, jmenoSoudce, nalusMeta, pojmenujPredpis, parseNalusText, resultLinks, hiddenFields, ecliFromSz, nalusDate, importCcc,
 };

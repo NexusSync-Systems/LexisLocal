@@ -207,3 +207,29 @@ describe('NALUS: usnesení publikovaná ve Sbírce', () => {
         expect(U.parseArgs(['node', 'x', '--nalus']).typy).toEqual(['Nález', 'Stanovisko pléna']);
     });
 });
+
+describe('NALUS bez plného textu → text z datasetu CCC', () => {
+    const US = require('../scripts/fetch-us');
+    test('párování podle ECLI (z sz + roku), hlavička z NALUS se SbNU a citací datasetu', async () => {
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchus_ccc_'));
+        const src = path.join(tmp, 'ccc', 'csv'); fs.mkdirSync(src, { recursive: true });
+        const dlouhy = 'Ústavní soud rozhodl v senátě takto: návrh se odmítá. '.repeat(10);
+        fs.writeFileSync(path.join(src, 'ccc_texts.csv'), 'doc_id,text\n' +
+            `ECLI:CZ:US:1993:2.US.75.93.1,"${dlouhy}"\nECLI:CZ:US:1994:1.US.1.94.1,"kratky"\n`);
+        const out = path.join(tmp, 'out'); fs.mkdirSync(out);
+        const it = (spisZn, sz, rok) => ({ spisZn, sz, rok, poradi: '1', typ: 'Usnesení', datum: '01.01.' + rok, sbnu: 'SbNU 1/1993', predpisy: [], rejstrik: [], vyrok: [] });
+        const r = await US.textyZCcc([
+            { it: it('II. ÚS 75/93', '2-75-93_1', 1993), url: 'https://nalus.usoud.cz/Search/GetText.aspx?sz=2-75-93_1' },
+            { it: it('I. ÚS 1/94', '1-1-94_1', 1994), url: 'u2' },
+            { it: it('III. ÚS 9/95', '3-9-95_1', 1995), url: 'u3' }
+        ], { ccc: path.join(tmp, 'ccc'), out }, new Set());
+        expect(r.saved).toBe(1);
+        const files = fs.readdirSync(out);
+        expect(files).toHaveLength(1);
+        const t = fs.readFileSync(path.join(out, files[0]), 'utf8');
+        expect(t).toMatch(/Sbírka nálezů a usnesení: SbNU 1\/1993/);
+        expect(t).toMatch(/Data: The Czech Constitutional Court Database/);
+        expect(t).toMatch(/návrh se odmítá/);
+        fs.rmSync(tmp, { recursive: true, force: true });
+    });
+});
