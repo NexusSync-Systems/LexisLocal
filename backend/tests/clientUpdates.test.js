@@ -177,3 +177,17 @@ test('inventář před skartací: ukáže, co zůstane (deník, souhrny), jen vl
     expect(byKind.audit.action).toBe('pseudonymizovat');
     expect((await request(app).get(`/api/spisy/${spis.id}/skartace-inventar`).set(as(SEK.token))).statusCode).toBe(403);
 });
+
+test('plán skartace: konkrétní ID položek ke smazání / ponechání, jen čte, jen vlastník/správce', async () => {
+    const r = await request(app).get(`/api/spisy/${spis.id}/skartace-plan`).set(as(ADV.token));
+    expect(r.statusCode).toBe(200);
+    expect(r.body.smazat.spis).toEqual([spis.id]);
+    expect(r.body.smazat.client_updates.length).toBeGreaterThanOrEqual(1);
+    expect(r.body.smazat.spis_events.length).toBeGreaterThanOrEqual(1);
+    expect(r.body.ponechat).toHaveProperty('aml_checks');
+    expect(r.body.souhrn.smazat).toBeGreaterThanOrEqual(3);
+    // nic se nesmazalo
+    const inv = await request(app).get(`/api/spisy/${spis.id}/skartace-inventar`).set(as(ADV.token));
+    expect(inv.statusCode).toBe(200);
+    expect((await request(app).get(`/api/spisy/${spis.id}/skartace-plan`).set(as(SEK.token))).statusCode).toBe(403);
+});

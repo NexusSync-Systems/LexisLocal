@@ -49,4 +49,52 @@ function inventory(spisId) {
     };
 }
 
-module.exports = { inventory };
+/**
+ * Plán skartace — KONKRÉTNÍ položky, které by kaskádové mazání odstranilo / ponechalo /
+ * pseudonymizovalo (ID záznamů, cesty dokumentů, počet úseků v RAG indexu). JEN ČTE.
+ * Slouží advokátovi ke schválení pravidel (docs/kancelar/6_Pravidla_skartace.docx) a jako
+ * podklad skartačního protokolu; samotné mazání se doplní až po schválení pravidel.
+ */
+function plan(spisId) {
+    const inv = inventory(spisId);
+    if (!inv) return null;
+    const spis = require('./spisy').getSpis(spisId);
+    const key = spis.spisZn ? _caseKey(spis.spisZn) : null;
+    const by = (col) => (db.get(col) || []).filter(x => x && x.spisId === spisId);
+    const files = key ? (db.get('inbox_files') || []).filter(f => f.caseNumber && _caseKey(f.caseNumber) === key) : [];
+    let rag = null;
+    try { rag = require('./rag'); } catch (e) { rag = null; }
+    const ragChunks = (relPath) => {
+        if (!rag || !relPath) return null;
+        try {
+            const dir = relPath.includes('/') ? relPath.split('/')[0] : 'root';
+            return (rag.loadPartition(dir).chunks || []).filter(c => c.fileName === relPath).length;
+        } catch (e) { return null; }
+    };
+    let drafts = [];
+    try { drafts = require('./drafts').listDrafts({ spisId }); } catch (e) { drafts = []; }
+    const ids = arr => arr.map(x => x.id).filter(Boolean);
+    const dokumenty = files.map(f => ({
+        id: f.id || null, soubor: f.relativePath || f.fileName || null, nazev: f.fileName || null,
+        ragUseku: ragChunks(f.relativePath || f.fileName), doruceno: f.deliveredAt || f.date || null
+    }));
+    return {
+        spisId, spisZn: inv.spisZn, stav: inv.stav, vytvoreno: new Date().toISOString(),
+        smazat: {
+            spis: [spisId],
+            spis_events: ids(by('spis_events')),
+            client_updates: ids(by('client_updates')),
+            drafts: ids(drafts),
+            meetings: ids(by('meetings')),
+            dokumenty
+        },
+        ponechat: { invoices: ids(by('invoices')), aml_checks: ids(by('aml_checks')) },
+        pseudonymizovat: { audit: inv.items.find(i => i.kind === 'audit').count },
+        souhrn: Object.assign({}, inv.totals, {
+            ragUseku: dokumenty.reduce((n, d) => n + (d.ragUseku || 0), 0),
+            souboruNaDisku: dokumenty.filter(d => d.soubor).length
+        })
+    };
+}
+
+module.exports = { inventory, plan };

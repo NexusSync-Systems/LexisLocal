@@ -189,6 +189,14 @@ router.get('/:id/skartace-inventar', (req, res) => {
     catch (err) { res.status(500).json({ error: `Inventář se nepodařilo sestavit: ${err.message}` }); }
 });
 
+// GET /api/spisy/:id/skartace-plan — konkrétní položky (ID, cesty, úseky RAG), které by kaskádová
+// skartace smazala / ponechala / pseudonymizovala. Jen čte; podklad pro schválení advokátem.
+router.get('/:id/skartace-plan', (req, res) => {
+    const spis = gate(req, res, 'admin'); if (!spis) return;
+    try { res.json(require('../lib/skartace_inventory').plan(spis.id)); }
+    catch (err) { res.status(500).json({ error: `Plán skartace se nepodařilo sestavit: ${err.message}` }); }
+});
+
 // GET /api/spisy/:id/audit?format=json|csv|docx — auditní stopa spisu (kdo, kdy, co: změny i čtení).
 // Jen vlastník spisu nebo správce (ukazuje i činnost kolegů). Samotný export se audituje.
 router.get('/:id/audit', async (req, res) => {
