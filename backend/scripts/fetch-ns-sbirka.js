@@ -147,7 +147,9 @@ function _curl(url) {
     return execFileSync('curl', ['-sS', '-L', '--fail', '--max-time', '60', '-A', UA['User-Agent'], url],
         { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
-async function getText(url) {
+// Přechodná chyba serveru sbírky (5xx) → ještě 2 pokusy s pauzou (26. 10. 2026: měsíční
+// aktualizace skončila na „HTTP 500 sitemap_index.xml“). FETCH_RETRY_MS jen pro testy.
+async function getText(url, attempt = 1) {
     if (_useCurl) return _curl(url);
     let res;
     try { res = await fetch(url, { headers: UA }); }
@@ -161,6 +163,12 @@ async function getText(url) {
         } catch (e2) {
             throw new Error(`nelze stáhnout ${url}: ${why}; curl: ${String(e2.stderr || e2.message).trim().split('\n')[0]}`);
         }
+    }
+    if (res.status >= 500 && attempt < 3) {
+        const wait = (parseInt(process.env.FETCH_RETRY_MS, 10) || 20000) * attempt;
+        console.log(`⏳ HTTP ${res.status} ${url} — zkusím znovu za ${Math.round(wait / 1000)} s (pokus ${attempt + 1}/3)`);
+        await new Promise(r => setTimeout(r, wait));
+        return getText(url, attempt + 1);
     }
     if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
     return res.text();
@@ -215,4 +223,4 @@ async function main() {
 
 if (require.main === module) main().catch(e => { console.error('❌ ' + e.message); process.exit(1); });
 
-module.exports = { parseDecision, sitemapLocs, htmlToText, header, matches };
+module.exports = { parseDecision, sitemapLocs, htmlToText, header, matches, getText };
