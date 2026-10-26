@@ -179,6 +179,12 @@ const ULOHY = {
                 PORT: '1', NODE_OPTIONS: '--max-old-space-size=8192' },
         };
     },
+    // Měsíční aktualizace judikatury: stáhne nová rozhodnutí ÚS/NS/NSS a nahraje je do báze
+    // rešeršníka (přes API běžícího serveru; neběží-li, jen stáhne). Souhrn v scratch/ukoly/.
+    aktualizace_judikatury: p => ({
+        cmd: NODE,
+        args: ['backend/scripts/aktualizace-judikatury.js', '--dni', String(int(p.dni, 7, 400, 60)), ...(p.bezNahrani ? ['--bez-nahrani'] : [])],
+    }),
     git_stav: () => ({ cmd: 'git', args: ['status', '--short', '--branch'] }),
     git_log: p => ({ cmd: 'git', args: ['log', '--oneline', '-n', String(int(p.n, 1, 50, 10))] }),
 };

@@ -48,8 +48,15 @@ async function reviewInChunks({ llm, model, systemPrompt, text, prompt, numCtx =
     const chunks = splitByArticles(text, maxChars);
     if (chunks.length < 2) return null;
     const use = chunks.slice(0, maxChunks);
-    const notes = [];
-    for (let i = 0; i < use.length; i++) {
+    // Části jsou na sobě nezávislé → zpracují se souběžně (server 25. 10. 2026: K4 s 6 částmi
+    // 55–63 s, části šly za sebou). Ollama obslouží OLLAMA_NUM_PARALLEL dotazů naráz;
+    // AGENT_CHUNK_CONCURRENCY (výchozí 1 = postupně jako dřív; doporučení po měření). Pořadí nálezů se zachová.
+    const conc = Math.max(1, Math.min(8, parseInt(process.env.AGENT_CHUNK_CONCURRENCY || '1', 10) || 1));
+    // Volitelný strop délky dílčích nálezů (tokeny; 0 = jen obecný AGENT_NUM_PREDICT).
+    const mapCap = parseInt(process.env.AGENT_CHUNK_NUM_PREDICT || '0', 10);
+    const results = new Array(use.length).fill(null);
+    let done = 0;
+    const one = async (i) => {
         const label = _range(use[i]);
         const messages = [
             { role: 'system', content: `${systemPrompt || ''}\n\nProcházíš DLOUHOU smlouvu po částech. Teď vidíš jen část ${i + 1}/${use.length} (${label}). ` +
@@ -59,14 +66,21 @@ async function reviewInChunks({ llm, model, systemPrompt, text, prompt, numCtx =
             { role: 'user', content: use[i] }
         ];
         try {
-            const r = await llm.chat({ model, messages, options: Object.assign({}, options, { num_ctx: numCtx }) });
+            const opt = Object.assign({}, options, { num_ctx: numCtx }, mapCap > 0 ? { num_predict: mapCap } : {});
+            const r = await llm.chat({ model, messages, options: opt });
             const out = String((r && r.message && r.message.content) || '').trim();
-            if (out && !/^bez rizik\.?$/i.test(out)) notes.push(`Část ${i + 1} (${label}):\n${out}`);
+            if (out && !/^bez rizik\.?$/i.test(out)) results[i] = `Část ${i + 1} (${label}):\n${out}`;
         } catch (e) {
-            notes.push(`Část ${i + 1} (${label}): nepodařilo se zpracovat (${e.message}).`);
+            results[i] = `Část ${i + 1} (${label}): nepodařilo se zpracovat (${e.message}).`;
         }
-        if (onChunk) { try { onChunk(i + 1, use.length); } catch (e) { /* jen průběh */ } }
-    }
+        done++;
+        if (onChunk) { try { onChunk(done, use.length); } catch (e) { /* jen průběh */ } }
+    };
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(conc, use.length) }, async () => {
+        while (next < use.length) await one(next++);
+    }));
+    const notes = results.filter(Boolean);
     return {
         notes: notes.join('\n\n') || 'V žádné části model riziko nenašel.',
         chunks: use.length,
