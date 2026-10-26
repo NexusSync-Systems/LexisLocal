@@ -160,8 +160,11 @@ router.post('/:agentId', async (req, res) => {
                 // ANONYMIZOVANĚ; vlastní znalostní báze agenta (scope=_kb_*) zůstává beze změny.
                 const redact = !!(resolvedFilters && resolvedFilters.redactClient);
                 const isKb = m => typeof m.scope === 'string' && m.scope.startsWith('_kb_');
+                // Cloudový model (Bedrock/OpenAI/Anthropic): pasáže z klientských spisů jen anonymizované —
+                // znalostní báze (zákony, judikatura) je veřejná a jde beze změny.
+                const cloudModel = (() => { try { return require('../lib/ai_provider').providerInfo().chat !== 'ollama'; } catch (e) { return false; } })();
                 const fmt = m => {
-                    const passage = (redact && !m.scope) ? anonymizeText(m.text) : m.text;
+                    const passage = ((redact || cloudModel) && !m.scope) ? anonymizeText(m.text) : m.text;
                     ragContextChunks.push({ text: passage, fileName: m.fileName });
                     const jl = judCite.label(m); // u judikatury soud + sp. zn., ať ji model může citovat
                     return `[Zdroj: ${jl ? jl + ' — ' : ''}${m.fileName}, Shoda: ${Math.round(m.score * 100)}%]:\n${passage}`;

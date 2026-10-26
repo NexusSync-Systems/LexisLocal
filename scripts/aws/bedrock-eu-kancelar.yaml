@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  LexisLocal — přístup ke Claude přes Amazon Bedrock JEN v EU (vlastní účet AWS kanceláře).
+  Vytvoří IAM uživatele bez klíče (klíč si správce vytvoří v konzoli), politiku jen na volání
+  modelů Anthropic přes EU inference profily a explicitní zákaz Bedrocku mimo eu-* regiony,
+  plus měsíční rozpočet s upozorněním e-mailem. Spouštějte v regionu eu-central-1.
+
+Parameters:
+  NazevUzivatele:
+    Type: String
+    Default: lexislocal-bedrock
+    Description: IAM uživatel, pod kterým LexisLocal volá Bedrock (klíč vytvoříte ručně v konzoli IAM).
+  MesicniRozpocetUSD:
+    Type: Number
+    Default: 100
+    MinValue: 1
+    Description: Měsíční rozpočet na Bedrock v USD (upozornění při 80 % a 100 %).
+  EmailUpozorneni:
+    Type: String
+    AllowedPattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    Description: E-mail správce kanceláře pro upozornění na rozpočet.
+
+Resources:
+  BedrockEuPolitika:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: LexisLocal - jen Claude pres Bedrock v EU
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: VolaniClaudePresEuProfil
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource:
+              - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.anthropic.*'
+              - 'arn:aws:bedrock:eu-*::foundation-model/anthropic.*'
+            Condition:
+              StringLike:
+                aws:RequestedRegion: 'eu-*'
+          - Sid: ZakazMimoEU
+            Effect: Deny
+            Action: 'bedrock:*'
+            Resource: '*'
+            Condition:
+              StringNotLike:
+                aws:RequestedRegion: 'eu-*'
+          - Sid: ZakazGlobalnichAJinychProfilu
+            Effect: Deny
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            NotResource:
+              - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.anthropic.*'
+              - 'arn:aws:bedrock:eu-*::foundation-model/anthropic.*'
+
+  LexisLocalUzivatel:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref NazevUzivatele
+      ManagedPolicyArns:
+        - !Ref BedrockEuPolitika
+      Tags:
+        - Key: aplikace
+          Value: LexisLocal
+
+  RozpocetBedrock:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${NazevUzivatele}-mesicni'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MesicniRozpocetUSD
+          Unit: USD
+        CostFilters:
+          Service:
+            - Amazon Bedrock
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref EmailUpozorneni }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref EmailUpozorneni }]
+
+Outputs:
+  Uzivatel:
+    Description: IAM uživatel pro LexisLocal — přístupový klíč vytvořte v konzoli IAM (Security credentials → Create access key → Application running outside AWS)
+    Value: !Ref LexisLocalUzivatel
+  Politika:
+    Value: !Ref BedrockEuPolitika

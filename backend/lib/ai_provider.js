@@ -11,11 +11,13 @@
  *
  * Volba backendu přes env (výchozí = ollama, takže stávající chování se nemění):
  *   AI_PROVIDER            společný default pro chat i embeddingy
- *   AI_CHAT_PROVIDER       'ollama' | 'openai' | 'anthropic'
+ *   AI_CHAT_PROVIDER       'ollama' | 'openai' | 'anthropic' | 'bedrock'
  *   AI_EMBED_PROVIDER      'ollama' | 'openai'
  * OpenAI / OpenAI-kompatibilní (OpenAI, LM Studio, LocalAI, …):
  *   OPENAI_BASE_URL (def. https://api.openai.com/v1), OPENAI_API_KEY,
  *   OPENAI_CHAT_MODEL (def. gpt-4o-mini), OPENAI_EMBED_MODEL (def. text-embedding-3-small)
+ * Amazon Bedrock v EU (jen chat; Claude přes Converse API, zámek na eu-* regiony a eu.* profily):
+ *   BEDROCK_REGION, BEDROCK_MODEL_ID, AWS přístup — viz lib/bedrock.js
  * Anthropic (jen chat; embeddings API nemá):
  *   ANTHROPIC_API_KEY, ANTHROPIC_MODEL (def. claude-3-5-sonnet-latest), ANTHROPIC_VERSION
  */
@@ -119,6 +121,7 @@ async function chat(params) {
     _guardLocalOnly('chat', p);
     if (p === 'openai') return _openaiChat(params.messages, params.options);
     if (p === 'anthropic') return _anthropicChat(params.messages, params.options);
+    if (p === 'bedrock') return require('./bedrock').chat(params.messages, params.options);
     // Strop délky odpovědi: bez num_predict může model „utéct“ a generovat minuty. Ollama
     // (stream:false) pošle hlavičky až po dogenerování, takže po 300 s spadne spojení
     // (serverový test 4. 10. 2026: souběh 8, jeden dotaz Sekretářky 313 s, „fetch failed“).
@@ -134,7 +137,7 @@ async function embeddings(params) {
     const p = _embedProvider();
     _guardLocalOnly('embed', p);
     if (p === 'openai') return _openaiEmbeddings(params.prompt != null ? params.prompt : params.input);
-    if (p === 'anthropic') throw new Error('Anthropic nemá embeddings API — použij AI_EMBED_PROVIDER=openai nebo ollama.');
+    if (p === 'anthropic' || p === 'bedrock') throw new Error(p + ' nemá embeddings API pro LexisLocal — vyhledávání zůstává lokální: AI_EMBED_PROVIDER=ollama.');
     return ollama.embeddings(params);
 }
 function providerInfo() { const c = assertLocalCompliance(); return { chat: c.chat, embed: c.embed, localOnly: c.localOnly, compliant: c.compliant }; }
