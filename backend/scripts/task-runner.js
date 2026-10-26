@@ -156,6 +156,29 @@ const ULOHY = {
                 '--query', 'Instances[0].[InstanceId,State.Name,LaunchTime]', '--output', 'text'],
         };
     },
+    // Instalační balíček báze (backend/scripts/kb-balicek.js): stažení cache vektorů z S3,
+    // sestavení balíčku a zkušební instalace do DOČASNÉ datové složky (skutečná báze se nemění).
+    aws_stahni_cache: () => ({
+        cmd: 'aws',
+        args: ['s3', 'cp', `s3://${AWS_BUCKET}/_cache/embeddings-bge-m3.jsonl.gz`, 'scratch/kb-balicek/embeddings-bge-m3.jsonl.gz',
+            '--region', AWS_REGION, '--only-show-errors'],
+    }),
+    kb_balicek_vytvor: () => ({
+        cmd: NODE,
+        args: ['backend/scripts/kb-balicek.js', '--vytvor', '--out', `scratch/kb-balicek/lexis-baze-${new Date().toISOString().slice(0, 10)}.tar.gz`,
+            '--cache', 'scratch/kb-balicek/embeddings-bge-m3.jsonl.gz'],
+    }),
+    kb_balicek_test: p => {
+        const soubor = String(p.soubor || '');
+        if (!/^lexis-baze-\d{4}-\d{2}-\d{2}\.tar\.gz$/.test(soubor)) throw new Error(`nepovolený balíček „${soubor}"`);
+        const tmp = path.join(require('os').tmpdir(), 'lexis-kb-balicek-test');
+        return {
+            cmd: NODE,
+            args: ['backend/scripts/kb-balicek.js', '--instaluj', `scratch/kb-balicek/${soubor}`, '--agent', 'resersnik'],
+            env: { WATCH_DIR: path.join(tmp, 'data'), LEXIS_DATA_DIR: path.join(tmp, 'data'), LEXIS_KEY_DIR: path.join(tmp, 'key'),
+                PORT: '1', NODE_OPTIONS: '--max-old-space-size=8192' },
+        };
+    },
     git_stav: () => ({ cmd: 'git', args: ['status', '--short', '--branch'] }),
     git_log: p => ({ cmd: 'git', args: ['log', '--oneline', '-n', String(int(p.n, 1, 50, 10))] }),
 };

@@ -49,7 +49,7 @@ describe('task-runner — schválené úlohy', () => {
 
     test('příkazy jsou pevné (node / npx / git), nikdy z požadavku', () => {
         for (const u of Object.keys(R.ULOHY)) {
-            const c = R.sestav({ uloha: u, parametry: u === 'seed_kb' ? { dir: 'judikatura-ns' } : u === 'aws_vysledky' ? { beh: '2026-10-24_1623_remote_judikatura' } : {}, cmd: 'sh', args: ['-c', 'x'] });
+            const c = R.sestav({ uloha: u, parametry: u === 'seed_kb' ? { dir: 'judikatura-ns' } : u === 'aws_vysledky' ? { beh: '2026-10-24_1623_remote_judikatura' } : u === 'kb_balicek_test' ? { soubor: 'lexis-baze-2026-10-26.tar.gz' } : {}, cmd: 'sh', args: ['-c', 'x'] });
             expect([process.execPath, 'npx', 'git', 'aws']).toContain(c.cmd);
         }
     });
@@ -86,5 +86,15 @@ describe('task-runner — schválené úlohy', () => {
         const b = R.sestav({ uloha: 'aws_spust_test', parametry: { typ: 'p5.48xlarge', count: 10 } }).args;
         expect(b[b.indexOf('--instance-type') + 1]).toBe('g6.xlarge');
         expect(b[b.indexOf('--count') + 1]).toBe('1');
+    });
+
+    test('kb_balicek_test: jen balíček ze scratch/kb-balicek, instalace do dočasné datové složky', () => {
+        const c = R.sestav({ uloha: 'kb_balicek_test', parametry: { soubor: 'lexis-baze-2026-10-26.tar.gz' } });
+        expect(c.args).toContain('scratch/kb-balicek/lexis-baze-2026-10-26.tar.gz');
+        expect(c.env.WATCH_DIR).toMatch(/lexis-kb-balicek-test/);
+        expect(c.env.LEXIS_KEY_DIR).toMatch(/lexis-kb-balicek-test/);
+        for (const zly of ['../x.tar.gz', 'lexis-baze-2026-10-26.tar.gz; rm', '/etc/passwd', '']) {
+            expect(() => R.sestav({ uloha: 'kb_balicek_test', parametry: { soubor: zly } })).toThrow(/balíček/);
+        }
     });
 });
