@@ -59,9 +59,10 @@ if [ "$PROFILE" = "judikatura" ]; then
   MAX_MINUTES=480; COMPARE_MODELS=""; SKIP_PROBE=1; SUITE_REPEAT="${SUITE_REPEAT:-2}"; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
   RERANK="${RERANK_JUD:-0}"; RAG_AGENT_K="${RAG_AGENT_K_JUD:-4}"      # jako pilot na Mac mini
   EMBED_MODEL_S3="${EMBED_MODEL_S3:-none}"                            # původní bge-m3 (jako na Macu)
-  KB_ARCHIVE_S3="${KB_ARCHIVE_S3:-s3://$RESULTS_BUCKET/_kb/kb-1.2.0.tar.gz}"
+  KB_ARCHIVE_S3="${KB_ARCHIVE_S3:-s3://$RESULTS_BUCKET/_cache/kb-1.2.0.tar.gz}"   # role instance čte jen _cache/
   NODE_HEAP="${NODE_HEAP:-8192}"
   KB_SAVE_DEBOUNCE="${KB_SAVE_DEBOUNCE:-3000}"   # odložený zápis báze při plnění (24. 10.: bez něj ~1 soubor/s)
+  AGENT_CHUNK_CONCURRENCY="${AGENT_CHUNK_CONCURRENCY:-2}"   # měření 10/2026: kontrola dlouhých smluv po částech souběžně (srovnat K4 s během 25. 10.: 55–63 s)
   MAX_MINUTES=480
 fi
 if [ "$PROFILE" = "integrace" ]; then
@@ -264,6 +265,7 @@ if [ "$RERANK_OK" = "1" ]; then
 fi
 
 [ -n "${KB_SAVE_DEBOUNCE:-}" ] && echo "RAG_KB_SAVE_DEBOUNCE_MS=$KB_SAVE_DEBOUNCE" >> /opt/LexisLocal/.env
+[ -n "${AGENT_CHUNK_CONCURRENCY:-}" ] && echo "AGENT_CHUNK_CONCURRENCY=$AGENT_CHUNK_CONCURRENCY" >> /opt/LexisLocal/.env
 cat > /etc/systemd/system/lexislocal.service <<UNIT
 [Unit]
 Description=LexisLocal backend (remote test)

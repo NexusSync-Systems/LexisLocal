@@ -17,8 +17,8 @@ Jen veřejná data (zákony, judikatura) a syntetické dotazy. Profil `judikatur
    ```bash
    tar --exclude='.DS_Store' -czf scratch/aws-upload/kb-1.2.0.tar.gz zakony judikatura-ns judikatura-us judikatura-nss
    ```
-2. **Nahrát do S3:** konzole S3 → bucket `lexislocal-bench-results-485237569555` → složka `_kb/`
-   → Upload `kb-1.2.0.tar.gz` (nebo `aws s3 cp scratch/aws-upload/kb-1.2.0.tar.gz s3://lexislocal-bench-results-485237569555/_kb/`).
+2. **Nahrát do S3:** konzole S3 → bucket `lexislocal-bench-results-485237569555` → složka `_cache/` (role instance čte jen `_cache/`, `_models/`, `_training/`)
+   → Upload `kb-1.2.0.tar.gz` (nebo `aws s3 cp scratch/aws-upload/kb-1.2.0.tar.gz s3://lexislocal-bench-results-485237569555/_cache/`).
 3. **Commit + push** větve `release-prep` (instance stahuje skript z GitHubu).
 4. **Spustit instanci** jako u minulých testů: g6.xlarge, AMI Deep Learning Base OSS Nvidia Driver
    GPU (Ubuntu 22.04), **disk 200 GB**, Shutdown behavior TERMINATE, IAM role `lexis-bench-ec2`,
@@ -40,7 +40,7 @@ Jen veřejná data (zákony, judikatura) a syntetické dotazy. Profil `judikatur
 
 - První běh počítá vektory celé báze na GPU (odhad 1–2 h) a cache (~1,5 GB) uloží do
   `_cache/embeddings-bge-m3.jsonl.gz`; další běh plní bázi z cache v minutách.
-- Pokud role `lexis-bench-ec2` nemá čtení z `_kb/`, log ukáže „archiv báze … nejde stáhnout“
-  a test poběží jen se zákony z repozitáře — pak přidat `s3:GetObject` na `…/_kb/*`.
+- Archiv musí být v `_cache/` — role `lexis-bench-ec2` jinde číst nesmí; jinak log ukáže „archiv báze … nejde stáhnout“
+  a test poběží jen se zákony z repozitáře.
 - Proměnné pro jiný běh (v user data před `bash /root/r.sh`): `RERANK_JUD=1`, `RAG_AGENT_K_JUD=5`,
   `SUITE_REPEAT=1`, `EMBED_MODEL_S3=<doladěný model>`.
