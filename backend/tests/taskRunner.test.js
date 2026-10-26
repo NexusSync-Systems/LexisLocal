@@ -90,8 +90,11 @@ describe('task-runner — schválené úlohy', () => {
         expect(k.join(' ')).toContain('Value=lexis-test-1.2.0-kancelar');
         for (const zly of ['../x', 'judikatura; rm', 'plny']) expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { profil: zly } })).toThrow(/nepovolená hodnota/);
         expect(require('fs').existsSync(require('path').join(__dirname, '..', '..', 'scripts', 'aws', 'bootstrap-kancelar.sh'))).toBe(true);
-        // typ ani počet z požadavku nejde změnit
-        const b = R.sestav({ uloha: 'aws_spust_test', parametry: { typ: 'p5.48xlarge', count: 10 } }).args;
+        // typ jen ze seznamu jednoho-GPU typů, počet z požadavku nejde změnit
+        expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { typ: 'p5.48xlarge' } })).toThrow(/nepovolená hodnota/);
+        const g5 = R.sestav({ uloha: 'aws_spust_test', parametry: { typ: 'g5.xlarge', profil: 'kancelar' } }).args;
+        expect(g5[g5.indexOf('--instance-type') + 1]).toBe('g5.xlarge');
+        const b = R.sestav({ uloha: 'aws_spust_test', parametry: { count: 10 } }).args;
         expect(b[b.indexOf('--instance-type') + 1]).toBe('g6.xlarge');
         expect(b[b.indexOf('--count') + 1]).toBe('1');
     });

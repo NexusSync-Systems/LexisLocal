@@ -25,6 +25,9 @@ Na serveru (GPU, plná báze, ~10 h, vypne se sám) — úloha spouštěče, **s
 {"uloha": "aws_spust_test", "parametry": {"profil": "kancelar", "az": "b"}}
 ```
 
+Když g6.xlarge nemá kapacitu (`InsufficientInstanceCapacity`), lze zvolit `"typ": "g5.xlarge"` (A10G, rychlejší)
+nebo `"g4dn.xlarge"` (T4, pomalejší) — časy odezvy pak nejdou přímo srovnat s běhy na g6.
+
 Profil `kancelar` (`scripts/aws/remote-office-userdata.sh`): stejná báze a nastavení jako pilot na
 Mac mini (bge-m3, bez rerankeru, K=4), studený start bez cache vektorů, paměť backendu a GPU každých
 5 min do `pamet.log`, po simulaci záloha se zkouškou obnovy. `OFFICE_HOURS=3` zhustí den (levnější).
