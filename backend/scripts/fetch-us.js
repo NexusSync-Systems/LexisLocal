@@ -28,6 +28,7 @@
  * Pak: node backend/scripts/seed-kb.js --agent resersnik --dir ./judikatura-us --token-file ~/.lexislocal/api_token
  *
  * Přepínače: --typy "Nález,Stanovisko pléna" (lze přidat Usnesení)  --od-roku RRRR
+ *   NALUS: --usneseni (jen usnesení)  --jen-publikovana (jen publikovaná ve Sbírce nálezů a usnesení)
  *   --do-roku RRRR  --limit N  --vyznam N (jen význam 1..N; 1 = nejvýznamnější)
  * Bez závislostí — Node ≥ 18 (+ systémový `unzip` pro čtení ZIPu, `curl` pro NALUS).
  */
@@ -59,11 +60,15 @@ function parseArgs(argv) {
         else if (k === '--nalus') a.nalus = true;
         else if (k === '--do') a.do = next();
         else if (k === '--prepsat') a.prepsat = true;
+        else if (k === '--usneseni') a.usneseni = true;           // NALUS: jen usnesení (místo nálezů a stanovisek)
+        else if (k === '--jen-publikovana') a.jenPublikovana = true; // NALUS: jen publikovaná ve Sbírce nálezů a usnesení
         else if (k === '--od') a.od = next();
         else if (k === '--delay') a.delay = Math.max(1000, parseInt(next(), 10) || 2000);
         else if (k === '--help' || k === '-h') a.help = true;
         else { console.error(`Neznámý argument: ${k}`); a.help = true; }
     }
+    // Usnesení: výchozí filtr typů jen „Usnesení“ (pokud --typy neurčí jinak)
+    if (a.usneseni && !argv.includes('--typy')) a.typy = ['Usnesení'];
     if (a.ccc) a.ccc = a.ccc.replace(/^~(?=$|\/)/, os.homedir());
     return a;
 }
@@ -508,9 +513,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 /** Odešle vyhledávací formulář (nálezy + stanoviska pléna od data) a vrátí HTML 1. stránky výsledků. */
 async function nalusSearch(a, jar) {
     const form = curl(['-c', jar, '-b', jar, `${NALUS}/Search/Search.aspx`]);
-    const fields = Object.assign(hiddenFields(form), {
-        'ctl00$MainContent$nalezy': 'on',
-        'ctl00$MainContent$stanoviska_plena': 'on',
+    const fields = Object.assign(hiddenFields(form), nalusTypeFields(a), {
         'ctl00$MainContent$decidedFrom': a.od || '01.01.2024',
         'ctl00$MainContent$razeni': '3',
         'ctl00$MainContent$resultsPageSize': '80',
@@ -521,6 +524,15 @@ async function nalusSearch(a, jar) {
     for (const [k, v] of Object.entries(fields)) data.push('--data-urlencode', `${k}=${v}`);
     await sleep(a.delay);
     return curl(['-c', jar, '-b', jar, ...data, `${NALUS}/Search/Search.aspx`]);
+}
+
+/** Zaškrtávací pole formuláře NALUS (nezaškrtnuté se neposílá): nálezy + stanoviska pléna,
+ *  nebo s --usneseni jen usnesení; --jen-publikovana = jen publikovaná ve Sbírce nálezů a usnesení. */
+function nalusTypeFields(a) {
+    const f = a.usneseni ? { 'ctl00$MainContent$usneseni': 'on' }
+        : { 'ctl00$MainContent$nalezy': 'on', 'ctl00$MainContent$stanoviska_plena': 'on' };
+    if (a.jenPublikovana) f['ctl00$MainContent$jen_publikovana'] = 'on';
+    return f;
 }
 
 /** Soubor vznikl z NALUS (ne z datasetu) — jen takové smí --prepsat přepsat. */
@@ -534,7 +546,7 @@ async function importNalus(a) {
     const existing = new Set(fs.readdirSync(a.out));
     let saved = 0, already = 0, failed = 0, filtered = 0;
     try {
-        console.log(`🔎 NALUS: nálezy a stanoviska pléna od ${a.od || '01.01.2024'}${a.do ? ` do ${a.do}` : ''}…`);
+        console.log(`🔎 NALUS: ${a.usneseni ? 'usnesení' : 'nálezy a stanoviska pléna'}${a.jenPublikovana ? ' (jen publikovaná ve SbNU)' : ''} od ${a.od || '01.01.2024'}${a.do ? ` do ${a.do}` : ''}…`);
         const prvni = await nalusSearch(a, jar);
         let page = Object.assign(parseResultsPage(prvni), { html: prvni });
         const total = page.total;
@@ -637,6 +649,7 @@ async function main() {
 if (require.main === module) main().catch(e => { console.error('❌ ' + e.message); process.exit(1); });
 
 module.exports = {
+    nalusTypeFields, parseArgs,
     CsvParser, parseCsv, readCsv, rVector, formatSpZn, czDate, metaFromRow, matches, header, cleanText,
     fileNameFor, spZnFromEcli, parseResultsPage, szFromNalusZn, jmenoSoudce, nalusMeta, pojmenujPredpis, parseNalusText, resultLinks, hiddenFields, ecliFromSz, nalusDate, importCcc,
 };

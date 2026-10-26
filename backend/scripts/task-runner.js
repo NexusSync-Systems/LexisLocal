@@ -112,6 +112,11 @@ const ULOHY = {
         cmd: NODE,
         args: ['backend/scripts/fetch-us.js', '--nalus', '--od', datum(p.od, '01.01.2024'), '--out', './judikatura-us'],
     }),
+    // Usnesení ÚS publikovaná ve Sbírce nálezů a usnesení (rozhodnutí 26. 10. 2026: jen publikovaná).
+    fetch_us_usneseni: p => ({
+        cmd: NODE,
+        args: ['backend/scripts/fetch-us.js', '--nalus', '--usneseni', '--jen-publikovana', '--od', datum(p.od, '01.01.1993'), '--out', './judikatura-us'],
+    }),
     fetch_nss: p => ({
         cmd: NODE,
         args: ['backend/scripts/fetch-nss-sbirka.js', '--out', './judikatura-nss',

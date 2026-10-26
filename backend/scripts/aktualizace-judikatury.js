@@ -28,6 +28,7 @@ const TOKEN_FILE = path.join(os.homedir(), '.lexislocal', 'api_token');
 
 const ZDROJE = [
     { nazev: 'ÚS (NALUS)', dir: 'judikatura-us', args: (o) => ['backend/scripts/fetch-us.js', '--nalus', '--od', o.od, '--out', './judikatura-us'] },
+    { nazev: 'ÚS usnesení (SbNU)', dir: 'judikatura-us', args: (o) => ['backend/scripts/fetch-us.js', '--nalus', '--usneseni', '--jen-publikovana', '--od', o.od, '--out', './judikatura-us'] },
     { nazev: 'NSS (Sbírka)', dir: 'judikatura-nss', args: (o) => ['backend/scripts/fetch-nss-sbirka.js', '--out', './judikatura-nss', '--od-roku', String(o.odRoku)] },
     { nazev: 'NS (Sbírka)', dir: 'judikatura-ns', args: (o) => ['backend/scripts/fetch-ns-sbirka.js', '--out', './judikatura-ns', '--od-roku', String(o.odRoku), '--by-druh'] },
 ];
@@ -82,9 +83,9 @@ async function main(argv) {
         const pred = listTxt(dir);
         const r = await run(z.args(o), z.nazev);
         const po = listTxt(dir);
-        nove[z.dir] = [...po].filter(f => !pred.has(f)).sort();
+        nove[z.nazev] = [...po].filter(f => !pred.has(f)).sort();
         if (r.code !== 0) chyby++;
-        souhrn.push(`- **${z.nazev}**: ${nove[z.dir].length} nových${r.code !== 0 ? ` — ⚠️ skript skončil kódem ${r.code}` : ''}`);
+        souhrn.push(`- **${z.nazev}**: ${nove[z.nazev].length} nových${r.code !== 0 ? ` — ⚠️ skript skončil kódem ${r.code}` : ''}`);
     }
     const celkem = Object.values(nove).reduce((n, a) => n + a.length, 0);
 
@@ -95,8 +96,10 @@ async function main(argv) {
         if (!url) nahrano = '⚠️ server neběží — rozhodnutí jsou stažená, nahrají se při příští aktualizaci (nebo úloha seed_kb)';
         else {
             const res = [];
-            for (const z of ZDROJE) {
-                if (!nove[z.dir].length) continue;
+            // Každou složku jednou (ÚS nálezy i usnesení jdou do judikatura-us).
+            const dirs = [...new Set(ZDROJE.filter(z => nove[z.nazev].length).map(z => z.dir))];
+            for (const dir of dirs) {
+                const z = { dir };
                 const r = await run(['backend/scripts/seed-kb.js', '--agent', 'resersnik', '--dir', './' + z.dir, '--api', url, '--token-file', TOKEN_FILE], `nahrání ${z.dir}`);
                 const m = /Hotovo:[^\n]*/.exec(r.tail);
                 res.push(`${z.dir}: ${m ? m[0] : `kód ${r.code}`}`);

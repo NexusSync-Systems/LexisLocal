@@ -6,9 +6,10 @@ const R = require('../scripts/task-runner');
 test('datum pro NALUS a zdroje (pevné skripty a složky)', () => {
     expect(A.ddmmyyyy(new Date(2026, 9, 5))).toBe('05.10.2026');
     const o = { od: '01.09.2026', odRoku: 2025 };
-    expect(A.ZDROJE.map(z => z.dir)).toEqual(['judikatura-us', 'judikatura-nss', 'judikatura-ns']);
+    expect(A.ZDROJE.map(z => z.dir)).toEqual(['judikatura-us', 'judikatura-us', 'judikatura-nss', 'judikatura-ns']);
+    expect(A.ZDROJE[1].args(o)).toEqual(expect.arrayContaining(['--usneseni', '--jen-publikovana']));
     expect(A.ZDROJE[0].args(o)).toEqual(['backend/scripts/fetch-us.js', '--nalus', '--od', '01.09.2026', '--out', './judikatura-us']);
-    expect(A.ZDROJE[2].args(o)).toContain('--by-druh');
+    expect(A.ZDROJE[3].args(o)).toContain('--by-druh');
 });
 
 test('listTxt: rekurzivně, relativní cesty, jen .txt', () => {

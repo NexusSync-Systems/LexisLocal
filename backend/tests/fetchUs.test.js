@@ -193,3 +193,17 @@ test('NALUS: řádek výsledku bez tříd u buněk se taky rozpozná', () => {
     expect(items).toHaveLength(1);
     expect(items[0].spisZn).toBe('IV. ÚS 729/23');
 });
+
+describe('NALUS: usnesení publikovaná ve Sbírce', () => {
+    const U = require('../scripts/fetch-us');
+    test('formulář: výchozí nálezy + stanoviska, s --usneseni jen usnesení, --jen-publikovana', () => {
+        expect(U.nalusTypeFields({})).toEqual({ 'ctl00$MainContent$nalezy': 'on', 'ctl00$MainContent$stanoviska_plena': 'on' });
+        expect(U.nalusTypeFields({ usneseni: true, jenPublikovana: true })).toEqual({ 'ctl00$MainContent$usneseni': 'on', 'ctl00$MainContent$jen_publikovana': 'on' });
+    });
+    test('přepínače: --usneseni změní filtr typů na Usnesení (pokud --typy neurčí jinak)', () => {
+        expect(U.parseArgs(['node', 'x', '--nalus', '--usneseni', '--jen-publikovana', '--od', '01.01.1993']))
+            .toMatchObject({ nalus: true, usneseni: true, jenPublikovana: true, typy: ['Usnesení'], od: '01.01.1993' });
+        expect(U.parseArgs(['node', 'x', '--nalus', '--usneseni', '--typy', 'Usnesení,Nález']).typy).toEqual(['Usnesení', 'Nález']);
+        expect(U.parseArgs(['node', 'x', '--nalus']).typy).toEqual(['Nález', 'Stanovisko pléna']);
+    });
+});
