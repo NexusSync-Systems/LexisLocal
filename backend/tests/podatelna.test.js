@@ -134,3 +134,12 @@ test('nečitelný dokument zůstane v doručené poště se štítkem (dřív zm
     expect(it.unreadable).toBe(true);
     expect(it.summary).toMatch(/Nečitelný dokument/);
 }, 30000);
+
+test('kontrola smluv: vyloučení odpovědnosti za vady — zmínka „vad“ jinde nestačí, doplněk se připojí (server 27. 10. 2026)', () => {
+    const cs = require('../lib/clause_scan');
+    const t = 'Smlouva o dílo uzavřená mezi objednatelem a zhotovitelem podle občanského zákoníku.\nČlánek 1\nOdpovědnost zhotovitele za vady díla se vylučuje v plném rozsahu.\n' +
+        'Článek 2\nStrany smlouvu podepsaly a přečetly si ji pečlivě, souhlasí s jejím obsahem a na důkaz připojují podpisy.\n';
+    const f = cs.scanContract(t);
+    expect(cs.missingAppendix('Rizika: záruka za vady je krátká (§ 1814).', f).missing).toEqual(['vzdani_vad']);
+    expect(cs.missingAppendix('Čl. 1 vylučuje odpovědnost za vady — neplatné, § 1814 písm. b) OZ.', f).missing).toEqual([]);
+});

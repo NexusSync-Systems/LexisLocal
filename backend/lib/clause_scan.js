@@ -101,7 +101,10 @@ const RULES = [
     },
     {
         id: 'vzdani_vad', label: 'Vzdání se práv z vadného plnění', law: '§ 1814 písm. b) OZ, § 2161 OZ (spotřebitel se práv nemůže vzdát)',
-        re: /vzdává\S*[^.]{0,40}práv\S*\s+z\s+vadn|nemá\s+práv\S*\s+z\s+vad|neodpovídá\s+za\s+vady|odpovědnost\S*[^.]{0,40}za\s+vady[^.]{0,40}vylučuje|vylučuje\s+se\s+odpovědnost[^.]{0,40}vad/i, keys: /vad/i
+        re: /vzdává\S*[^.]{0,40}práv\S*\s+z\s+vadn|nemá\s+práv\S*\s+z\s+vad|neodpovídá\s+za\s+vady|odpovědnost\S*[^.]{0,40}za\s+vady[^.]{0,40}vylučuje|vylučuje\s+se\s+odpovědnost[^.]{0,40}vad/i,
+        // nestačí slovo „vad“ kdekoli v odpovědi — musí říct, že odpovědnost/práva z vad jsou vyloučena
+        // (server 27. 10. 2026: kontrolor 3× z 12 vyloučení přešel a doplněk se nepřipojil)
+        keys: /(vylo?u[čc]\S*|vzd[áa]v\S*|neodpov[íi]d\S*|nem[áa]\s+pr[áa]v)[^.]{0,80}vad|vad\S*[^.]{0,80}(vylo?u[čc]|vzd[áa]v|neodpov[íi]d)/i
     },
     {
         id: 'bez_odstoupeni', label: 'Vyloučení práva odstoupit od smlouvy', law: '§ 1813 OZ; zákonná práva odstoupit nelze u spotřebitele vyloučit',
