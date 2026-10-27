@@ -51,6 +51,29 @@ function allowed(req, res, draftOrSpisId, level) {
     return true;
 }
 
+const K = require('../lib/korespondence');
+
+// Úpravy konceptu: zápis do spisu, NEBO podatelna u vlastní neschválené korespondence (lib/korespondence.js).
+function loadEdit(req, res) {
+    const d = D.getDraft(req.params.id);
+    if (!d) { res.status(404).json({ error: 'Koncept nenalezen.' }); return null; }
+    const p = principalOf(req);
+    if (p.kind === 'agent' && !principalLib.hasScope(p, 'write')) { res.status(403).json({ error: 'Agent nemá oprávnění zapisovat koncepty (scope write).' }); return null; }
+    if (!d.spisId || !access.isFirmMode() || K.canEditDraft(p, d)) return d;
+    res.status(403).json({ error: d.korespondence ? 'Upravit lze jen vlastní neschválenou korespondenci.' : 'Přístup ke spisu odepřen.' });
+    return null;
+}
+
+/** Po založení korespondence podatelnou: záznam ve spisovém deníku + varování, pokud text obsahuje právní hodnocení. */
+function afterKorespondence(d, principal) {
+    if (!d || !d.korespondence || !d.korespondence.viaPodatelna) return;
+    try { require('../lib/spisy').addEvent(d.spisId, 'korespondence', `${principal.name || 'Podatelna'} připravil(a) korespondenci „${d.korespondence.label}“ — ke schválení advokátem.`, { draftId: d.id, typ: d.korespondence.typ }); } catch (e) { /* deník best-effort */ }
+    const w = K.contentWarnings(D.specToText(d.versions[d.versions.length - 1].spec));
+    if (w.length) {
+        try { D.addComment(d.id, { text: `Kontrola korespondence od podatelny: text obsahuje ${w.join(', ')} — do rutinní korespondence nepatří, ověřte.` }, { userId: 'system:korespondence', name: 'Kontrola korespondence', kind: 'system' }); } catch (e) { /* best-effort */ }
+    }
+}
+
 function fail(res, e) {
     const status = e.status || 500;
     const body = { error: e.message };
@@ -81,15 +104,30 @@ router.get('/', (req, res) => {
     } catch (e) { fail(res, e); }
 });
 
+// GET /api/drafts/korespondence — typy rutinní korespondence a zda ji podatelna smí připravovat
+router.get('/korespondence', (req, res) => {
+    res.json({ enabled: K.enabled(), source: K.source(), typy: K.TYPY.map(t => ({ id: t.id, label: t.label })) });
+});
+
 router.post('/', (req, res) => {
     const b = req.body || {};
-    if (!allowed(req, res, b.spisId || null, 'write')) return;
+    let kor = null;
+    if (b.korespondence) {
+        // korespondence: zápis do spisu, nebo podatelna se zapnutou volbou a typem ze seznamu
+        const p0 = principalOf(req);
+        if (p0.kind === 'agent' && !principalLib.hasScope(p0, 'write')) return res.status(403).json({ error: 'Agent nemá oprávnění zapisovat koncepty (scope write).' });
+        const c = K.canCreate(p0, b.spisId || null, b.korespondence);
+        if (!c.ok) return res.status(c.status).json({ error: c.error, code: c.code });
+        if (!K.typ(b.korespondence)) return res.status(400).json({ error: 'Neznámý typ korespondence.' });
+        kor = K.meta(b.korespondence, p0, c.viaPodatelna);
+    } else if (!allowed(req, res, b.spisId || null, 'write')) return;
     try {
         if (b.spisId && !_spis(b.spisId)) return res.status(400).json({ error: 'Spis nenalezen.' });
         const p = principalOf(req);
         const src = p.kind === 'agent' ? { type: 'agent', agentId: p.name, agentName: p.name } : (b.source && b.source.type === 'import' ? { type: 'import' } : { type: 'user' });
-        const d = D.createDraft({ title: b.title, spisId: b.spisId, caseNumber: b.caseNumber, spec: b.spec, text: b.text, note: b.note, source: src }, p);
-        audit('Založení konceptu', d, req, { ai: d.aiGenerated });
+        const d = D.createDraft({ title: b.title, spisId: b.spisId, caseNumber: b.caseNumber, spec: b.spec, text: b.text, note: b.note, source: src, korespondence: kor }, p);
+        audit('Založení konceptu', d, req, { ai: d.aiGenerated, korespondence: kor ? kor.typ : undefined, podatelna: kor ? kor.viaPodatelna : undefined });
+        afterKorespondence(d, p);
         res.status(201).json(D.view(d));
     } catch (e) { fail(res, e); }
 });
@@ -112,7 +150,7 @@ router.get('/:id/text', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-    const d = load(req, res, 'write'); if (!d) return;
+    const d = loadEdit(req, res); if (!d) return;
     try {
         const r = D.saveVersion(d.id, req.body || {}, principalOf(req));
         if (!r.unchanged) audit('Uložení verze konceptu', r.draft, req, { kind: r.draft.versions[r.draft.versions.length - 1].kind });
@@ -121,17 +159,17 @@ router.put('/:id', (req, res) => {
 });
 
 router.post('/:id/lock', (req, res) => {
-    const d = load(req, res, 'write'); if (!d) return;
+    const d = loadEdit(req, res); if (!d) return;
     try { res.json({ lock: D.acquireLock(d.id, principalOf(req)), version: d.version }); } catch (e) { fail(res, e); }
 });
 
 router.delete('/:id/lock', (req, res) => {
-    const d = load(req, res, 'write'); if (!d) return;
+    const d = loadEdit(req, res); if (!d) return;
     try { D.releaseLock(d.id, principalOf(req)); res.json({ success: true }); } catch (e) { fail(res, e); }
 });
 
 router.post('/:id/status', (req, res) => {
-    const d = load(req, res, 'write'); if (!d) return;
+    const d = loadEdit(req, res); if (!d) return;
     try {
         const st = req.body && req.body.status;
         const p = principalOf(req);
@@ -150,7 +188,7 @@ router.post('/:id/comments', (req, res) => {
 });
 
 router.post('/:id/comments/:cid/resolve', (req, res) => {
-    const d = load(req, res, 'write'); if (!d) return;
+    const d = loadEdit(req, res); if (!d) return;
     try { res.json(D.resolveComment(d.id, req.params.cid, principalOf(req))); } catch (e) { fail(res, e); }
 });
 

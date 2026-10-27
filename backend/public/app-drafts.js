@@ -171,7 +171,7 @@ Object.assign(LexisLocalApp.prototype, {
                         <span class="draft-status st-${escapeHtml(d.status)}">${escapeHtml(d.statusLabel || DRAFT_STATUS[d.status] || d.status)}</span>
                     </div>
                     <div style="font-size:0.72rem;color:var(--text-muted);margin-top:3px;">
-                        ${d.aiGenerated ? '🤖 AI · ' : ''}v${escapeHtml(d.version)} · ${escapeHtml((d.lastAuthor && d.lastAuthor.name) || '')} · ${escapeHtml(new Date(d.updatedAt).toLocaleString('cs-CZ'))}
+                        ${d.korespondence ? '✉️ ' + escapeHtml(d.korespondence.label) + (d.korespondence.viaPodatelna && d.korespondence.preparedBy ? ' · připravil(a) ' + escapeHtml(d.korespondence.preparedBy.name) : '') + ' · ' : ''}${d.aiGenerated ? '🤖 AI · ' : ''}v${escapeHtml(d.version)} · ${escapeHtml((d.lastAuthor && d.lastAuthor.name) || '')} · ${escapeHtml(new Date(d.updatedAt).toLocaleString('cs-CZ'))}
                         ${d.caseNumber ? ' · ' + escapeHtml(d.caseNumber) : ''}${d.openComments ? ` · 💬 ${escapeHtml(d.openComments)}` : ''}${d.lock ? ` · 🔒 ${escapeHtml(d.lock.name)}` : ''}
                     </div>
                 </div>`).join('');
@@ -188,6 +188,29 @@ Object.assign(LexisLocalApp.prototype, {
             await this.loadDraftsTab();
             await this.openDraft(d.id, { edit: true });
         } catch (e) { alert('Koncept nejde založit: ' + e.message); }
+    },
+
+    // Rutinní korespondence přes Spisovatele (lib/korespondence.js): typ ze seznamu → koncept „ke kontrole“.
+    // Podatelna (asistentka) jen se zapnutou volbou kanceláře; schvaluje vždy advokát.
+    async newKorespondence() {
+        try {
+            const k = await this.dGet('/drafts/korespondence');
+            const list = (k.typy || []).map((t, i) => `${i + 1} – ${t.label}`).join('\n');
+            const n = await LexisUI.prompt(`Typ korespondence (číslo):\n${list}`, '1');
+            if (n == null) return;
+            const t = (k.typy || [])[parseInt(n, 10) - 1];
+            if (!t) { alert('Neplatná volba typu.'); return; }
+            const zn = await LexisUI.prompt('Spisová značka spisu:', '');
+            if (!zn) return;
+            const sp = ((await this.dGet('/spisy')).spisy || []).find(s => String(s.spisZn || '').replace(/\s+/g, ' ').trim().toLowerCase() === zn.replace(/\s+/g, ' ').trim().toLowerCase());
+            if (!sp) { alert('Spis s touto sp. zn. nevidíte (nebo neexistuje).'); return; }
+            const zadani = await LexisUI.prompt(`${t.label} — co má dopis obsahovat (podklady, termín, číslo faktury…):`, '');
+            if (zadani == null) return;
+            const r = await this.dSend('/agent/spisovatel', 'POST', { prompt: `${t.label}. ${zadani}`.trim(), korespondence: t.id, saveDraft: true, spisId: sp.id, draftTitle: `${t.label} – ${sp.spisZn}` });
+            if (!r.draft || !r.draft.id) { alert('Koncept nevznikl: ' + ((r.draft && r.draft.error) || 'model nevrátil dopis')); return; }
+            await this.loadDraftsTab();
+            await this.openDraft(r.draft.id);
+        } catch (e) { alert('Korespondenci nejde připravit: ' + e.message); }
     },
 
     async openDraft(id, opts) {

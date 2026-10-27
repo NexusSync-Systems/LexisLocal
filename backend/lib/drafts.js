@@ -221,6 +221,13 @@ function _put(draft) {
     return draft;
 }
 
+function _korMeta(k) {
+    if (!k || typeof k !== 'object' || !k.typ) return null;
+    const pb = k.preparedBy || {};
+    return { typ: _s(k.typ, 40), label: _s(k.label || '', 120), viaPodatelna: !!k.viaPodatelna,
+        preparedBy: { userId: _s(pb.userId || 'local', 80), name: _s(pb.name || '', 120) } };
+}
+
 function _who(principal) {
     const p = principal || {};
     return { userId: p.userId || 'local', name: p.name || 'Místní uživatel', kind: p.kind === 'agent' ? 'agent' : (p.kind || 'user') };
@@ -240,7 +247,8 @@ function summary(d) {
         lock: _lockActive(d) ? { userId: d.lock.userId, name: d.lock.name, until: d.lock.until } : null,
         openComments: (d.comments || []).filter(c => !c.resolved).length,
         preview: text.slice(0, 240), createdAt: d.createdAt, updatedAt: d.updatedAt,
-        approvedBy: d.approvedBy || null, approvedAt: d.approvedAt || null
+        approvedBy: d.approvedBy || null, approvedAt: d.approvedAt || null,
+        korespondence: d.korespondence || null
     };
 }
 
@@ -270,7 +278,9 @@ function createDraft(input, principal) {
         title,
         spisId: _id(input.spisId) || null,
         caseNumber: input.caseNumber ? _s(input.caseNumber, 80) : null,
-        status: ai ? 'ke_kontrole' : (STATUSES.includes(input.status) && input.status !== 'schvaleno' ? input.status : 'koncept'),
+        // korespondence od podatelny jde vždy ke kontrole advokátovi (lib/korespondence.js)
+        status: (ai || (input.korespondence && input.korespondence.viaPodatelna)) ? 'ke_kontrole' : (STATUSES.includes(input.status) && input.status !== 'schvaleno' ? input.status : 'koncept'),
+        korespondence: _korMeta(input.korespondence),
         aiGenerated: !!ai,
         source: input.source ? {
             type: _s(input.source.type, 20) || null, agentId: input.source.agentId ? _s(input.source.agentId, 64) : null,
@@ -511,7 +521,7 @@ function saveAgentOutput(o) {
             const r = saveVersion(o.draftId, { text: o.text, baseVersion: o.baseVersion, note: o.note || `Revize: ${o.agentName || o.agentId}`, source }, agentPrincipal);
             d = r.draft; created = false;
         } else {
-            d = createDraft({ title: o.title, spisId: o.spisId, caseNumber: o.caseNumber, text: o.text, source, note: o.note || `Návrh: ${o.agentName || o.agentId}` }, agentPrincipal);
+            d = createDraft({ title: o.title, spisId: o.spisId, caseNumber: o.caseNumber, text: o.text, source, note: o.note || `Návrh: ${o.agentName || o.agentId}`, korespondence: o.korespondence }, agentPrincipal);
             created = true;
         }
         if (o.warnings && String(o.warnings).trim()) {

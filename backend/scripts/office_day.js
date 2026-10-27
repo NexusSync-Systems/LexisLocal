@@ -279,6 +279,10 @@ async function onboarding(M, R) {
         if (ok2(r.status)) kbOk++;
     }
     check('Z8', 'Interní postupy kanceláře v bázi rešeršníka', kbOk === kbFiles.length, { severity: 'medium', detail: `${kbOk}/${kbFiles.length}` });
+    // kancelář povolí podatelně rutinní korespondenci (lib/korespondence.js; výchozí vypnuto)
+    const ko = await post('admin', 'nastaveni', '/api/settings/podatelna-korespondence', { enabled: true }, { expect: [200, 404] });
+    S.korespondence = ko.status === 200;
+    if (S.korespondence) { const t = await get('simkova', 'korespondence_typy', '/api/drafts/korespondence'); S.korTypy = ((t.json && t.json.typy) || []).map(x => x.id); }
 
     // digitalizace stávajících dokumentů (asistentka)
     let docs = M.dokumenty.filter(d => d.phase === 'onboarding');
@@ -419,7 +423,7 @@ function buildPlan(M, R) {
         advokat: [['resersnik_spis', 1.2], ['resersnik_obecne', 0.7], ['kontrola_smlouvy', 0.5], ['koncept', 0.4], ['otevrit_spis', 4], ['lhutnik', 1],
             ['koncepty_schvalit', 0.6], ['hledani', 0.6], ['kalendar', 1], ['odpoved_klientovi', 0.4], ['cizi_spis', 0.25]],
         koncipient: [['resersnik_spis', 1.2], ['resersnik_obecne', 1], ['koncept', 1], ['anonymizace', 0.4], ['citace', 0.4], ['otevrit_spis', 3], ['vysvetleni_klientovi', 0.3]],
-        asistent: [['kalendar_rezervace', 1], ['fakturace', 0.4], ['lhutnik', 1.2], ['otevrit_spis', 2], ['schuzka_dotaz', 0.3]]
+        asistent: [['kalendar_rezervace', 1], ['fakturace', 0.4], ['lhutnik', 1.2], ['otevrit_spis', 2], ['schuzka_dotaz', 0.3], ['korespondence', 0.6]]
     };
     for (const u of Object.values(U)) {
         for (const [kind, rate] of roles[u.role] || []) for (const m of schedule(rate, R)) ev.push({ min: m, user: u.key, kind });
@@ -547,6 +551,21 @@ async function act(ev, M, R) {
             const exp = readable(u, zn) ? [200] : [403];
             const r = await get(u, 'cizi_spis', `/api/spisy/${S.spisByZn[zn].id}`, { expect: exp });
             (S.aclProbes = S.aclProbes || []).push({ user: u, spisZn: zn, expected: exp[0], got: r.status });
+            return;
+        }
+        case 'korespondence': {
+            // asistentka (podatelna) připraví se Spisovatelem rutinní dopis → ke schválení advokátovi
+            if (!S.korespondence || !(S.korTypy || []).length) return;
+            const zn = pickSpis(u, R); if (!zn) return;
+            const row = S.spisByZn[zn].row;
+            const typ = R.pick(S.korTypy);
+            const zad = { doplneni_podkladu: 'Potřebujeme kopii smlouvy, faktury a veškerou korespondenci s protistranou do 14 dnů.', pruvodni_dopis: `Zasíláme kopii písemnosti od soudu (${row.soud}).`,
+                termin_schuzky: 'Potvrzení schůzky ve čtvrtek ve 14:00 v kanceláři, přinést občanský průkaz.', upominka_faktury: 'Faktura č. 2026-118 na 12 100 Kč, splatná před 14 dny.',
+                informace_dosla_pisemnost: `Došla písemnost od ${row.soud}.` }[typ] || '';
+            const { r, run } = await runAgent(u, 'korespondence', 'spisovatel', { prompt: `${zad} Klient: ${row.klient}, věc ${zn}.`, korespondence: typ, saveDraft: true, spisId: S.spisByZn[zn].id },
+                (resp, rr) => { const dr = rr.json && rr.json.draft; return { pass: ok2(rr.status) && !!(dr && dr.id) && dr.status === 'ke_kontrole', score: dr && dr.id ? 1 : 0, typ, spisZn: zn,
+                    pravniObsah: /§\s*\d|doporučuj(?:eme|i)\s+podat/i.test(resp) }; });
+            if (r.json && r.json.draft && r.json.draft.id) S.drafts.push({ id: r.json.draft.id, spisZn: zn, author: u, status: r.json.draft.status || 'ke_kontrole', korespondence: typ });
             return;
         }
         case 'lhutnik': await get(u, 'lhutnik', '/api/lhutnik'); return;
@@ -762,6 +781,12 @@ async function endOfDay(M) {
     check('K11', 'Koncepty od AI vznikly ve spisech a advokáti je schvalují', S.drafts.length > 0 && S.drafts.every(d => !d.approveError),
         { severity: 'high', detail: `vzniklo ${S.drafts.length}, schváleno ${appr.length}${S.drafts.filter(d => d.approveError).map(d => ' · ' + d.approveError).join('')}` });
     if (S.koncipientApprove !== undefined) check('K12', 'Koncipient nesmí schválit koncept (403)', S.koncipientApprove === 403, { severity: 'high', detail: String(S.koncipientApprove) });
+    const kor = agentRuns.filter(a => a.kind === 'korespondence');
+    if (kor.length) {
+        const korDr = S.drafts.filter(d => d.korespondence);
+        check('K12b', 'Podatelna připravila korespondenci přes Spisovatele (ke kontrole), advokáti ji schvalují', kor.every(a => a.pass) && korDr.every(d => !d.approveError),
+            { severity: 'medium', detail: `${kor.filter(a => a.pass).length}/${kor.length} konceptů, schváleno ${korDr.filter(d => d.status === 'schvaleno').length}, s právním obsahem ${kor.filter(a => a.pravniObsah).length}` });
+    }
     if (S.anon && S.anon.length) check('K13', 'Anonymizace odstraní telefon klienta', S.anon.every(a => a.ok), { severity: 'medium', detail: `${S.anon.filter(a => a.ok).length}/${S.anon.length}` });
     // audit
     const vc = await get('admin', 'audit', '/api/audit/verify-chain', { timeout: 300000 });

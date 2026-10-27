@@ -205,10 +205,30 @@ Object.assign(LexisLocalApp.prototype, {
                     ${locked ? '<span style="font-size:0.75rem;opacity:0.7;">(pevně nastaveno na serveru proměnnou LEXIS_FIRM_MODE)</span>'
                         : `<button class="btn ${d.enabled ? 'btn-secondary' : 'btn-primary'}" id="firm-mode-toggle" data-on="${d.enabled ? '0' : '1'}" style="padding:5px 12px;font-size:0.8rem;">${d.enabled ? 'Vypnout' : 'Zapnout'}</button>`}
                 </div>
+                <div id="kor-card" style="margin-top:10px;font-size:0.8rem;"></div>
                 ${d.spisyWithoutOwnerAccount ? `<div style="font-size:0.75rem;color:#b45309;margin-top:8px;">⚠️ ${escapeHtml(String(d.spisyWithoutOwnerAccount))} z ${escapeHtml(String(d.spisy))} spisů nemá vlastníka s účtem — ve firemním režimu je uvidí jen správce. Vlastníka nastavíte v detailu spisu (Spisová služba → spis → Přístup).</div>` : ''}`;
             const btn = document.getElementById('firm-mode-toggle');
             if (btn) btn.addEventListener('click', () => this.setFirmMode(btn.dataset.on === '1'));
+            this.loadKorespondenceToggle();
         } catch (e) { el.innerHTML = `<div style="color:#b45309;">⚠️ ${escapeHtml(e.message)}</div>`; }
+    },
+
+    // Podatelna smí připravovat rutinní korespondenci (výchozí vypnuto, přepíná správce).
+    async loadKorespondenceToggle() {
+        const el = document.getElementById('kor-card');
+        if (!el) return;
+        try {
+            const r = await fetch(`${this.apiBase}/settings/podatelna-korespondence`, { headers: this.getHeaders() });
+            const d = await r.json();
+            el.innerHTML = `✉️ Podatelna smí připravovat rutinní korespondenci (vždy ke schválení advokátem): <strong>${d.enabled ? 'ano' : 'ne'}</strong>
+                ${d.source === 'env' ? '<span style="opacity:0.7;">(pevně na serveru)</span>' : `<button class="btn btn-secondary" id="kor-toggle" style="padding:3px 10px;font-size:0.75rem;margin-left:6px;">${d.enabled ? 'Zakázat' : 'Povolit'}</button>`}`;
+            const b = document.getElementById('kor-toggle');
+            if (b) b.addEventListener('click', async () => {
+                const x = await fetch(`${this.apiBase}/settings/podatelna-korespondence`, { method: 'POST', headers: this.getHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ enabled: !d.enabled }) });
+                if (!x.ok) alert('❌ ' + ((await x.json().catch(() => ({}))).error || 'HTTP ' + x.status));
+                this.loadKorespondenceToggle();
+            });
+        } catch (e) { el.textContent = ''; }
     },
 
     // CODEXIS AI — licence kanceláře, zapíná správce. Klíč se jen ukládá, nikdy nezobrazuje.

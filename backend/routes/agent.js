@@ -78,11 +78,16 @@ router.post('/:agentId', async (req, res) => {
     const Drafts = require('../lib/drafts');
     const callerPrincipal = req.principal || { userId: 'local', kind: 'implicit', scopes: ['read', 'write', 'admin'] };
     let draftTarget = null;
+    const K = require('../lib/korespondence');
+    let korMeta = null;
     if (req.body.draftId) {
         const dd = Drafts.getDraft(String(req.body.draftId));
         if (!dd) return res.status(404).json({ error: 'Koncept nenalezen.' });
-        const denied = Drafts.checkAccess(callerPrincipal, dd.spisId, 'write');
+        // podatelna smí nechat Spisovatele zapracovat připomínky do VLASTNÍ korespondence
+        let denied = Drafts.checkAccess(callerPrincipal, dd.spisId, 'write');
+        if (denied && denied.status === 403 && dd.korespondence && agentId === 'spisovatel' && callerPrincipal.kind !== 'agent' && K.canEditDraft(callerPrincipal, dd)) denied = null;
         if (denied) return res.status(denied.status).json({ error: denied.error });
+        if (dd.korespondence && dd.korespondence.viaPodatelna) context = [K.instruction(dd.korespondence.typ), context].filter(Boolean).join('\n\n');
         if (dd.status === 'schvaleno') return res.status(409).json({ error: 'Koncept je schválený — agent ho nemůže revidovat.' });
         if (dd.lock && Date.parse(dd.lock.until) > Date.now()) return res.status(423).json({ error: `Koncept právě upravuje ${dd.lock.name} — revizi AI spusťte po uložení.`, code: 'locked' });
         draftTarget = { id: dd.id, baseVersion: dd.version, text: Drafts.specToText(dd.versions[dd.versions.length - 1].spec), comments: (dd.comments || []).filter(c => !c.resolved) };
@@ -91,8 +96,18 @@ router.post('/:agentId', async (req, res) => {
     const draftSpisId = req.body.spisId ? String(req.body.spisId) : null;
     const wantDraft = !!draftTarget || req.body.saveDraft === true || (req.body.saveDraft === 'auto' && Drafts.autoDraftFor(agentId, agent));
     if (wantDraft && !draftTarget) {
-        const denied = Drafts.checkAccess(callerPrincipal, draftSpisId, 'write');
-        if (denied) return res.status(denied.status).json({ error: denied.error });
+        if (req.body.korespondence) {
+            // rutinní korespondence (i od podatelny) jen přes Spisovatele a jen typ ze seznamu
+            if (agentId !== 'spisovatel') return res.status(400).json({ error: 'Korespondenci připravuje Spisovatel.' });
+            const c = K.canCreate(callerPrincipal, draftSpisId, req.body.korespondence);
+            if (!c.ok) return res.status(c.status).json({ error: c.error, code: c.code });
+            if (!K.typ(req.body.korespondence)) return res.status(400).json({ error: 'Neznámý typ korespondence.' });
+            korMeta = K.meta(req.body.korespondence, callerPrincipal, c.viaPodatelna);
+            context = [K.instruction(req.body.korespondence), context].filter(Boolean).join('\n\n');
+        } else {
+            const denied = Drafts.checkAccess(callerPrincipal, draftSpisId, 'write');
+            if (denied) return res.status(denied.status).json({ error: denied.error });
+        }
     }
 
     // Choose model (default to llama3 if not specified)
@@ -578,9 +593,15 @@ router.post('/:agentId', async (req, res) => {
                 text: draftBody != null ? draftBody : response.message.content, warnings: draftWarn,
                 agentId, agentName: agent.name, model: selectedModel, transparencyId: transparencyRecord.id,
                 spisId: draftSpisId, title: req.body.draftTitle || (letter && letter.title) || undefined, draftId: draftTarget && draftTarget.id,
-                baseVersion: draftTarget && draftTarget.baseVersion
+                baseVersion: draftTarget && draftTarget.baseVersion, korespondence: korMeta
             });
-            if (draft && draft.id) logEvent('Koncepty', draft.created ? 'Koncept od AI agenta' : 'Revize konceptu AI agentem', agent.name, { draftId: draft.id, version: draft.version, spisId: draftSpisId });
+            if (draft && draft.id) logEvent('Koncepty', draft.created ? 'Koncept od AI agenta' : 'Revize konceptu AI agentem', agent.name, { draftId: draft.id, version: draft.version, spisId: draftSpisId, korespondence: korMeta ? korMeta.typ : undefined, pro: korMeta && korMeta.viaPodatelna ? callerPrincipal.userId : undefined });
+            if (draft && draft.created && korMeta && korMeta.viaPodatelna) {
+                const full = Drafts.getDraft(draft.id);
+                try { require('../lib/spisy').addEvent(draftSpisId, 'korespondence', `${callerPrincipal.name || 'Podatelna'} připravil(a) se Spisovatelem korespondenci „${korMeta.label}“ — ke schválení advokátem.`, { draftId: draft.id, typ: korMeta.typ }); } catch (e) { /* deník */ }
+                const w = full ? K.contentWarnings(Drafts.specToText(full.versions[full.versions.length - 1].spec)) : [];
+                if (w.length) { try { Drafts.addComment(draft.id, { text: `Kontrola korespondence od podatelny: text obsahuje ${w.join(', ')} — do rutinní korespondence nepatří, ověřte.` }, { userId: 'system:korespondence', name: 'Kontrola korespondence', kind: 'system' }); } catch (e) { /* best-effort */ } }
+            }
         }
 
         res.json({

@@ -41,6 +41,13 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
   neupravuje a nemaže. Kdo založí spis pro jiného advokáta, dostane podatelnu automaticky (dřív k založenému
   spisu ztratil přístup). Při sdílení lze zvolit „jen čtení / podatelna / čtení i úpravy“; nastavení úrovně
   ji nahradí (dřív „čtení“ nesnížilo „úpravy“).
+- **Rutinní korespondence od podatelny** (volitelné, výchozí vypnuto — Nastavení → Firemní režim): asistentka
+  připraví přes Spisovatele (tlačítko ✉️ Korespondence v Konceptech) jen dopis ze seznamu — žádost klienta
+  o doplnění podkladů, průvodní dopis ke kopii písemnosti, potvrzení/přesunutí schůzky, upomínka faktury,
+  informace, že došla písemnost. Spisovatel dostane zadání bez právního hodnocení; koncept jde vždy
+  „ke kontrole“, schvaluje advokát, nic se neodesílá samo. Asistentka upravuje jen vlastní neschválenou
+  korespondenci; text s paragrafy, judikaturou nebo doporučením postupu dostane varovnou připomínku.
+  Ve spisovém deníku i auditu je, kdo dopis připravil (`lib/korespondence.js`).
 - **Sken se špatně přečtenou sp. zn.** („35 P a Ne“ místo „35 P a Nc“) se zařadí do existujícího spisu, pokud
   po opravě typických záměn OCR (c/e, l/1, O/0…) sedí právě na jeden; opravená značka je u dokumentu
   vidět (`caseNumberOcr`). Dřív vznikl spis navíc.
@@ -67,4 +74,4 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
 - Bedrock otestován proti specifikaci a testovacím vektorům AWS, ne proti živému účtu.
 - Firemní režim: **nezařazený dokument** (bez sp. zn., např. smlouva od klienta) vidí v doručené poště
   a ve vyhledávání všichni, dokud ho někdo nezařadí do spisu („sdílená podatelna“).
-- Podatelna zatím **nesmí zakládat koncepty** ve spisu (otevřená otázka — rozhodne kancelář).
+- Podatelna nezakládá jiné koncepty než rutinní korespondenci ze seznamu (a tu jen po zapnutí).

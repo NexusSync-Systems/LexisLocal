@@ -129,6 +129,22 @@ router.post('/firm-mode', (req, res) => {
     } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+// ── Podatelna smí připravovat rutinní korespondenci (lib/korespondence.js); výchozí VYPNUTO ──────────
+router.get('/podatelna-korespondence', (req, res) => {
+    const K = require('../lib/korespondence');
+    res.json({ enabled: K.enabled(), source: K.source(), typy: K.TYPY.map(t => ({ id: t.id, label: t.label })) });
+});
+// POST { enabled } — jen správce (lib/authz: POST /api/settings).
+router.post('/podatelna-korespondence', (req, res) => {
+    try {
+        const K = require('../lib/korespondence');
+        if (K.source() === 'env') return res.status(409).json({ error: 'Nastaveno pevně proměnnou LEXIS_PODATELNA_KORESPONDENCE na serveru.' });
+        const enabled = K.setEnabled(!!(req.body && req.body.enabled));
+        logEvent('Nastavení', enabled ? 'Podatelna smí připravovat korespondenci' : 'Podatelna nesmí připravovat korespondenci', 'Koncepty', { by: req.principal && req.principal.name });
+        res.json({ success: true, enabled });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 // ── Profil aplikace: „pilot“ skryje moduly, které v pilotu nejsou (plán pilotu 3. 10. 2026).
 // Moduly zůstávají v kódu a API; skrývá se jen navigace. LEXIS_PROFILE na serveru má přednost.
 const PILOT_HIDDEN = ['models', 'chat', 'timetracking', 'risks', 'aml', 'managerial'];
