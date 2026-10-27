@@ -52,6 +52,28 @@ API: `GET /api/spisy/:id/cloud`, `POST /api/spisy/:id/cloud/stupen` `{ stupen, d
 
 Jen pro testy se syntetickými daty: `LEXIS_CLOUD_BEZ_KONTEXTU=povolit` pustí do cloudu i dotazy bez kontextu.
 
+## Náklady a rozpočet (Manažerský přehled → „Náklady na cloudovou AI“)
+
+- **Živě:** každé volání Bedrocku vrací počet tokenů; LexisLocal je × ceník kanceláře uloží jako odhad
+  (`backend/lib/ai_usage.js`) — po spisech, uživatelích a modelech. Odpověď asistenta nese `cloudPolicy.naklady`.
+- **Večer porovnání s AWS** (`backend/lib/aws_billing.js`, po `LEXIS_AWS_SYNC_HOUR`, výchozí 22:00; ručně tlačítko
+  „Porovnat s AWS teď“ nebo `POST /api/ai-usage/sync`): Cost Explorer vrátí skutečné částky po dnech za měsíc do včerejška.
+  Dny potvrzené AWS se pak ukazují podle AWS, novější dny jako odhad opravený poměrem AWS/odhad. Rozdíl nad toleranci
+  (výchozí 5 %) = upozornění „zkontrolujte ceník“. Částky v USD bez odečtu kreditů. Jeden dotaz na Cost Explorer stojí
+  cca 0,01 USD. Potřebuje oprávnění `ce:GetCostAndUsage` (šablona) a zapnutý Cost Explorer v konzoli Billing (data do 24 h).
+  Komunikuje s `ce.us-east-1.amazonaws.com` (globální služba, jen částky). Vypnutí: `LEXIS_AWS_BILLING_SYNC=0`.
+- **Graf:** kumulativní spotřeba v měsíci (plně = potvrzeno AWS, čárkovaně = odhad), výhled do konce měsíce,
+  **vodorovná čára rozpočtu** a hranice varování. Rozpočet, varování, tolerance a ceník se nastavují tamtéž
+  (`/api/ai-usage/settings`, jen správce).
+- **Tvrdý strop** (volitelný): po vyčerpání měsíčního rozpočtu jdou dotazy jen na lokální model (kód `rozpocet`).
+
+## Test proti AWS před pilotem
+
+`node backend/scripts/aws-pilot-test.js` (volitelně `--latence 5`, `--bez-ce`) — jen syntetická data, dočasná
+databáze, řádově centy. Ověří: EU nastavení a cílové regiony profilu, povolený dotaz (tokeny, cena), že spis
+stupně A / bez souhlasu nic neodešle, zámek v kódu (us./global.), zámek v AWS (volání mimo EU a globální profil
+→ AccessDenied), tvrdý strop, Cost Explorer a názvy služeb, latenci. Protokol: `scratch/aws-test-<datum>.md`.
+
 ## Nastavení v AWS (správce kanceláře)
 
 1. Účet AWS kanceláře (ne dodavatele). Doporučeno MFA na root účtu a samostatný účet jen pro LexisLocal.

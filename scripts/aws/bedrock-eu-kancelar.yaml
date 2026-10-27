@@ -39,6 +39,23 @@ Resources:
             Condition:
               StringLike:
                 aws:RequestedRegion: 'eu-*'
+          - Sid: CteniEuProfilu
+            # Test před pilotem (backend/scripts/aws-pilot-test.js) ověří, že EU profil míří jen do EU regionů.
+            Effect: Allow
+            Action:
+              - bedrock:GetInferenceProfile
+            Resource:
+              - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.anthropic.*'
+            Condition:
+              StringLike:
+                aws:RequestedRegion: 'eu-*'
+          - Sid: CteniNakladuProPorovnani
+            # LexisLocal večer porovná svůj odhad nákladů s fakturací AWS (Cost Explorer, jen částky,
+            # žádný obsah dotazů). Cost Explorer je globální služba s koncovým bodem us-east-1.
+            Effect: Allow
+            Action:
+              - ce:GetCostAndUsage
+            Resource: '*'
           - Sid: ZakazMimoEU
             Effect: Deny
             Action: 'bedrock:*'
@@ -84,9 +101,8 @@ Resources:
         BudgetLimit:
           Amount: !Ref MesicniRozpocetUSD
           Unit: USD
-        CostFilters:
-          Service:
-            - Amazon Bedrock
+        # Bez filtru služby: Claude se v Bedrocku účtuje i pod názvy „Claude … (Amazon Bedrock Edition)“,
+        # které filtr „Amazon Bedrock“ nezachytí. Účet má sloužit jen LexisLocalu, rozpočet tedy hlídá celý účet.
       NotificationsWithSubscribers:
         - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE }
           Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref EmailUpozorneni }]
