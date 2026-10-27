@@ -255,11 +255,12 @@ async function onboarding(M, R) {
     }
     check('Z6', 'Všechny spisy z CSV jsou v evidenci', Object.keys(S.spisByZn).length === M.spisy.length, { severity: 'high', detail: `${Object.keys(S.spisByZn).length}/${M.spisy.length}` });
 
-    // sdílení: asistentka zapisuje do všech, koncipient do ~40 %, advokáti si občas půjčí spis kolegy ke čtení
+    // sdílení: asistentka = podatelna u všech (došlá pošta, lhůty, fakturace; spis ani dokumenty nemění),
+    // koncipient zapisuje do ~40 %, advokáti si občas půjčí spis kolegy ke čtení
     let shareFail = 0; const advKeys = M.kancelar.uzivatele.filter(u => u.role === 'advokat').map(u => u.key);
     for (const zn of Object.keys(S.spisByZn)) {
         const s = S.spisByZn[zn]; S.shared[zn] = {};
-        const grants = [['simkova', 'write']];
+        const grants = [['simkova', 'podatelna']];
         if (R.chance(0.4)) grants.push(['krejci', 'write']);
         if (R.chance(0.1)) grants.push([R.pick(advKeys.filter(k => k !== s.ownerKey)), 'read']);
         for (const [k, level] of grants) {
@@ -268,7 +269,7 @@ async function onboarding(M, R) {
             if (ok2(r.status)) S.shared[zn][k] = level; else shareFail++;
         }
     }
-    check('Z7', 'Sdílení spisů vlastníkem (asistentka všechny, koncipient ~40 %, kolegové občas)', shareFail === 0,
+    check('Z7', 'Sdílení spisů vlastníkem (asistentka podatelna u všech, koncipient ~40 %, kolegové občas)', shareFail === 0,
         { severity: 'high', detail: `chyb ${shareFail}; koncipient má ${Object.values(S.shared).filter(x => x.krejci).length} spisů` });
 
     // interní postupy → báze rešeršníka
@@ -455,15 +456,12 @@ async function act(ev, M, R) {
                 if (cr.json && cr.json.spis) {
                     S.spisByZn[s.spisZn] = { id: cr.json.spis.id, ownerKey: keyOfName(s.advokat) || 'simkova', row: s, novy: true };
                     S.shared[s.spisZn] = {};
-                    // asistentka hned po založení: vidí spis, který založila pro advokáta?
+                    // zakladatelka (asistentka) dostane automaticky úroveň podatelna: spis vidí, nemění ho
                     const vis = await get('simkova', 'otevrit_spis', `/api/spisy/${cr.json.spis.id}`, { expect: [200, 403] });
                     rec.asistentkaVidi = vis.status;
-                    // advokát (vlastník) jí spis nasdílí
-                    const own = S.spisByZn[s.spisZn].ownerKey;
-                    if (U[own] && own !== 'simkova') {
-                        const sh = await post(own, 'spis_share', `/api/spisy/${cr.json.spis.id}/share`, { userId: U.simkova.id, level: 'write' });
-                        if (ok2(sh.status)) S.shared[s.spisZn].simkova = 'write';
-                    }
+                    const upr = await call('simkova', 'spis_uprava_podatelna', 'PATCH', `/api/spisy/${cr.json.spis.id}`, { poznamka: 'pokus o úpravu' }, { expect: [403] });
+                    rec.asistentkaUpravi = upr.status;
+                    if (vis.status === 200) S.shared[s.spisZn].simkova = 'podatelna';
                 }
             }
             S.nove.push(rec);
@@ -704,8 +702,8 @@ async function endOfDay(M) {
     const created = S.nove.filter(n => n.created && ok2(n.created));
     check('K3', 'Asistentka založila nové spisy (bez střetu)', created.length === S.nove.filter(n => n.riskLevel === 'none' || n.riskLevel === 'low').length, { severity: 'medium', detail: `${created.length} založeno` });
     const asVis = S.nove.filter(n => n.asistentkaVidi);
-    if (asVis.length) check('K4', 'Asistentka vidí spis, který sama založila pro advokáta', asVis.every(n => n.asistentkaVidi === 200),
-        { severity: 'low', detail: asVis.map(n => `${n.spisZn}: ${n.asistentkaVidi}`).join(', ') + ' (403 = musí počkat, až jí ho advokát nasdílí)' });
+    if (asVis.length) check('K4', 'Asistentka vidí spis, který založila pro advokáta (podatelna), ale nemění ho', asVis.every(n => n.asistentkaVidi === 200 && n.asistentkaUpravi === 403),
+        { severity: 'medium', detail: asVis.map(n => `${n.spisZn}: otevřít ${n.asistentkaVidi}, upravit ${n.asistentkaUpravi}`).join(', ') });
     const sp = await get('admin', 'spisy_list', '/api/spisy');
     const all = (sp.json && sp.json.spisy) || [];
     const unknownZn = new Set(denDocs.filter(d => d.kind === 'neznama' && S.uploaded[d.file]).map(d => d.spisZn));

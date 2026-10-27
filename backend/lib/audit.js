@@ -214,7 +214,12 @@ function getLogsForSpis(spisId) {
  * @returns { ok, checked, legacy, total, brokenAt?, reason? }
  */
 function verifyAuditChain() {
-    const logs = loadAuditLogs();
+    return verifyChainOf(loadAuditLogs());
+}
+
+/** Ověření řetězce nad libovolným polem záznamů (i ze zálohy — scripts/backup.js). */
+function verifyChainOf(logs) {
+    logs = Array.isArray(logs) ? logs : [];
     let expectedPrev = null;
     let checked = 0, legacy = 0;
     for (let i = 0; i < logs.length; i++) {
@@ -282,5 +287,6 @@ module.exports = {
     logEvent,
     getLogsForSpis,
     verifyAuditChain,
+    verifyChainOf,
     clearAuditLogs
 };

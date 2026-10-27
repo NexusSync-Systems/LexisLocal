@@ -6,9 +6,14 @@
  * NEOMEZUJE, nic se pro dnešního uživatele nemění. Firemní režim (přepínač):
  * přístup ke spisu se vynucuje podle ACL, FAIL-CLOSED — kdo nemá záznam, nevidí.
  *
- * ACL spisu: { owner, readers[], writers[] }
+ * ACL spisu: { owner, readers[], writers[], filers[] }
  *   • owner   = vlastník (odpovědný advokát); má vždy plný přístup,
- *   • writers = smí číst i zapisovat (write implikuje read),
+ *   • writers = smí číst i zapisovat (write implikuje read i podatelnu),
+ *   • filers  = PODATELNA (asistentka): čte spis a dělá administrativu — zařadí došlý dokument,
+ *               označí přečtené, potvrdí/odloží lhůtu, ověří podpis, sleduje jednání, fakturuje.
+ *               NESMÍ měnit spis, koncepty ani dokumenty, které už ve spisu jsou (úroveň 'file').
+ *               Zavedeno po simulaci dne v kanceláři 27. 10. 2026 (pravidlo dle Zdeňka: došlé
+ *               dokumenty ano, opravy dokumentů ve spisu ne — i když spis sama založila).
  *   • readers = smí jen číst.
  * Sdílení = přidání userId do readers/writers konkrétního spisu (grant/revoke).
  */
@@ -61,12 +66,13 @@ function normalizeAccess(spis) {
     return {
         owner: a.owner || (spis && spis.odpovednyAdvokat) || 'local',
         readers: Array.isArray(a.readers) ? a.readers.slice() : [],
-        writers: Array.isArray(a.writers) ? a.writers.slice() : []
+        writers: Array.isArray(a.writers) ? a.writers.slice() : [],
+        filers: Array.isArray(a.filers) ? a.filers.slice() : []
     };
 }
 
 /**
- * Smí principal na spis na dané úrovni? level: 'read' | 'write' | 'admin'.
+ * Smí principal na spis na dané úrovni? level: 'read' | 'file' (podatelna) | 'write' | 'admin'.
  * Solo režim → vždy true. Firemní režim → fail-closed dle ACL.
  */
 function canAccess(spis, principal, level) {
@@ -79,8 +85,10 @@ function canAccess(spis, principal, level) {
     if (uid === acl.owner) return true;
     // Starší spisy mají vlastníka jako jméno advokáta (text) — uživatel se stejným jménem je vlastník.
     if (principal.kind === 'user' && principal.name && _sameName(principal.name, acl.owner)) return true;
-    if (level === 'read') return acl.readers.indexOf(uid) !== -1 || acl.writers.indexOf(uid) !== -1;
-    if (level === 'write') return acl.writers.indexOf(uid) !== -1;
+    const isW = acl.writers.indexOf(uid) !== -1, isF = acl.filers.indexOf(uid) !== -1;
+    if (level === 'read') return acl.readers.indexOf(uid) !== -1 || isW || isF;
+    if (level === 'file') return isW || isF;
+    if (level === 'write') return isW;
     return false;                                  // 'admin' i cokoli jiného: fail-closed
 }
 
@@ -92,14 +100,13 @@ function grant(spis, userId, level) {
     if (!userId) throw new Error('grant: chybí userId příjemce.');
     const acl = normalizeAccess(spis);
     if (userId === acl.owner) return acl;          // owner už má vše
-    if (level === 'write') {
-        if (acl.writers.indexOf(userId) === -1) acl.writers.push(userId);
-        acl.readers = acl.readers.filter(u => u !== userId);
-    } else { // 'read'
-        if (acl.writers.indexOf(userId) === -1 && acl.readers.indexOf(userId) === -1) {
-            acl.readers.push(userId);
-        }
-    }
+    // Úroveň se NASTAVÍ (ne jen přidá): uživatel je vždy v jediném seznamu.
+    acl.readers = acl.readers.filter(u => u !== userId);
+    acl.writers = acl.writers.filter(u => u !== userId);
+    acl.filers = acl.filers.filter(u => u !== userId);
+    if (level === 'write') acl.writers.push(userId);
+    else if (level === 'podatelna' || level === 'file') acl.filers.push(userId);
+    else acl.readers.push(userId);
     return acl;
 }
 
@@ -109,6 +116,7 @@ function revoke(spis, userId) {
     if (userId === acl.owner) throw new Error('revoke: nelze odebrat přístup vlastníkovi spisu.');
     acl.readers = acl.readers.filter(u => u !== userId);
     acl.writers = acl.writers.filter(u => u !== userId);
+    acl.filers = acl.filers.filter(u => u !== userId);
     return acl;
 }
 

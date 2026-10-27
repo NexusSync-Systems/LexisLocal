@@ -339,7 +339,7 @@ Object.assign(LexisLocalApp.prototype, {
             const nm = (id) => byId[id] ? byId[id].name : id;
             const me = this.me || {};
             const canManage = (me.scopes || []).includes('admin') || me.userId === acc.owner;
-            const shared = [...acc.writers.map(id => ({ id, level: 'write' })), ...acc.readers.map(id => ({ id, level: 'read' }))];
+            const shared = [...acc.writers.map(id => ({ id, level: 'write' })), ...(acc.filers || []).map(id => ({ id, level: 'podatelna' })), ...acc.readers.map(id => ({ id, level: 'read' }))];
             const sid = String(spisId).replace(/[^A-Za-z0-9_.:-]/g, '');
             const opts = (filter) => colleagues.filter(filter).map(u => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name)} (${escapeHtml(u.roleLabel || u.role)})</option>`).join('');
             el.innerHTML = `
@@ -350,10 +350,10 @@ Object.assign(LexisLocalApp.prototype, {
                     </div>
                     <div style="margin-top:8px;">Vlastník: <b>${escapeHtml(nm(acc.owner))}</b>
                         ${canManage ? `<select id="acc-owner" style="margin-left:6px;padding:3px 6px;border-radius:6px;font-size:0.78rem;"><option value="">— změnit —</option>${opts(u => u.id !== acc.owner)}</select>` : ''}</div>
-                    <div style="margin-top:6px;">Sdíleno s: ${shared.length ? shared.map(x => `<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0;padding:2px 8px;border-radius:12px;background:var(--sf-02);">${escapeHtml(nm(x.id))} · ${x.level === 'write' ? 'úpravy' : 'čtení'}${canManage ? ` <a href="#" data-revoke="${escapeHtml(x.id)}" title="Odebrat přístup" style="text-decoration:none;">✕</a>` : ''}</span>`).join('') : '<span style="opacity:0.6;">nikým</span>'}</div>
+                    <div style="margin-top:6px;">Sdíleno s: ${shared.length ? shared.map(x => `<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0;padding:2px 8px;border-radius:12px;background:var(--sf-02);">${escapeHtml(nm(x.id))} · ${x.level === 'write' ? 'úpravy' : x.level === 'podatelna' ? 'podatelna' : 'čtení'}${canManage ? ` <a href="#" data-revoke="${escapeHtml(x.id)}" title="Odebrat přístup" style="text-decoration:none;">✕</a>` : ''}</span>`).join('') : '<span style="opacity:0.6;">nikým</span>'}</div>
                     ${canManage ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
                         <select id="acc-share-user" style="padding:3px 6px;border-radius:6px;font-size:0.78rem;"><option value="">Sdílet s…</option>${opts(u => u.id !== acc.owner && !shared.some(x => x.id === u.id))}</select>
-                        <select id="acc-share-level" style="padding:3px 6px;border-radius:6px;font-size:0.78rem;"><option value="read">jen čtení</option><option value="write">čtení i úpravy</option></select>
+                        <select id="acc-share-level" style="padding:3px 6px;border-radius:6px;font-size:0.78rem;"><option value="read">jen čtení</option><option value="podatelna" title="Čte spis, zařazuje došlé dokumenty, potvrzuje lhůty, fakturuje; nemění spis ani dokumenty ve spisu">podatelna (došlá pošta, lhůty)</option><option value="write">čtení i úpravy</option></select>
                         <button class="btn btn-secondary" id="acc-share-btn" style="padding:3px 10px;font-size:0.75rem;">Sdílet</button></div>` : ''}
                 </div>`;
             const post = async (path, body) => {

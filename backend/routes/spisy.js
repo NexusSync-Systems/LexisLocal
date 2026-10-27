@@ -59,7 +59,12 @@ router.post('/', (req, res) => {
             data.owner = byName ? byName.id : p.userId;
         }
         delete data.access; // ACL se nedá podstrčit při založení
-        const spis = spisy.createSpis(data);
+        let spis = spisy.createSpis(data);
+        // Kdo spis zakládá pro jiného (asistentka pro advokáta), dostane úroveň PODATELNA: vidí spis
+        // a zařazuje do něj došlou poštu, ale nemění ho (simulace kanceláře 27. 10. 2026).
+        if (p && p.kind === 'user' && data.owner && data.owner !== p.userId && !principalLib.hasScope(p, 'admin')) {
+            try { spis = spisy.shareSpis(spis.id, p.userId, 'podatelna') || spis; } catch (e) { /* přístup nastaví vlastník */ }
+        }
         logEvent('Spisová služba', 'Založení spisu', spis.spisZn || spis.nazev, { id: spis.id });
         res.status(201).json({ spis });
     } catch (err) {
@@ -163,7 +168,7 @@ router.post('/:id/event', (req, res) => {
 
 // POST /api/spisy/:id/assign-file — ruční zařazení dokumentu do spisu { fileId }
 router.post('/:id/assign-file', (req, res) => {
-    if (!gate(req, res, 'write')) return;
+    if (!gate(req, res, 'file')) return; // zařadit došlý dokument smí i podatelna
     try {
         const file = spisy.assignFileToSpis((req.body && req.body.fileId), req.params.id);
         logEvent('Spisová služba', 'Zařazení dokumentu do spisu', file.fileName || file.id, { spisId: req.params.id });
@@ -280,7 +285,7 @@ router.get('/:id/access', (req, res) => {
     res.json({ access: spisy.getSpisAccess(req.params.id) });
 });
 
-// POST /api/spisy/:id/share — sdílet spis s kolegou { userId, level: 'read'|'write' }
+// POST /api/spisy/:id/share — sdílet spis s kolegou { userId, level: 'read'|'podatelna'|'write' }
 router.post('/:id/share', (req, res) => {
     try {
         const spis = spisy.getSpis(req.params.id);

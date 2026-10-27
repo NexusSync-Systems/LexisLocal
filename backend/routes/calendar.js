@@ -328,7 +328,7 @@ router.post('/hearings/track', (req, res) => {
     if (b.spisId) {
         spis = _visibleSpisy(req).find(s => s.id === b.spisId);
         if (!spis) return res.status(404).json({ error: 'Spis nenalezen.' });
-        if (!require('../lib/access').canAccess(spis, req.principal, 'write')) return res.status(403).json({ error: 'Ke spisu nemáte oprávnění k zápisu.' });
+        if (!require('../lib/access').canAccess(spis, req.principal, 'file')) return res.status(403).json({ error: 'Ke spisu nemáte oprávnění (podatelna nebo zápis).' });
     }
     const court = (src.courtList().find(c => c.kod === b.courtCode) || {}).nazev || b.courtCode;
     const reg = HearingsWatcher.registerHearing(WATCH_DIR, {

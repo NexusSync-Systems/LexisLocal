@@ -52,8 +52,15 @@ tar -czf backend/eval/office_day/dataset-v1.tar.gz -C /tmp/ds .
 
 Potřebuje reportlab, python-docx, Pillow a font DejaVu Serif (jen pro generování, ne pro běh testu).
 
-## Co simulace našla (26. 10. 2026, zkušební běh)
+## Co simulace našla
 
+Zkušební běh 26. 10. 2026 (lokálně, náhrada modelu):
 - sp. zn. „19 P a Nc 57/2026“ se nerozpoznala → dokumenty opatrovnických věcí bez spisu (opraveno, `lib/case_number.js`),
-- nahrání dokumentu se zpracovalo dvakrát (nahrání + hlídání složky) → 2× vytěžení AI (opraveno, `lib/watcher.js`),
-- nezařazené dokumenty vidí ve firemním režimu všichni; kdo založí spis pro kolegu, ztratí k němu přístup (známé omezení, viz poznámky k 1.2.1).
+- nahrání dokumentu se zpracovalo dvakrát (nahrání + hlídání složky) → 2× vytěžení AI (opraveno, `lib/watcher.js`).
+
+Server 26. 10. 2026 (g4dn.xlarge / T4, qwen2.5:7b, plná báze, 8 h): 41/43 kontrol, 6 185 požadavků bez chyby,
+restart bez ztráty dat, paměť backendu 1,1–1,3 GB celý den. Opraveno 27. 10.:
+- kontrolor přehlédl 8 z 51 rizikových klauzulí (záloha 100 %, krátká záruka, vyloučení odpovědnosti) → doplněno do `lib/clause_scan.js`,
+- OCR „P a Nc“ → „P a Ne“ vytvořilo spis navíc → oprava podle existujícího spisu (`spisy.findByCaseOcr`),
+- asistentka ztratila přístup ke spisu, který založila → úroveň **podatelna** (`lib/access.js`),
+- záloha ověřovala jen záznamy AI → ověřuje i hlavní auditní log (`scripts/backup.js`).

@@ -265,6 +265,17 @@ async function _processDocument(filePath, opts = {}) {
 
     // 2.8 Step: Nařízené jednání v dokumentu (předvolání, vyrozumění) → návrh ke sledování.
     //     Hlídač pak termín ověřuje na InfoJednání; advokát ho musí potvrdit.
+    // Sken (OCR): přečtená sp. zn. neodpovídá žádnému spisu → zkusit typické záměny znaků (c/e, l/1, O/0…)
+    // proti existujícím spisům; jediná shoda = oprava (s poznámkou), jinak beze změny.
+    if (wasOcr && metadata.caseNumber) {
+        try {
+            const sp = require('./spisy');
+            if (!sp.findByCase(metadata.caseNumber)) {
+                const hit = sp.findByCaseOcr(metadata.caseNumber);
+                if (hit) { metadata.caseNumberOcr = metadata.caseNumber; metadata.caseNumber = hit.spisZn; }
+            }
+        } catch (e) { /* bez opravy */ }
+    }
     let hearingsFound = [];
     try {
         const { extractHearings } = require('./hearing_extract');
@@ -309,6 +320,8 @@ async function _processDocument(filePath, opts = {}) {
         relativePath: relativePath,
         status: "unread",
         caseNumber: (metadata.caseNumber && require('./spisy').stripFolio(metadata.caseNumber)) || "Neznámá sp. zn.",
+        // sp. zn. opravená podle existujícího spisu (OCR přečetlo jinak) — k ověření v UI
+        caseNumberOcr: metadata.caseNumberOcr || undefined,
         plaintiff: metadata.plaintiff || "Nezjištěn",
         defendant: metadata.defendant || "Nezjištěn",
         deadlineDays: metadata.deadlineDays || 0,

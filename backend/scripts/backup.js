@@ -61,12 +61,27 @@ function verifyDir(root) {
         const key = Buffer.from(fs.readFileSync(keyFile, 'utf8').trim(), 'hex');
         collections = JSON.parse(sc.decrypt(key, JSON.parse(fs.readFileSync(dbFile, 'utf8'))));
     } catch (e) { return { ok: false, reason: 'Databázi nejde klíčem ze zálohy otevřít: ' + e.message }; }
+    // Dva řetězce: záznamy transparentnosti AI (v databázi) a hlavní auditní log (.audit_log.json).
+    // Simulace kanceláře 26. 10. 2026: záloha ověřovala jen záznamy AI (114) a vypisovala je
+    // jako „záznamy auditu“ — hlavní log (1 089 úkonů) se nekontroloval vůbec.
     const logs = collections.transparency_logs || [];
     let prev = 'genesis_hash_lexis_ledger', chainOk = true;
     for (const r of logs) { if (r.prevHash !== prev) { chainOk = false; break; } prev = r.hash; }
+    let audit = [], auditOk = true, auditReason = null;
+    const auditFile = path.join(root, 'data', '.audit_log.json');
+    if (fs.existsSync(auditFile)) {
+        try {
+            const key = Buffer.from(fs.readFileSync(keyFile, 'utf8').trim(), 'hex');
+            const parsed = JSON.parse(fs.readFileSync(auditFile, 'utf8'));
+            audit = Array.isArray(parsed) ? parsed : JSON.parse(sc.decrypt(key, parsed));
+            const v = require('../lib/audit').verifyChainOf(audit);
+            if (!v.ok) { auditOk = false; auditReason = `Hlavní auditní log v záloze je porušený (záznam ${v.brokenAt + 1}, ${v.reason}).`; }
+        } catch (e) { auditOk = false; auditReason = 'Hlavní auditní log v záloze nejde přečíst: ' + e.message; }
+    }
+    const ok = chainOk && auditOk;
     return {
-        ok: chainOk, reason: chainOk ? null : 'Auditní řetězec v záloze je přerušený.',
-        counts: { spisy: (collections.spisy || []).length, dokumenty: (collections.inbox_files || []).length, audit: logs.length, koncepty: (collections.drafts || []).length }
+        ok, reason: ok ? null : (!chainOk ? 'Řetězec záznamů transparentnosti AI v záloze je přerušený.' : auditReason),
+        counts: { spisy: (collections.spisy || []).length, dokumenty: (collections.inbox_files || []).length, audit: audit.length, ai: logs.length, koncepty: (collections.drafts || []).length }
     };
 }
 
@@ -120,7 +135,7 @@ function backup() {
     fs.rmSync(tmp, { recursive: true, force: true });
     console.log(`Záloha: ${file}`);
     console.log(`Soubory: data ${nData}, spisovna ${withIngest ? nIngest : 'vynechána'} · velikost ${(fs.statSync(file).size / 1048576).toFixed(1)} MB`);
-    console.log(v.ok ? `✅ Ověřeno: databáze jde otevřít (spisů ${v.counts.spisy}, dokumentů ${v.counts.dokumenty}, záznamů auditu ${v.counts.audit}).`
+    console.log(v.ok ? `✅ Ověřeno: databáze jde otevřít (spisů ${v.counts.spisy}, dokumentů ${v.counts.dokumenty}, záznamů auditu ${v.counts.audit}, záznamů AI ${v.counts.ai} — oba řetězce v pořádku).`
         : `❌ ZÁLOHA NENÍ POUŽITELNÁ: ${v.reason}`);
     console.log('⚠️  Záloha obsahuje klíč k databázi — ukládejte ji jen na šifrovaný disk.');
     return v.ok ? 0 : 1;
@@ -132,7 +147,7 @@ function verify(file) {
     let manifest = null; try { manifest = JSON.parse(fs.readFileSync(path.join(tmp, 'manifest.json'), 'utf8')); } catch (e) {}
     fs.rmSync(tmp, { recursive: true, force: true });
     console.log(manifest ? `Záloha z ${manifest.createdAt} (${manifest.host})` : 'Záloha bez manifestu');
-    console.log(v.ok ? `✅ Zkouška obnovy prošla: spisů ${v.counts.spisy}, dokumentů ${v.counts.dokumenty}, záznamů auditu ${v.counts.audit}.` : `❌ ${v.reason}`);
+    console.log(v.ok ? `✅ Zkouška obnovy prošla: spisů ${v.counts.spisy}, dokumentů ${v.counts.dokumenty}, záznamů auditu ${v.counts.audit}, záznamů AI ${v.counts.ai} — oba řetězce v pořádku.` : `❌ ${v.reason}`);
     return v.ok ? 0 : 1;
 }
 

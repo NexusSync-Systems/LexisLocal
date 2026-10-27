@@ -64,7 +64,7 @@ const RULES = [
         // i obrácené pořadí: „uhradí předem v plné výši (100 % ceny)“ (run 6)
         alt: /(předem|před\s+zahájením)[^.]{0,80}(100\s?%|v\s+plné\s+výši|celou\s+cenu|celé\s+ceny)/i,
         detail: (m) => /100/.test(m[0]) ? '100 % ceny' : 'celá cena',
-        keys: /z[aá]loh|100\s?%|cel[éou] cen|předem/i, consumer: true
+        keys: /z[aá]loh|100\s?%|cel[éou] cen|předem/i, consumer: 'maybe'
     },
     {
         id: 'jednostranna_cena', label: 'Jednostranné zvýšení ceny / nájemného', law: '§ 1752, § 1813 OZ; u nájmu § 2248–2249 OZ',
@@ -85,22 +85,27 @@ const RULES = [
     },
     {
         id: 'zaruka_kratka', label: 'Zkrácená záruka / doba pro uplatnění vad', law: 'spotřebitel: § 2165 OZ (24 měsíců), § 1813 OZ',
-        re: /záruk\S*[^.]{0,60}?(\d{1,2})\s*(měsíc\S*)/i,
-        when: (m, ctx) => ctx.consumer && Number(m[1]) < 24,
+        re: /záru[kč]\S*[^.]{0,60}?(\d{1,2})\s*(měsíc\S*)/i,
+        // u spotřebitele vždy pod 24 měsíců; když smlouva spotřebitele neuvádí, jen výrazně krátká záruka
+        // (simulace kanceláře 26. 10. 2026: „záruční doba činí 3 měsíce“ kontrolor 3× z 8 přehlédl)
+        when: (m, ctx) => Number(m[1]) < (ctx.consumer ? 24 : 12), consumer: 'maybe',
         detail: (m) => `${m[1]} ${m[2]}`, keys: /z[aá]ruk/i
     },
     {
         id: 'vady_lhuta', label: 'Krátká lhůta k oznámení vad se zánikem práv', law: '§ 1813 OZ, § 2112 OZ',
         re: /(?:do|nejpozději do)\s+(\d{1,2})\s*(dn[ůíy]|hodin)[^.]{0,80}(zanik|zaniká|ztrácí)/i,
+        // „vady je nutné oznámit do 2 dnů od jejich vzniku“ (bez výslovného zániku práv) — jen krátké lhůty
+        alt: /vad\S*[^.]{0,40}(?:oznámit|uplatnit|reklamovat|oznámeny)[^.]{0,40}?do\s+(\d{1,2})\s*(dn[ůíy]|hodin)/i,
+        when: (m) => /hodin/i.test(m[2]) || Number(m[1]) <= 7,
         detail: (m) => `${m[1]} ${m[2]}`, keys: /vad|oznám/i
     },
     {
         id: 'vzdani_vad', label: 'Vzdání se práv z vadného plnění', law: '§ 1814 písm. b) OZ, § 2161 OZ (spotřebitel se práv nemůže vzdát)',
-        re: /vzdává\S*[^.]{0,40}práv\S*\s+z\s+vadn|nemá\s+práv\S*\s+z\s+vad|neodpovídá\s+za\s+vady/i, keys: /vad/i
+        re: /vzdává\S*[^.]{0,40}práv\S*\s+z\s+vadn|nemá\s+práv\S*\s+z\s+vad|neodpovídá\s+za\s+vady|odpovědnost\S*[^.]{0,40}za\s+vady[^.]{0,40}vylučuje|vylučuje\s+se\s+odpovědnost[^.]{0,40}vad/i, keys: /vad/i
     },
     {
         id: 'bez_odstoupeni', label: 'Vyloučení práva odstoupit od smlouvy', law: '§ 1813 OZ; zákonná práva odstoupit nelze u spotřebitele vyloučit',
-        re: /nemá\s+právo[^.]{0,30}odstoup|odstoupení[^.]{0,40}vyloučen/i, keys: /odstoup/i
+        re: /nemá\s+právo[^.]{0,30}odstoup|odstoupení[^.]{0,40}vyloučen|vzdává\S*\s+(?:se\s+)?práva?\s+odstoupit/i, keys: /odstoup/i
     },
     {
         id: 'tachometr', label: 'Stav tachometru / najetých km bez záruky', law: '§ 2095, § 2161 OZ (ujištění o vlastnostech věci)',
@@ -139,6 +144,13 @@ const RULES = [
         id: 'automaticke_prodlouzeni', label: 'Automatické prodloužení na dlouhou dobu / dlouhá výpovědní lhůta', law: '§ 1813 OZ, § 2000 OZ',
         re: /automaticky\s+prodlužuje[^.]{0,40}?(\d{1,2}\s*(?:let|roky|rok))|prodlužuje\s+(?:vždy\s+)?o\s+(\d{1,2}\s*let)/i,
         detail: (m) => (m[1] || m[2] || '').trim(), keys: /prodlou|\d+\s*let|deset let/i
+    },
+    {
+        // „smluvní pokuta 1 % denně z dlužné částky bez omezení“ = 365 % ročně (simulace 26. 10. 2026)
+        id: 'pokuta_denni', label: 'Vysoká denní smluvní pokuta', law: '§ 2051 OZ (moderace), § 1813 OZ',
+        re: /smluvní\s+pokut\S*[^.]{0,80}?(\d{1,2}(?:,\d{1,3})?)\s?%\s*(?:denně|za\s+každý\s+(?:i\s+započatý\s+)?den)/i,
+        when: (m) => _num(m[1]) >= 0.5,
+        detail: (m, seg) => `${m[1]} % denně${/bez\s+omezení/i.test(seg) ? ' bez omezení' : ''}`, keys: /pokut/i
     },
     {
         id: 'vysoka_pokuta', label: 'Nepřiměřeně vysoká smluvní pokuta', law: '§ 2051 OZ (moderace), § 1813 OZ',
@@ -183,13 +195,15 @@ function scanContract(text) {
     const segs = segment(src);
     const found = [];
     for (const rule of RULES) {
-        if (rule.consumer && !ctx.consumer) continue;
+        if (rule.consumer === true && !ctx.consumer) continue;
         for (const s of segs) {
             const m = s.text.match(rule.re) || (rule.alt && s.text.match(rule.alt));
             if (!m) continue;
             if (rule.when && !rule.when(m, ctx)) continue;
             found.push({
-                id: rule.id, article: s.article, label: rule.label, law: rule.law,
+                id: rule.id, article: s.article, label: rule.label,
+                // 'maybe' = pravidlo ochrany spotřebitele i bez zmínky o spotřebiteli: u podnikatele jde o obchodní riziko
+                law: rule.consumer === 'maybe' && !ctx.consumer ? rule.law + ' — je-li klient spotřebitel; jinak obchodní riziko k posouzení' : rule.law,
                 detail: rule.detail ? rule.detail(m, s.text) : '',
                 quote: s.text.length > 180 ? s.text.slice(0, 177) + '…' : s.text,
                 keys: rule.keys, must: rule.must

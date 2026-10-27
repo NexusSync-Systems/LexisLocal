@@ -29,7 +29,7 @@ function _summary(items) {
 }
 function _denyFile(req, res, fileId) {
     const file = (db.get('inbox_files') || []).find(f => f.id === fileId);
-    if (!file || fileAcl.canAccessFile(file, req.principal, 'write')) return false;
+    if (!file || fileAcl.canAccessFile(file, req.principal, 'file')) return false;
     res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
     return true;
 }

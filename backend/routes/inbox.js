@@ -48,7 +48,7 @@ router.post('/mark-read', async (req, res) => {
     try {
         const inbox = await loadInbox();
         if (inbox.files[fileName]) {
-            if (denyFile(res, inbox.files[fileName], 'write')) return;
+            if (denyFile(res, inbox.files[fileName], 'file')) return; // podatelna smí označit vyřízené
             inbox.files[fileName].status = 'read';
             await saveInbox(inbox);
             res.json({ success: true, message: `Soubor ${fileName} byl označen za vyřízený.` });

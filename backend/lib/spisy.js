@@ -89,6 +89,21 @@ function findByCase(spisZn) {
     return (db.get('spisy') || []).find(s => _caseKey(s.spisZn) === key) || null;
 }
 
+// Záměny znaků po OCR (sken „35 P a Nc“ → „35 P a Ne“, simulace 26. 10. 2026): obě strany převedeme na
+// stejný „tvar“ a hledáme JEDINÝ spis, který po převodu sedí. Jinak null (žádný odhad mezi více spisy).
+function _ocrShape(s) {
+    return _caseKey(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '')
+        .replace(/rn/g, 'm').replace(/[o]/g, '0').replace(/[il|!]/g, '1').replace(/[e]/g, 'c').replace(/[s]/g, '5').replace(/[b]/g, '8').replace(/[z]/g, '2');
+}
+function findByCaseOcr(spisZn) {
+    if (!_isRealCase(spisZn)) return null;
+    const exact = findByCase(spisZn);
+    if (exact) return exact;
+    const shape = _ocrShape(spisZn);
+    const hits = (db.get('spisy') || []).filter(s => _isRealCase(s.spisZn) && _ocrShape(s.spisZn) === shape);
+    return hits.length === 1 ? hits[0] : null;
+}
+
 function _cleanEmail(v) {
     const e = String(v == null ? '' : v).trim();
     if (!e) return '';
@@ -131,7 +146,8 @@ function createSpis(data) {
             // Explicitní owner (ID uživatele kanceláře, dosazuje routa podle přihlášeného) má přednost.
             owner: (data.owner ? String(data.owner) : '') || (data.odpovednyAdvokat ? String(data.odpovednyAdvokat).trim() : '') || 'local',
             readers: [],
-            writers: []
+            writers: [],
+            filers: []
         },
         stav: stav,
         poznamka: data.poznamka ? String(data.poznamka) : '',
@@ -466,10 +482,10 @@ function shareSpis(id, userId, level) {
     const spis = getSpis(id);
     if (!spis) throw new Error('Spis nenalezen.');
     if (!userId) throw new Error('Chybí userId příjemce.');
-    const lvl = level === 'write' ? 'write' : 'read';
+    const lvl = level === 'write' ? 'write' : (level === 'podatelna' || level === 'file') ? 'podatelna' : 'read';
     const access = require('./access').grant(spis, userId, lvl);
     const updated = db.update('spisy', id, { access });
-    addEvent(id, 'sdileni', 'Spis sdílen s „' + userId + '" (' + (lvl === 'write' ? 'čtení+zápis' : 'jen čtení') + ').', { userId, level: lvl });
+    addEvent(id, 'sdileni', 'Spis sdílen s „' + userId + '" (' + ({ write: 'čtení+zápis', podatelna: 'podatelna — čtení a zařazování došlých dokumentů', read: 'jen čtení' }[lvl]) + ').', { userId, level: lvl });
     try { require('./audit').logEvent('Spisová služba', 'Sdílení spisu', spis.spisZn || spis.nazev, { spisId: id, userId, level: lvl }); } catch (e) { /* audit best-effort */ }
     try {
         const sf = require('./spisFolders');
@@ -505,6 +521,7 @@ function setSpisOwner(id, userId) {
     acc.owner = String(userId);
     acc.readers = acc.readers.filter(u => u !== acc.owner);
     acc.writers = acc.writers.filter(u => u !== acc.owner);
+    acc.filers = acc.filers.filter(u => u !== acc.owner);
     const updated = db.update('spisy', id, { access: acc });
     addEvent(id, 'vlastnik', 'Změna vlastníka spisu: „' + prev + '“ → „' + acc.owner + '“.', { from: prev, to: acc.owner });
     try { require('./audit').logEvent('Spisová služba', 'Změna vlastníka spisu', spis.spisZn || spis.nazev, { spisId: id, from: prev, to: acc.owner }); } catch (e) { /* audit best-effort */ }
@@ -519,6 +536,7 @@ function getSpisAccess(id) {
 }
 
 module.exports = {
+    findByCaseOcr,
     stripFolio,
     STAVY,
     DEFAULT_RETENTION_YEARS,

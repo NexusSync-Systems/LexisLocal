@@ -52,6 +52,25 @@ test('obnova do prázdných složek; do neprázdných jen s --prepsat', () => {
     expect(again.stderr).toMatch(/nejsou prázdné/);
 });
 
+test('zkouška obnovy ověří i hlavní auditní log: změněný záznam → selže', () => {
+    const tmp = mk('lexis_bk_tamper_');
+    spawnSync('tar', ['-xzf', archive, '-C', tmp]);
+    const sc = require('../lib/secure_crypto');
+    const key = Buffer.from(fs.readFileSync(path.join(tmp, 'klic', 'lexis.key'), 'utf8').trim(), 'hex');
+    const af = path.join(tmp, 'data', '.audit_log.json');
+    const logs = JSON.parse(sc.decrypt(key, JSON.parse(fs.readFileSync(af, 'utf8'))));
+    expect(logs.length).toBeGreaterThan(0);
+    const ok = run(['--overit', archive]);
+    expect(ok.stdout).toMatch(new RegExp(`záznamů auditu ${logs.length}, záznamů AI \\d+ — oba řetězce v pořádku`));
+    logs[0].target = 'dodatečně změněno';
+    fs.writeFileSync(af, JSON.stringify(sc.encrypt(key, JSON.stringify(logs))));
+    const bad = path.join(root.out, 'zmeneny-audit.tar.gz');
+    spawnSync('tar', ['-czf', bad, '.'], { cwd: tmp });
+    const r = run(['--overit', bad]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toMatch(/Hlavní auditní log v záloze je porušený/);
+});
+
 test('poškozený archiv → zkouška obnovy selže', () => {
     const bad = path.join(root.out, 'poskozena.tar.gz');
     fs.writeFileSync(bad, 'nic');

@@ -47,7 +47,7 @@ router.get('/outstanding', (req, res) => {
 router.post('/from-spis', (req, res) => {
     try {
         const body = req.body || {};
-        if (!_canInvoice({ spisId: body.spisId }, req.principal, 'write')) {
+        if (!_canInvoice({ spisId: body.spisId }, req.principal, 'file')) {
             return res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
         }
         const invoice = fakturace.createInvoiceFromSpis(body.spisId, body);
@@ -61,7 +61,10 @@ router.post('/from-spis', (req, res) => {
 // POST /api/fakturace — faktura z ručních položek { items, klient, dphRate, zaloha }
 router.post('/', (req, res) => {
     try {
-        const invoice = fakturace.createInvoice(req.body || {});
+        // Faktura navázaná na spis jen s přístupem ke spisu (podatelna stačí — fakturace je administrativa).
+        const b0 = req.body || {};
+        if (b0.spisId && !_canInvoice({ spisId: b0.spisId }, req.principal, 'file')) return res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
+        const invoice = fakturace.createInvoice(b0);
         logEvent('Fakturace', 'Vystavení faktury', invoice.variabilniSymbol, { toPay: invoice.toPay });
         res.status(201).json({ invoice });
     } catch (err) {
@@ -73,7 +76,7 @@ router.post('/', (req, res) => {
 router.post('/:id/paid', (req, res) => {
     try {
         const existing = fakturace.listInvoices({}).find(i => i.id === req.params.id);
-        if (existing && !_canInvoice(existing, req.principal, 'write')) {
+        if (existing && !_canInvoice(existing, req.principal, 'file')) {
             return res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
         }
         const updated = fakturace.markPaid(req.params.id, req.body && req.body.amount);
