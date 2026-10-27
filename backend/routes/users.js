@@ -34,6 +34,7 @@ function pairingFor(req, token) {
     return {
         code, ttl,
         urls: pairing.buildUrls(port, code, { https: isHttps, host: req.headers.host }),
+        dashboardUrls: pairing.buildUrls(port, code, { https: isHttps, host: req.headers.host, path: '/' }),
         editor: pin ? { connectUrl: tlsId.buildConnectUrl({ host: req.headers.host, pin, code }), pinShort: tlsId.shortPin(pin) } : null
     };
 }
@@ -96,7 +97,7 @@ me.get('/', (req, res) => {
     const role = users.ROLES[p.role] || null;
     const out = {
         userId: p.userId, name: p.name, kind: p.kind, role: p.role || null, roleLabel: role ? role.label : null,
-        scopes: p.scopes || [], device: p.deviceLabel || null,
+        scopes: p.scopes || [], device: p.deviceLabel || null, deviceId: p.deviceId || null,
         // Hlavní token / solo režim = sdílená identita „Místní uživatel“ → UI doporučí vlastní účty.
         sharedIdentity: p.kind === 'local-token' || p.kind === 'implicit',
         usersConfigured: users.listUsers().length > 0

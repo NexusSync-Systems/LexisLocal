@@ -129,6 +129,16 @@ router.post('/firm-mode', (req, res) => {
     } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+// ── Název a logo kanceláře (hlavička dashboardu) — číst smí každý přihlášený, měnit správce ─────────
+router.get('/kancelar', (req, res) => { res.json(require('../lib/kancelar_profil').get()); });
+router.post('/kancelar', (req, res) => {
+    try {
+        const k = require('../lib/kancelar_profil').set(req.body || {});
+        logEvent('Nastavení', 'Název / logo kanceláře', k.nazev || '(bez názvu)', { logo: !!k.logo, by: req.principal && req.principal.name });
+        res.json(k);
+    } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
 // ── Podatelna smí připravovat rutinní korespondenci (lib/korespondence.js); výchozí VYPNUTO ──────────
 router.get('/podatelna-korespondence', (req, res) => {
     const K = require('../lib/korespondence');

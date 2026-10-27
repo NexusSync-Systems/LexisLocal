@@ -63,7 +63,8 @@ function lanIPv4() {
  */
 function buildUrls(port, code, opts = {}) {
     const scheme = opts.https ? 'https' : 'http';
-    const q = `/m?pair=${encodeURIComponent(code)}`;
+    // opts.path: '/m' = mobilní aplikace (výchozí), '/' = dashboard v prohlížeči (přihlášení účtem)
+    const q = `${opts.path === '/' ? '/' : '/m'}?pair=${encodeURIComponent(code)}`;
     const defPort = (opts.https && Number(port) === 443) || (!opts.https && Number(port) === 80);
     const hp = ip => defPort ? ip : `${ip}:${port}`;
     const urls = lanIPv4().map(ip => `${scheme}://${hp(ip)}${q}`);

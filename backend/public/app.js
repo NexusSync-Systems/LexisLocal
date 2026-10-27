@@ -66,6 +66,29 @@
     };
 })();
 
+// Přihlášení dashboardu vlastním účtem přes párovací odkaz (/?pair=KÓD, platí 2 min, jednou).
+// Správce ho dostane při založení uživatele / nového zařízení; uživatel si ho vytvoří i sám
+// (menu účtu → Připojit další zařízení). Token se uloží jen v tomto prohlížeči.
+(function lexisDashboardPair() {
+    try {
+        if (typeof window === 'undefined' || !window.location) return;
+        const u = new URL(window.location.href);
+        const code = u.searchParams.get('pair');
+        if (!code) return;
+        u.searchParams.delete('pair');
+        history.replaceState(null, '', u.pathname + u.search + u.hash);
+        if (!/^[A-Za-z0-9_-]{4,128}$/.test(code)) return;
+        const base = (location.origin.startsWith('file://') || location.origin.includes('null')) ? 'http://localhost:4000' : location.origin;
+        fetch(base + '/api/pair/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) })
+            .then(r => r.json().then(d => ({ ok: r.ok, d })))
+            .then(({ ok, d }) => {
+                if (ok && d.token) { try { localStorage.setItem('lexis_api_token', d.token); } catch (e) { /* bez úložiště */ } location.reload(); }
+                else alert('Párovací odkaz je neplatný nebo vypršel (platí 2 minuty a jen jednou). Požádejte o nový.');
+            })
+            .catch(() => alert('Přihlášení odkazem se nezdařilo — server je nedostupný.'));
+    } catch (e) { /* bez párování */ }
+})();
+
 // escapeHtml je vytažen do app-helpers.js (načítá se před app.js) — jeden zdroj pravdy.
 
 // Stav spojení v patičce: ověří /api/status s uloženým tokenem (každých 30 s a po návratu

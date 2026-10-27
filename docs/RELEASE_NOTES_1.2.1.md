@@ -18,6 +18,13 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
   v indexu), které by skartace smazala / ponechala / pseudonymizovala. Jen čte; kaskádové mazání
   se doplní po schválení pravidel advokátem.
 
+- **Název a logo kanceláře v dashboardu**: správce je nastaví v záložce Uživatelé → Kancelář (PNG/JPEG/WebP,
+  zmenší se na 128 px); zobrazí se v hlavičce postranního panelu a v titulku okna.
+- **Kdo je přihlášen**: v hlavičce je jméno a role, po kliknutí menu účtu — kancelář, zařízení, seznam vlastních
+  zařízení (zrušení ztraceného), „Připojit další zařízení nebo prohlížeč“ a „Odhlásit z tohoto prohlížeče“.
+- **Přihlášení dashboardu vlastním účtem odkazem** (`/?pair=…`, platí 2 min, jednou): správce ho dostane při založení
+  uživatele, uživatel si ho vytvoří sám pro další zařízení — bez ručního kopírování tokenu.
+
 ## Volitelné
 
 - **Claude přes Amazon Bedrock v EU** (`AI_CHAT_PROVIDER=bedrock`): bez AWS SDK, zámek na `eu-*`

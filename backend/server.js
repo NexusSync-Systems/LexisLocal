@@ -200,6 +200,7 @@ app.post('/api/pair/new', (req, res) => {
     const tlsPin = isHttps ? (app.locals.tlsPin || null) : null;
     const tlsId = require('./lib/tls_identity');
     res.json({ code, ttl, urls: pairing.buildUrls(PORT, code, { https: isHttps, host: req.headers.host }),
+        dashboardUrls: pairing.buildUrls(PORT, code, { https: isHttps, host: req.headers.host, path: '/' }),
         editor: tlsPin ? { connectUrl: tlsId.buildConnectUrl({ host: req.headers.host, pin: tlsPin, code }), pin: tlsPin, pinShort: tlsId.shortPin(tlsPin) } : null });
 });
 

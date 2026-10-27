@@ -18,10 +18,10 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="sidebar-brand">
-                <div class="brand-logo">⚖️</div>
+                <div class="brand-logo" id="brand-logo">⚖️</div>
                 <div class="brand-text">
-                    <h1>LexisLocal</h1>
-                    <span>SECURITY HUB</span>
+                    <h1 id="brand-name">LexisLocal</h1>
+                    <span id="brand-sub">SECURITY HUB</span>
                 </div>
             </div>
             <nav class="sidebar-nav">
@@ -111,7 +111,7 @@
                     <button class="btn btn-secondary" id="btn-parse-test" title="Generuje náhodný demo spis pro vyzkoušení offline">
                         <span class="btn-ic"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 4v3M19.5 5.5h-3"/></svg></span>Generovat demo
                     </button>
-                    <span id="me-chip" class="me-chip" style="display:none;"></span>
+                    <button type="button" id="me-chip" class="me-chip" style="display:none;" aria-haspopup="true" aria-expanded="false"></button>
                     <span id="ai-mode-badge" title="" style="display:none;"></span>
                     <button class="btn btn-secondary" id="btn-theme-toggle" title="Přepnout světlý / tmavý motiv" style="min-width:auto;">🌗</button>
                     <div class="system-time" id="system-time">09:00:00</div>
@@ -456,6 +456,7 @@
                             <div style="font-size:0.74rem;opacity:0.7;margin-top:14px;line-height:1.5;">
                                 <b>Role:</b> Správce — vše vč. uživatelů a nastavení · Advokát — může schvalovat koncepty a výstupy AI · Koncipient, Asistent/ka — připravují, schvaluje advokát · Jen čtení — nahlížení.
                             </div>
+                            <div id="kancelar-card" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-glass);"></div>
                             <div id="firm-mode-card" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-glass);"></div>
                             <div id="codexis-card" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-glass);"></div>
                             <div id="profile-card" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-glass);"></div>

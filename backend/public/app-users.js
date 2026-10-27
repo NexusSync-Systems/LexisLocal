@@ -4,6 +4,7 @@
 Object.assign(LexisLocalApp.prototype, {
 
     async initIdentity() {
+        this.loadBranding();
         const chip = document.getElementById('me-chip');
         try {
             const res = await fetch(`${this.apiBase}/me`, { headers: this.getHeaders() });
@@ -27,11 +28,191 @@ Object.assign(LexisLocalApp.prototype, {
                     ? 'Sdílený hlavní účet — úpravy se v historii zobrazí jako „Místní uživatel“. Založte kolegům vlastní účty v záložce Uživatelé.'
                     : `Přihlášen(a) jako ${me.name}${me.device ? ' · zařízení: ' + me.device : ''}`;
                 chip.classList.toggle('me-chip-shared', !!me.sharedIdentity);
+                const caret = document.createElement('span');
+                caret.textContent = ' ▾'; caret.style.cssText = 'opacity:0.6;margin-left:4px;';
+                chip.append(caret);
+                if (!chip._menuBound) { chip._menuBound = true; chip.addEventListener('click', (e) => { e.stopPropagation(); this.toggleAccountMenu(); }); }
             }
         } catch (e) { /* identita je doplněk — dashboard funguje dál */ }
     },
 
+    // Název a logo kanceláře v hlavičce postranního panelu a v titulku okna (GET /api/settings/kancelar).
+    async loadBranding() {
+        try {
+            const r = await fetch(`${this.apiBase}/settings/kancelar`, { headers: this.getHeaders() });
+            if (!r.ok) return;
+            const k = await r.json();
+            this.kancelar = k;
+            const nm = document.getElementById('brand-name'), sub = document.getElementById('brand-sub'), logo = document.getElementById('brand-logo');
+            if (nm) { nm.textContent = k.nazev || 'LexisLocal'; nm.title = k.nazev || ''; nm.classList.toggle('brand-name-firm', !!k.nazev); }
+            if (sub) sub.textContent = k.nazev ? 'LexisLocal' : 'SECURITY HUB';
+            if (logo) {
+                logo.textContent = '';
+                if (k.logo && /^data:image\/(png|jpeg|webp);base64,/.test(k.logo)) {
+                    const img = document.createElement('img');
+                    img.src = k.logo; img.alt = k.nazev ? `Logo – ${k.nazev}` : 'Logo kanceláře';
+                    img.className = 'brand-logo-img';
+                    logo.appendChild(img); logo.classList.add('has-img');
+                } else { logo.textContent = '⚖️'; logo.classList.remove('has-img'); }
+            }
+            document.title = k.nazev ? `${k.nazev} · LexisLocal` : 'LexisLocal Hub — Právní AI pod kontrolou';
+        } catch (e) { /* značka je doplněk */ }
+    },
+
+    // Menu účtu v hlavičce: kdo je přihlášen, z jakého zařízení, připojení dalšího zařízení, odhlášení.
+    toggleAccountMenu(force) {
+        const chip = document.getElementById('me-chip');
+        let m = document.getElementById('account-menu');
+        const open = force !== undefined ? force : !m;
+        if (m) { m.remove(); m = null; }
+        if (chip) chip.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (!open || !chip) return;
+        const me = this.me || {};
+        m = document.createElement('div');
+        m.id = 'account-menu'; m.className = 'glass account-menu'; m.setAttribute('role', 'menu');
+        const r = chip.getBoundingClientRect();
+        m.style.cssText = `position:fixed;top:${Math.round(r.bottom + 6)}px;right:${Math.max(8, Math.round(window.innerWidth - r.right))}px;z-index:10002;`;
+        const own = me.kind === 'user';
+        const devs = Array.isArray(me.devices) ? me.devices.filter(d => !d.revoked) : [];
+        m.innerHTML = `
+            <div class="acc-head">
+                ${this.kancelar && this.kancelar.nazev ? `<div class="acc-firm">${escapeHtml(this.kancelar.nazev)}</div>` : ''}
+                <div class="acc-name">👤 ${escapeHtml(me.name || '—')}</div>
+                <div class="acc-meta">${escapeHtml(me.roleLabel || (me.sharedIdentity ? 'Správce (hlavní účet)' : ''))}${me.device ? ' · ' + escapeHtml(me.device) : ''}</div>
+                ${me.sharedIdentity ? `<div class="acc-warn">Přihlášen sdíleným hlavním účtem — úpravy se v historii zapíší jako „Místní uživatel“. Pro práci použijte vlastní účet.</div>` : ''}
+            </div>
+            ${own ? `<button type="button" class="acc-item" data-acc="pair">📱 Připojit další zařízení nebo prohlížeč</button>` : ''}
+            ${own && devs.length ? `<div class="acc-sec">Moje zařízení (${devs.length})</div>${devs.map(d => `
+                <div class="acc-dev"><span>${escapeHtml(d.label || 'zařízení')}${d.lastUsedAt ? ` <small>· naposledy ${escapeHtml(new Date(d.lastUsedAt).toLocaleDateString('cs-CZ'))}</small>` : ''}</span>
+                ${d.id === me.deviceId ? '<small>toto</small>' : `<button type="button" class="acc-mini" data-revoke="${escapeHtml(d.id)}" title="Zrušit přístup ztraceného / nepoužívaného zařízení">Zrušit</button>`}</div>`).join('')}` : ''}
+            <button type="button" class="acc-item acc-out" data-acc="logout">🚪 Odhlásit z tohoto prohlížeče</button>`;
+        document.body.appendChild(m);
+        const close = (e) => { if (!m.contains(e.target) && e.target !== chip) { this.toggleAccountMenu(false); document.removeEventListener('click', close); } };
+        setTimeout(() => document.addEventListener('click', close), 0);
+        m.addEventListener('keydown', (e) => { if (e.key === 'Escape') { this.toggleAccountMenu(false); chip.focus(); } });
+        const pairBtn = m.querySelector('[data-acc="pair"]');
+        if (pairBtn) pairBtn.addEventListener('click', () => { this.toggleAccountMenu(false); this.pairOwnDevice(); });
+        m.querySelectorAll('[data-revoke]').forEach(b => b.addEventListener('click', async () => {
+            if (!(await LexisUI.confirm('Zrušit přístup tohoto zařízení? Na něm se bude potřeba znovu přihlásit.'))) return;
+            const x = await fetch(`${this.apiBase}/me/devices/${encodeURIComponent(b.dataset.revoke)}`, { method: 'DELETE', headers: this.getHeaders() });
+            if (!x.ok) alert('❌ ' + ((await x.json().catch(() => ({}))).error || 'HTTP ' + x.status));
+            this.toggleAccountMenu(false); await this.initIdentity();
+        }));
+        m.querySelector('[data-acc="logout"]').addEventListener('click', () => this.logoutBrowser());
+    },
+
+    async pairOwnDevice() {
+        const label = await LexisUI.prompt('Název zařízení (např. „Notebook doma“, „iPhone“):', 'Další zařízení');
+        if (label == null) return;
+        try {
+            const r = await fetch(`${this.apiBase}/pair/new`, { method: 'POST', headers: this.getHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ deviceLabel: label || 'Další zařízení' }) });
+            const d = await r.json();
+            if (!r.ok) { alert('❌ ' + (d.error || 'HTTP ' + r.status)); return; }
+            this.showPairLinks(d, label || 'Další zařízení');
+            await this.initIdentity();
+        } catch (e) { alert('❌ ' + e.message); }
+    },
+
+    // Párovací odkazy bez tokenu: dashboard v prohlížeči / telefon (platí 2 min, jednou).
+    showPairLinks(p, label) {
+        const old = document.getElementById('pair-links-modal'); if (old) old.remove();
+        const ov = document.createElement('div');
+        ov.id = 'pair-links-modal';
+        ov.style.cssText = 'position:fixed;inset:0;z-index:10003;background:rgba(15,23,42,0.6);display:flex;align-items:center;justify-content:center;padding:16px;';
+        const dash = (p.dashboardUrls || [])[0], phone = (p.urls || [])[0];
+        ov.innerHTML = `<div class="glass" style="max-width:520px;width:100%;background:var(--bg-secondary);border-radius:14px;padding:22px;border:1px solid var(--border-glass);">
+            <h3 style="margin:0 0 6px;">📱 Připojit zařízení „${escapeHtml(label)}“</h3>
+            <div style="font-size:0.8rem;opacity:0.8;margin-bottom:12px;">Odkaz otevřete na novém zařízení do <strong id="pl-ttl">${Number(p.ttl) || 120}</strong> s. Platí jen jednou; zařízení se přihlásí vaším účtem.</div>
+            ${dash ? `<div style="font-size:0.8rem;margin-bottom:4px;">Dashboard v prohlížeči (notebook, jiný počítač):</div>
+            <div style="display:flex;gap:6px;margin-bottom:12px;"><input readonly id="pl-dash" value="${escapeHtml(dash)}" style="flex:1;font-size:0.72rem;padding:6px 8px;border-radius:6px;"><button class="btn btn-secondary" data-copy="pl-dash" style="padding:4px 10px;font-size:0.75rem;">Kopírovat</button></div>` : ''}
+            ${phone ? `<div style="font-size:0.8rem;margin-bottom:4px;">Telefon / tablet (mobilní aplikace):</div>
+            <div style="display:flex;gap:6px;margin-bottom:14px;"><input readonly id="pl-phone" value="${escapeHtml(phone)}" style="flex:1;font-size:0.72rem;padding:6px 8px;border-radius:6px;"><button class="btn btn-secondary" data-copy="pl-phone" style="padding:4px 10px;font-size:0.75rem;">Kopírovat</button></div>` : ''}
+            <div style="text-align:right;"><button class="btn btn-primary" id="pl-close" style="padding:6px 16px;">Hotovo</button></div></div>`;
+        document.body.appendChild(ov);
+        ov.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+            const el = document.getElementById(b.dataset.copy);
+            try { await navigator.clipboard.writeText(el.value); b.textContent = 'Zkopírováno ✓'; } catch (e) { el.select(); }
+        }));
+        let left = Number(p.ttl) || 120;
+        const t = setInterval(() => { left--; const e = document.getElementById('pl-ttl'); if (e) e.textContent = left > 0 ? String(left) : '0 — vypršelo'; if (left <= 0) clearInterval(t); }, 1000);
+        ov.querySelector('#pl-close').addEventListener('click', () => { clearInterval(t); ov.remove(); });
+    },
+
+    async logoutBrowser() {
+        const loopbackAdmin = typeof window !== 'undefined' && !!window.LEXIS_API_TOKEN;
+        const msg = loopbackAdmin
+            ? 'Odhlásit váš účet z tohoto prohlížeče? Na tomto počítači (server kanceláře) pak dashboard poběží pod hlavním účtem správce.'
+            : 'Odhlásit z tohoto prohlížeče? Pro další přihlášení budete potřebovat párovací odkaz nebo token.';
+        if (!(await LexisUI.confirm(msg))) return;
+        try { localStorage.removeItem('lexis_api_token'); } catch (e) { /* bez úložiště */ }
+        location.reload();
+    },
+
+    // Karta „Kancelář“ (záložka Uživatelé, jen správce): název a logo do hlavičky dashboardu.
+    async loadKancelarCard() {
+        const el = document.getElementById('kancelar-card');
+        if (!el) return;
+        let k = { nazev: '', logo: null };
+        try { const r = await fetch(`${this.apiBase}/settings/kancelar`, { headers: this.getHeaders() }); if (r.ok) k = await r.json(); } catch (e) { /* prázdné */ }
+        el.innerHTML = `
+            <h3 style="margin:0 0 6px;">🏢 Kancelář</h3>
+            <p style="font-size:0.78rem;opacity:0.8;margin:0 0 10px;line-height:1.45;">Název a logo se zobrazí v hlavičce dashboardu všem uživatelům kanceláře.</p>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+                <div id="kc-preview" class="kc-preview">${k.logo ? `<img src="${escapeHtml(k.logo)}" alt="Logo">` : '⚖️'}</div>
+                <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:6px;">
+                    <input id="kc-nazev" type="text" maxlength="120" placeholder="Advokátní kancelář …" value="${escapeHtml(k.nazev || '')}" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border-glass);background:var(--bg-primary);color:var(--text-primary);">
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <label class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;cursor:pointer;">Nahrát logo<input id="kc-logo" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;"></label>
+                        ${k.logo ? '<button class="btn btn-secondary" id="kc-logo-del" style="padding:4px 10px;font-size:0.75rem;">Odebrat logo</button>' : ''}
+                        <button class="btn btn-primary" id="kc-save" style="padding:4px 12px;font-size:0.75rem;">Uložit</button>
+                    </div>
+                    <div style="font-size:0.72rem;opacity:0.65;">PNG, JPEG nebo WebP; obrázek se zmenší na výšku 128 px.</div>
+                </div>
+            </div>`;
+        let logo; // undefined = beze změny, null = odebrat, string = nové
+        const fileIn = el.querySelector('#kc-logo');
+        fileIn.addEventListener('change', async () => {
+            const f = fileIn.files && fileIn.files[0];
+            if (!f) return;
+            try { logo = await this._shrinkLogo(f); el.querySelector('#kc-preview').innerHTML = `<img src="${escapeHtml(logo)}" alt="Logo">`; }
+            catch (e) { alert('❌ ' + e.message); }
+        });
+        const del = el.querySelector('#kc-logo-del');
+        if (del) del.addEventListener('click', () => { logo = null; el.querySelector('#kc-preview').textContent = '⚖️'; });
+        el.querySelector('#kc-save').addEventListener('click', async () => {
+            const body = { nazev: el.querySelector('#kc-nazev').value };
+            if (logo !== undefined) body.logo = logo;
+            const r = await fetch(`${this.apiBase}/settings/kancelar`, { method: 'POST', headers: this.getHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { alert('❌ ' + (d.error || 'HTTP ' + r.status)); return; }
+            await this.loadBranding();
+            this.loadKancelarCard();
+        });
+    },
+
+    // Logo zmenšené v prohlížeči na výšku 128 px (PNG zachová průhlednost) → data URL pod limit serveru.
+    _shrinkLogo(file) {
+        return new Promise((resolve, reject) => {
+            if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return reject(new Error('Logo musí být PNG, JPEG nebo WebP.'));
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                const h = Math.min(128, img.naturalHeight || 128);
+                const w = Math.max(1, Math.round((img.naturalWidth || h) * h / (img.naturalHeight || h)));
+                const c = document.createElement('canvas'); c.width = Math.min(w, 512); c.height = h;
+                c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                URL.revokeObjectURL(url);
+                const out = c.toDataURL(file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png', 0.9);
+                if (out.length > 340000) return reject(new Error('Logo je i po zmenšení příliš velké.'));
+                resolve(out);
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Obrázek nejde načíst.')); };
+            img.src = url;
+        });
+    },
+
     async loadUsersTab() {
+        if (typeof this.loadKancelarCard === 'function') this.loadKancelarCard();
         if (typeof this.loadFirmModeCard === 'function') this.loadFirmModeCard();
         if (typeof this.loadCodexisCard === 'function') this.loadCodexisCard();
         if (typeof this.loadProfileCard === 'function') this.loadProfileCard();
@@ -157,6 +338,8 @@ Object.assign(LexisLocalApp.prototype, {
             ${editorLink ? `<div style="font-size:0.78rem;margin-bottom:6px;">LexisEditor: Nastavení → Server LexisLocal v kanceláři → Spárovat → vložte odkaz:</div>
                 <div style="display:flex;gap:6px;margin-bottom:10px;"><input readonly id="usr-editor-link" value="${escapeHtml(editorLink)}" style="flex:1;font-size:0.72rem;padding:6px 8px;border-radius:6px;"><button class="btn btn-secondary" data-copy="usr-editor-link" style="padding:4px 10px;font-size:0.75rem;">Kopírovat</button></div>
                 <div style="font-size:0.72rem;opacity:0.7;margin-bottom:10px;">Otisk serveru (ověřte v editoru): <code>${escapeHtml(p.editor.pinShort || '')}</code></div>` : `<div style="font-size:0.75rem;opacity:0.7;margin-bottom:10px;">Odkaz pro LexisEditor je k dispozici jen na HTTPS serveru — použijte token níže.</div>`}
+            ${(p.dashboardUrls || [])[0] ? `<div style="font-size:0.78rem;margin-bottom:4px;">Dashboard v prohlížeči (přihlásí se tímto účtem): otevřete odkaz</div>
+                <div style="display:flex;gap:6px;margin-bottom:10px;"><input readonly id="usr-dash-link" value="${escapeHtml(p.dashboardUrls[0])}" style="flex:1;font-size:0.72rem;padding:6px 8px;border-radius:6px;"><button class="btn btn-secondary" data-copy="usr-dash-link" style="padding:4px 10px;font-size:0.75rem;">Kopírovat</button></div>` : ''}
             ${phoneLink ? `<div style="font-size:0.78rem;margin-bottom:4px;">Telefon / tablet: otevřete odkaz</div>
                 <div style="display:flex;gap:6px;margin-bottom:12px;"><input readonly id="usr-phone-link" value="${escapeHtml(phoneLink)}" style="flex:1;font-size:0.72rem;padding:6px 8px;border-radius:6px;"><button class="btn btn-secondary" data-copy="usr-phone-link" style="padding:4px 10px;font-size:0.75rem;">Kopírovat</button></div>` : ''}
             <div style="font-size:0.82rem;font-weight:700;margin:6px 0 4px;">2) Nebo ruční zadání tokenu</div>
