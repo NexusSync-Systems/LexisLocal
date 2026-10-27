@@ -167,6 +167,21 @@ function stavSpisu(spis) {
     };
 }
 
+/** Co smí uživatel s pravidly cloudu u spisu dělat (pro UI; vynucuje se v setStupen/udelSouhlas/odvolejSouhlas). */
+function opravneni(principal) {
+    const agent = !!(principal && principal.kind === 'agent');
+    const advokat = !agent && _hasScope(principal, 'approve');
+    return { zvysitStupen: !agent, snizitStupen: advokat, udelitSouhlas: advokat, odvolatSouhlas: !agent };
+}
+
+/** Stav cloudu v kanceláři (bez tajemství): zda se pravidla spisů vůbec uplatní. */
+function stavKancelare() {
+    let info = { chat: 'ollama', localOnly: false };
+    try { info = require('./ai_provider').providerInfo(); } catch (e) { /* bez poskytovatele = lokálně */ }
+    const druh = druhPoskytovatele(info.chat);
+    return { provider: info.chat, druh, jenLokalne: !!info.localOnly, cloudAktivni: !info.localOnly && druh !== 'lokalni', rezimOdepreni: rezimOdepreni() };
+}
+
 // ---------------------------------------------------------------------------
 // Cloudový kontext požadavku (co do dotazu přispělo)
 // ---------------------------------------------------------------------------
@@ -340,5 +355,5 @@ module.exports = {
     stupenSpisu, platnySouhlas, vyhodnotSpis, stavSpisu,
     setStupen, udelSouhlas, odvolejSouhlas,
     declare, noteSpis, noteCase, noteFile, noteUnknown, noteRagMatches, scope, pridejNaklady,
-    isLocalUrl, druhPoskytovatele, rozhodni, zaznamenej, shrnuti, rezimOdepreni
+    isLocalUrl, druhPoskytovatele, rozhodni, zaznamenej, shrnuti, rezimOdepreni, opravneni, stavKancelare
 };

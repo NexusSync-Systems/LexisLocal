@@ -69,7 +69,7 @@ node backend/scripts/backup.js --overit /Volumes/Zaloha1/<soubor>.tar.gz   # zko
 ## 7. Pravidla AI pro pilot
 
 - Pilot startuje v režimu **jen lokálně**: `LEXIS_PILOT_LOCAL_ONLY=1` (cloud technicky zakázán).
-- Každý spis má stupeň citlivosti (výchozí **B**). Advokát při zakládání spisu zkontroluje, zda nepatří do **A** (trestní obhajoba, zdravotní údaje, nezletilí, oznamovatelé…). Stupeň má smysl nastavit už teď — až se cloud zapne, rozhoduje podle něj.
+- Každý spis má stupeň citlivosti (výchozí **B**). Advokát při zakládání spisu zkontroluje, zda nepatří do **A** (trestní obhajoba, zdravotní údaje, nezletilí, oznamovatelé…). Stupeň má smysl nastavit už teď (panel ☁️ Cloudová AI na kartě spisu) — až se cloud zapne, rozhoduje podle něj.
 - Školení AI gramotnosti (dokument 4) před prvním použitím, záznam podepsat.
 
 ## 8. Volitelně: cloudový model Claude přes Amazon Bedrock (EU)
@@ -87,19 +87,11 @@ Až po: aktualizovaném DPIA (dokument 2), informacích pro klienty (3), schvál
    ```
 3. Rozpočet: dashboard → Manažerský přehled → Náklady na cloudovou AI (měsíční rozpočet, upozornění, tvrdý strop).
 4. Test před ostrým provozem (syntetická data, dočasná databáze): `node backend/scripts/aws-pilot-test.js`.
-5. **Stupeň a souhlas u spisu.** Tlačítka na kartě spisu zatím nejsou (v plánu). Do té doby je zaznamená správce přes API — zápis jde do deníku spisu i auditu:
-   ```bash
-   T=$(cat "$HOME/Library/Application Support/LexisLocal/api_token")
-   U=https://127.0.0.1:4000/api/spisy/<id-spisu>/cloud
-   curl -s -H "X-API-Token: $T" $U                                   # stav
-   curl -s -H "X-API-Token: $T" -H 'Content-Type: application/json' \
-        -d '{"stupen":"A"}' $U/stupen                                 # zvýšení stupně
-   curl -s -H "X-API-Token: $T" -H 'Content-Type: application/json' \
-        -d '{"typ":"spis","poznamka":"písemný souhlas ze dne …, založen ve spisu"}' $U/souhlas
-   curl -s -H "X-API-Token: $T" -H 'Content-Type: application/json' \
-        -d '{"duvod":"klient odvolal telefonicky dne …"}' $U/souhlas/odvolat
-   ```
-   Snížení stupně vyžaduje `"duvod"`. Souhlas u spisu ve stupni A systém odmítne.
+5. **Stupeň a souhlas u spisu:** Spisová služba → spis → panel **☁️ Cloudová AI**. Tlačítka A–D mění stupeň
+   (snížit smí jen advokát a musí uvést důvod), „Zaznamenat souhlas pro tento spis“ / „Rámcový souhlas (smlouva)“
+   zaznamená souhlas s poznámkou, jak byl udělen (jen advokát; u stupně A se tlačítko nezobrazí),
+   „Klient souhlas odvolal“ smí každý. Každá změna jde do deníku spisu a do auditu. Panel ukazuje i to, zda je
+   cloud v kanceláři vůbec zapnutý. Pro skripty totéž přes API: `GET/POST /api/spisy/<id>/cloud[/stupen|/souhlas|/souhlas/odvolat]`.
 6. Kontrola: dotaz ke spisu bez souhlasu → odpověď z lokálního modelu, v auditu „Cloud AI — Cloud odepřen — zpracováno lokálně“; dotaz ke spisu se souhlasem → v deníku spisu „Dotaz asistenta zpracován v cloudu“.
 
 ## 9. Kontrola před spuštěním

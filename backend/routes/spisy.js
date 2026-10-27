@@ -344,7 +344,8 @@ function _cloudErr(res, err) {
 router.get('/:id/cloud', (req, res) => {
     const spis = gate(req, res, 'read');
     if (!spis) return;
-    res.json({ cloud: cloudPolicy.stavSpisu(spis), stupne: cloudPolicy.STUPNE, typySouhlasu: cloudPolicy.TYPY_SOUHLASU });
+    res.json({ cloud: cloudPolicy.stavSpisu(spis), stupne: cloudPolicy.STUPNE, typySouhlasu: cloudPolicy.TYPY_SOUHLASU,
+        kancelar: cloudPolicy.stavKancelare(), opravneni: cloudPolicy.opravneni(req.principal) });
 });
 router.post('/:id/cloud/stupen', (req, res) => {
     if (!gate(req, res, 'write')) return;

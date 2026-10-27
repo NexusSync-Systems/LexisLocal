@@ -180,3 +180,35 @@ describe('vynucení v ai_provider.chat', () => {
         await expect(ai.embeddings({ prompt: 'text' })).resolves.toEqual({ embedding: [1] });
     });
 });
+
+describe('podklady pro kartu spisu (UI)', () => {
+    test('opravneni: advokát vše, koncipient jen zvýšit/odvolat, agent nic', () => {
+        expect(P.opravneni(ADVOKAT)).toEqual({ zvysitStupen: true, snizitStupen: true, udelitSouhlas: true, odvolatSouhlas: true });
+        expect(P.opravneni(KONCIPIENT)).toEqual({ zvysitStupen: true, snizitStupen: false, udelitSouhlas: false, odvolatSouhlas: true });
+        expect(P.opravneni(AGENT)).toEqual({ zvysitStupen: false, snizitStupen: false, udelitSouhlas: false, odvolatSouhlas: false });
+    });
+    test('stavKancelare: lokálně / jen lokálně / Bedrock EU / přímé API', () => {
+        expect(P.stavKancelare()).toMatchObject({ druh: 'lokalni', cloudAktivni: false });
+        bedrockEnv();
+        expect(P.stavKancelare()).toMatchObject({ provider: 'bedrock', druh: 'cloud_eu', cloudAktivni: true, jenLokalne: false });
+        process.env.LEXIS_PILOT_LOCAL_ONLY = '1';
+        expect(P.stavKancelare()).toMatchObject({ jenLokalne: true, cloudAktivni: false });
+        delete process.env.LEXIS_PILOT_LOCAL_ONLY;
+        process.env.AI_CHAT_PROVIDER = 'anthropic';
+        expect(P.stavKancelare()).toMatchObject({ druh: 'prime_api', cloudAktivni: true });
+        expect(JSON.stringify(P.stavKancelare())).not.toMatch(/AKIA|S"|ak"/); // žádná tajemství
+    });
+    test('pomocné funkce UI: stav kanceláře a text souhlasu (escapování)', () => {
+        global.escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const ui = require('../public/app-spis-cloud.js');
+        expect(ui.spisCloudKancelar({ jenLokalne: true }).text).toMatch(/jen lokálně/);
+        expect(ui.spisCloudKancelar({ cloudAktivni: true, druh: 'cloud_eu' }).text).toMatch(/Bedrock/);
+        expect(ui.spisCloudKancelar({ cloudAktivni: true, druh: 'prime_api' }).text).toMatch(/zablokované/);
+        expect(ui.spisCloudSouhlasText(null)).toMatch(/nezaznamenán/);
+        const t = ui.spisCloudSouhlasText({ stav: 'udelen', typ: 'spis', udelenoAt: '2026-10-27T10:00:00Z', udelil: { name: 'JUDr. <b>X</b>' }, poznamka: '<img src=x>' }, { spis: 'Výslovný souhlas pro tento spis' });
+        expect(t).toMatch(/udělen/);
+        expect(t).not.toMatch(/<img|<b>X/);
+        expect(ui.spisCloudSouhlasText({ stav: 'odvolan', odvolanoAt: '2026-10-27T10:00:00Z', odvolal: { name: 'A' } })).toMatch(/odvolán/);
+        delete global.escapeHtml;
+    });
+});

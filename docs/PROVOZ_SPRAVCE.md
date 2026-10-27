@@ -77,7 +77,7 @@ Protokol podpory: [doplnit: kde se vede] — datum, kdo, důvod, rozsah, výsled
 - Rozpočet: Manažerský přehled → Náklady na cloudovou AI. Odhad podle tokenů je živý; částka z AWS se doplňuje
   každý večer (po `LEXIS_AWS_SYNC_HOUR`, výchozí 22 h). Po dosažení tvrdého stropu jde vše lokálně.
 - Audit „Cloud AI“: každé odeslání i odepření (spisy, model, důvod). Neočekávané odeslání → hlásit advokátovi jako incident.
-- Stupeň a souhlas u spisu: příkazy v [`IMPLEMENTACE_KANCELAR.md`](IMPLEMENTACE_KANCELAR.md#8-volitelně-cloudový-model-claude-přes-amazon-bedrock-eu) (krok 5). Souhlas zaznamenává advokát; správce jen na jeho pokyn.
+- Stupeň a souhlas u spisu: panel ☁️ Cloudová AI na kartě spisu. Souhlas zaznamenává advokát; správce jen na jeho pokyn.
 
 ## Incidenty
 

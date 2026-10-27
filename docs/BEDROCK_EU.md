@@ -45,9 +45,11 @@ Zapnutý Bedrock **neznamená, že do cloudu jde všechno.** Mlčenlivost je ši
   embeddingy přes veřejné OpenAI API jsou zakázané. OpenAI-kompatibilní server na loopbacku
   nebo v LAN kanceláře (vLLM, LM Studio) je lokální model.
 
+V dashboardu: Spisová služba → spis → panel **☁️ Cloudová AI** (stupeň A–D, souhlas, odvolání; tlačítka podle oprávnění uživatele).
+
 API: `GET /api/spisy/:id/cloud`, `POST /api/spisy/:id/cloud/stupen` `{ stupen, duvod }`,
 `POST /api/spisy/:id/cloud/souhlas` `{ typ: "spis"|"ramcovy", poznamka }`,
-`POST /api/spisy/:id/cloud/souhlas/odvolat` `{ duvod }`. Asistenti (`/api/agent/:id`,
+`POST /api/spisy/:id/cloud/souhlas/odvolat` `{ duvod }`. GET vrací i `kancelar` (zda je cloud zapnutý) a `opravneni` (co smí přihlášený uživatel). Asistenti (`/api/agent/:id`,
 `/api/agent-swarm/*`) berou `spisId` / `caseNumber` / `dataClass`.
 
 Jen pro testy se syntetickými daty: `LEXIS_CLOUD_BEZ_KONTEXTU=povolit` pustí do cloudu i dotazy bez kontextu.

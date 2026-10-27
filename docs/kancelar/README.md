@@ -69,7 +69,6 @@ Předchozí verze jsou v gitu (commit před touto změnou).
 
 ## Co v LexisLocalu zatím chybí (dokumenty to uvádějí poctivě)
 
-- Tlačítka pro stupeň citlivosti a souhlas na kartě spisu — zatím jen přes API (postup v `IMPLEMENTACE_KANCELAR.md`, krok 8).
 - Pseudonymizace dotazů před odesláním do cloudu.
 - Kaskádové mazání při skartaci (dokument 6 je podklad pro jeho naprogramování).
 - Diagnostický balíček pro podporu L2 — zatím ruční výpis (`PROVOZ_SPRAVCE.md`).
