@@ -74,7 +74,8 @@ function dataPath(name) {
 // --- Perzistentní nastavení (nezávislé na volbě spisovny) --------------------
 // Nastavení žije v pevném app-data umístění (LEXIS_DATA_DIR || platform appdata),
 // aby bylo čitelné DŘÍV, než víme, kterou spisovnu si uživatel zvolil.
-function _appSettingsDir() { return process.env.LEXIS_DATA_DIR || _defaultDataDir(); }
+// LEXIS_SETTINGS_DIR: jen pro testy (jest.setup.js) — nastavení testů nesmí přepsat nastavení kanceláře.
+function _appSettingsDir() { return process.env.LEXIS_SETTINGS_DIR || process.env.LEXIS_DATA_DIR || _defaultDataDir(); }
 function _settingsFile() { return path.join(_appSettingsDir(), 'lexislocal.settings.json'); }
 function readSettings() {
     try { const o = JSON.parse(fs.readFileSync(_settingsFile(), 'utf8')); return (o && typeof o === 'object') ? o : {}; }

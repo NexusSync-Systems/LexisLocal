@@ -314,12 +314,23 @@ function zaznamenej(decision, info) {
     }
 }
 
-/** Shrnutí pro odpověď API (co se s dotazem stalo). */
+/** Přičte spotřebu cloudového volání k požadavku (zobrazí se v odpovědi asistenta). */
+function pridejNaklady(rec) {
+    const c = _ctx(false);
+    if (!c || !rec) return;
+    c.naklady = c.naklady || { volani: 0, inputTokens: 0, outputTokens: 0, odhadUsd: 0, bezCeniku: false };
+    c.naklady.volani++;
+    c.naklady.inputTokens += rec.inputTokens || 0;
+    c.naklady.outputTokens += rec.outputTokens || 0;
+    if (rec.odhadUsd == null) c.naklady.bezCeniku = true; else c.naklady.odhadUsd = Math.round((c.naklady.odhadUsd + rec.odhadUsd) * 1e6) / 1e6;
+}
+
+/** Shrnutí pro odpověď API (co se s dotazem stalo a kolik stál). */
 function shrnuti() {
     const c = _ctx(false);
     if (!c || !c.last) return null;
     const d = c.last;
-    return { cloud: !!d.allowed, druh: d.druh, code: d.code, provider: d.provider, duvody: d.duvody || [], spisy: d.spisy || [] };
+    return { cloud: !!d.allowed, druh: d.druh, code: d.code, provider: d.provider, duvody: d.duvody || [], spisy: d.spisy || [], naklady: c.naklady || null };
 }
 
 function rezimOdepreni() { return String(process.env.LEXIS_CLOUD_ODEPRENI || 'lokalne').toLowerCase() === 'chyba' ? 'chyba' : 'lokalne'; }
@@ -328,6 +339,6 @@ module.exports = {
     STUPNE, VYCHOZI_STUPEN, TYPY_SOUHLASU, CloudPolicyError,
     stupenSpisu, platnySouhlas, vyhodnotSpis, stavSpisu,
     setStupen, udelSouhlas, odvolejSouhlas,
-    declare, noteSpis, noteCase, noteFile, noteUnknown, noteRagMatches, scope,
+    declare, noteSpis, noteCase, noteFile, noteUnknown, noteRagMatches, scope, pridejNaklady,
     isLocalUrl, druhPoskytovatele, rozhodni, zaznamenej, shrnuti, rezimOdepreni
 };

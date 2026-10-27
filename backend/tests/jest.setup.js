@@ -1,3 +1,15 @@
+// Izolace dat testů (nález 27. 10. 2026): ingestDir.test.js zapsal dočasnou spisovnu do SKUTEČNÉHO
+// nastavení aplikace (~/Library/Application Support/LexisLocal) a testy bez vlastního WATCH_DIR psaly
+// do skutečné databáze. Nastavení i výchozí data proto vždy v dočasné složce; test, který si WATCH_DIR
+// nastaví sám (na začátku souboru), ho dál přepíše.
+{
+  const _os = require('os'), _path = require('path'), _fs = require('fs');
+  const _tmp = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'lexis_jest_'));
+  if (!process.env.LEXIS_SETTINGS_DIR) process.env.LEXIS_SETTINGS_DIR = _path.join(_tmp, 'settings');
+  if (!process.env.WATCH_DIR) { process.env.WATCH_DIR = _path.join(_tmp, 'data'); _fs.mkdirSync(process.env.WATCH_DIR, { recursive: true }); }
+  if (!process.env.LEXIS_KEY_DIR) process.env.LEXIS_KEY_DIR = _path.join(_tmp, 'key');
+}
+
 // Testovaci setup: vypne realna volani Ollamy, aby testy byly DETERMINISTICKE
 // a rychle bez ohledu na to, zda na stroji bezi Ollama. Testy jsou psane pro
 // stav "AI nedostupna" (rychly lexikalni/fallback). Lokalni jest.mock v konkretnim

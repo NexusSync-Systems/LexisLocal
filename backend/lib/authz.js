@@ -27,6 +27,8 @@ const ADMIN_RULES = [
     // Nález 14. 10. 2026: ziskovost, kapacity a sazby napříč všemi spisy = vedení kanceláře;
     // protokoly skartace vyjmenovávají spisy celé kanceláře.
     ['*', '/api/managerial'],
+    // Náklady a rozpočet cloudové AI (napříč spisy a uživateli) = vedení kanceláře.
+    ['*', '/api/ai-usage'],
     ['GET', '/api/skartace/protokoly'],
     ['POST', '/api/agents'],
     ['DELETE', '/api/agents'],

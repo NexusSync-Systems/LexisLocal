@@ -138,17 +138,36 @@ function _ollamaChat(params) {
 // Každý dotaz mimo lokální model projde pravidly spisu (lib/cloud_policy.js): stupeň
 // citlivosti + souhlas klienta. Odepřený cloud → lokální model (nebo chyba, viz
 // LEXIS_CLOUD_ODEPRENI); obojí se zapíše do auditu.
+// Jedna statistika na požadavek (lokálně / cloud / odepřeno) — lib/ai_usage.js.
+function _countRequest(druh) {
+    try {
+        const st = require('./request_context').current();
+        if (!st || st._aiCount) return;
+        st._aiCount = druh;
+        require('./ai_usage').pocitej(druh);
+    } catch (e) { /* statistika nesmí shodit dotaz */ }
+}
+
 async function chat(params) {
     params = params || {};
     const p = _chatProvider();
     _guardLocalOnly('chat', p);
     const policy = require('./cloud_policy');
-    const decision = policy.rozhodni(p);
-    if (decision.druh !== 'lokalni') {
+    let decision = policy.rozhodni(p);
+    if (decision.druh === 'lokalni') {
+        _countRequest('lokalne');
+    } else {
+        const usage = require('./ai_usage');
         const cloudModel = p === 'bedrock' ? (process.env.BEDROCK_MODEL_ID || null) : p === 'anthropic' ? _env('ANTHROPIC_MODEL', null) : _env('OPENAI_CHAT_MODEL', null);
+        // Rozpočet: s tvrdým stropem po vyčerpání měsíčního rozpočtu už nic do cloudu.
+        if (decision.allowed) {
+            const b = usage.kontrolaRozpoctu();
+            if (!b.ok) decision = Object.assign({}, decision, { allowed: false, code: 'rozpocet', duvody: [b.duvod] });
+        }
         if (!decision.allowed) {
             const fallback = policy.rezimOdepreni() === 'lokalne';
             policy.zaznamenej(decision, { provider: p, model: cloudModel, fallback });
+            _countRequest('odepreno');
             if (!fallback) {
                 const e = new Error('Cloud AI odepřen: ' + decision.duvody.join(' '));
                 e.code = 'CLOUD_POLICY'; e.status = 403; e.decision = decision;
@@ -161,10 +180,18 @@ async function chat(params) {
             return r;
         }
         policy.zaznamenej(decision, { provider: p, model: cloudModel });
+        let r;
+        if (p === 'openai') r = await _openaiChat(params.messages, params.options);
+        else if (p === 'anthropic') r = await _anthropicChat(params.messages, params.options);
+        else if (p === 'bedrock') r = await require('./bedrock').chat(params.messages, params.options);
+        else throw new Error('Neznámý poskytovatel AI: ' + p);
+        _countRequest('cloud');
+        // Spotřeba tokenů a odhad ceny (živě) — ke spisům, ze kterých dotaz čerpal.
+        const rec = usage.zaznamenej({ provider: p, model: (r && r.model) || cloudModel, usage: r && r.usage, spisIds: (decision.spisy || []).map(x => x.id) });
+        policy.pridejNaklady(rec);
+        return r;
     }
-    if (p === 'openai') return _openaiChat(params.messages, params.options);
-    if (p === 'anthropic') return _anthropicChat(params.messages, params.options);
-    if (p === 'bedrock') return require('./bedrock').chat(params.messages, params.options);
+    if (p === 'openai') return _openaiChat(params.messages, params.options); // OpenAI-kompatibilní server v síti kanceláře
     return _ollamaChat(params);
 }
 async function embeddings(params) {
