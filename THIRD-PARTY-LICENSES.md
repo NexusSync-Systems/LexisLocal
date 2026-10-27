@@ -34,6 +34,12 @@ U balíčků nabízených pod více licencemi tímto **volíme permisivní varia
 | `jszip` | MIT OR GPL-3.0-or-later | **MIT** |
 | `@zone-eu/mailsplit` | MIT OR EUPL-1.1+ | **MIT** |
 
+## Přibalená data (mimo npm)
+
+| Data | Zdroj | Licence |
+|---|---|---|
+| `assets/tessdata/ces.traineddata.gz`, `eng.traineddata.gz` (OCR, Tesseract 4 LSTM „best_int“) | npm `@tesseract.js-data/ces`, `@tesseract.js-data/eng` 1.0.0 ← tesseract-ocr/tessdata_best | Apache-2.0 |
+
 ## Metodika
 
 Audit prošel rekurzivně všechny `package.json` v `node_modules` (včetně vnořených)

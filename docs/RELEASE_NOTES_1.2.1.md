@@ -48,6 +48,13 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
   „ke kontrole“, schvaluje advokát, nic se neodesílá samo. Asistentka upravuje jen vlastní neschválenou
   korespondenci; text s paragrafy, judikaturou nebo doporučením postupu dostane varovnou připomínku.
   Ve spisovém deníku i auditu je, kdo dopis připravil (`lib/korespondence.js`).
+- **Nezařazené dokumenty ve firemním režimu vidí jen podatelna (role asistent), správce a ten, kdo je nahrál**
+  — v doručené poště, v seznamu nezařazených, ve vyhledávání i v podkladech pro AI. Dřív smlouvu klienta
+  bez sp. zn. viděli všichni, dokud ji někdo nezařadil (mlčenlivost). U nahraného dokumentu se ukládá, kdo ho nahrál.
+- **OCR funguje bez internetu**: jazyková data (čeština, angličtina) jsou přibalená v `assets/tessdata`
+  (~5 MB); dřív se stahovala z CDN a v kanceláři bez sítě OCR skenů selhalo.
+- **Nečitelný dokument zůstane v doručené poště** se štítkem „Nečitelný — zařaďte ručně“ (dřív zmizel úplně).
+- Záznam v doručené poště se ukládá atomicky — dvě souběžná zpracování si už nemohou záznam přepsat.
 - **Sken se špatně přečtenou sp. zn.** („35 P a Ne“ místo „35 P a Nc“) se zařadí do existujícího spisu, pokud
   po opravě typických záměn OCR (c/e, l/1, O/0…) sedí právě na jeden; opravená značka je u dokumentu
   vidět (`caseNumberOcr`). Dřív vznikl spis navíc.
@@ -61,6 +68,8 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
 
 ## Testování
 
+- **Simulace dne v kanceláři na Macu** (`office_day_local.js`, úloha spouštěče `office_day_mac`): oddělená dočasná
+  instalace (vlastní data, port, token), báze z instalačního balíčku, paměť backendu každou minutu.
 - **Simulace dne v kanceláři** (`backend/scripts/office_day.js`, `docs/SIMULACE_KANCELARE.md`): zavedení
   (účty, firemní režim, import spisů, digitalizace) a celý pracovní den 5 lidí nad syntetickými daty
   (150 spisů, 400 dokumentů) s kontrolou dat, oprávnění, lhůt, auditu a odezvy. Na serveru profil
@@ -72,6 +81,4 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
   NS do jeho opravy neproběhne (ostatní zdroje ano).
 - Kaskádové mazání při skartaci čeká na schválení pravidel (`docs/kancelar/6_Pravidla_skartace_navrh.docx`).
 - Bedrock otestován proti specifikaci a testovacím vektorům AWS, ne proti živému účtu.
-- Firemní režim: **nezařazený dokument** (bez sp. zn., např. smlouva od klienta) vidí v doručené poště
-  a ve vyhledávání všichni, dokud ho někdo nezařadí do spisu („sdílená podatelna“).
 - Podatelna nezakládá jiné koncepty než rutinní korespondenci ze seznamu (a tu jen po zapnutí).

@@ -10,7 +10,10 @@
  *   • bez principala (watcher, cron — mimo HTTP)   → bez omezení (systémový běh),
  *   • správce (scope admin)                         → vše,
  *   • dokument zařazený do spisu (sp. zn. → spis)   → podle access.canAccess(spis, level),
- *   • nezařazený dokument (spis zatím neexistuje)   → sdílená podatelna, vidí ho všichni,
+ *   • nezařazený dokument (spis zatím neexistuje)   → vidí jen podatelna (role asistent), správce
+ *                                                     a ten, kdo ho nahrál (mlčenlivost — simulace kanceláře
+ *                                                     27. 10. 2026: smlouvu klienta bez sp. zn. dřív viděli všichni
+ *                                                     i ve vyhledávání a v odpovědích AI),
  *   • RAG úsek bez záznamu v inbox_files            → fail-closed (neznámý původ), kromě
  *     znalostní báze (`_kb_*`), která je společná pro celou kancelář.
  */
@@ -42,8 +45,15 @@ function canAccessFile(file, principal, level) {
     principal = _principal(principal);
     if (_unrestricted(principal)) return true;
     const spis = spisForFile(file);
-    if (!spis) return true; // nezařazený dokument = sdílená podatelna
+    if (!spis) return unfiledVisible(file, principal);
     return access.canAccess(spis, principal, level || 'read');
+}
+
+/** Nezařazený dokument: podatelna (role asistent), správce, nebo ten, kdo ho nahrál. */
+function unfiledVisible(file, principal) {
+    if (!principal || principal.kind !== 'user') return false;
+    if (file && file.uploadedBy && file.uploadedBy === principal.userId) return true;
+    return principal.role === 'asistent' || principal.role === 'spravce';
 }
 
 /** Odfiltruje seznam dokumentů na ty, ke kterým má principal přístup. */
@@ -114,4 +124,4 @@ function logChunkReads(matches, operation) {
     } catch (e) { /* audit čtení nesmí shodit odpověď */ }
 }
 
-module.exports = { spisForFileName, logChunkReads, spisForFile, canAccessFile, filterFiles, readableFileNames, filterChunks, canReadChunkFile };
+module.exports = { unfiledVisible, spisForFileName, logChunkReads, spisForFile, canAccessFile, filterFiles, readableFileNames, filterChunks, canReadChunkFile };

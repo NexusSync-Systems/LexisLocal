@@ -66,6 +66,26 @@ function isImageFile(filePath) {
     return IMAGE_EXTENSIONS.includes(ext);
 }
 
+/** Složka s jazykovými daty OCR: LEXIS_TESSDATA_DIR → resources/assets/tessdata (Electron) → assets/tessdata v repozitáři. */
+function tessdataDir() {
+    const cands = [process.env.LEXIS_TESSDATA_DIR,
+        process.resourcesPath ? path.join(process.resourcesPath, 'assets', 'tessdata') : null,
+        path.join(__dirname, '..', '..', 'assets', 'tessdata')].filter(Boolean);
+    for (const dir of cands) {
+        const gz = ['ces', 'eng'].every(l => fs.existsSync(path.join(dir, `${l}.traineddata.gz`)));
+        const raw = ['ces', 'eng'].every(l => fs.existsSync(path.join(dir, `${l}.traineddata`)));
+        if (gz || raw) return { dir, gzip: gz };
+    }
+    return null;
+}
+function tessCacheDir() {
+    try {
+        const dir = require('./config').dataPath('tessdata-cache');
+        fs.mkdirSync(dir, { recursive: true });
+        return dir;
+    } catch (e) { return null; }
+}
+
 /**
  * Run Tesseract OCR on an image file path or buffer.
  * Uses tesseract.js which is pure JS and requires no system installation.
@@ -89,7 +109,13 @@ async function runTesseractOCR(imagePathOrBuffer) {
                 }
             }
         };
-        if (process.env.LEXIS_TESSDATA_DIR) { opts.langPath = process.env.LEXIS_TESSDATA_DIR; opts.cachePath = process.env.LEXIS_TESSDATA_DIR; }
+        // Offline: přibalená data (assets/tessdata), jinak LEXIS_TESSDATA_DIR; cache v datové složce,
+        // takže i data stažená z CDN se příště čtou lokálně (simulace kanceláře 26. 10. 2026: bez sítě
+        // OCR selhalo a skeny z doručené pošty zmizely).
+        const td = tessdataDir();
+        if (td) { opts.langPath = td.dir; opts.gzip = td.gzip; }
+        const cache = tessCacheDir();
+        if (cache) opts.cachePath = cache;
         const timeoutMs = parseInt(process.env.LEXIS_OCR_TIMEOUT_MS, 10) || 120000;
         let timer;
         const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`OCR nedoběhlo do ${timeoutMs / 1000} s`)), timeoutMs); });
@@ -293,6 +319,7 @@ async function extractTextFromFile(filePath) {
 }
 
 module.exports = {
+    tessdataDir,
     extractTextFromFile,
     ocrImageFile,
     ocrScannedPdf,

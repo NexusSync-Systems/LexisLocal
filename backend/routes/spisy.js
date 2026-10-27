@@ -103,7 +103,8 @@ router.post('/sync', (req, res) => {
 // GET /api/spisy/unfiled — dokumenty bez rozpoznané sp. zn. (k ručnímu zařazení)
 router.get('/unfiled', (req, res) => {
     try {
-        res.json({ files: spisy.listUnfiled() });
+        // firemní režim: nezařazené vidí podatelna, správce a ten, kdo dokument nahrál (lib/file_acl.js)
+        res.json({ files: require('../lib/file_acl').filterFiles(spisy.listUnfiled(), req.principal) });
     } catch (err) {
         res.status(500).json({ error: `Chyba při načtení nezařazených: ${err.message}` });
     }

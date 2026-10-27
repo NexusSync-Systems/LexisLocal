@@ -123,6 +123,22 @@ async function loadInbox() {
 }
 
 // Save inbox data helper to encrypted database
+/** Atomicky vloží/přepíše JEDEN záznam doručené pošty (merge = doplní pole ke stávajícímu). */
+async function upsertInboxFile(key, value, merge) {
+    await inboxMutex.acquire();
+    try {
+        const list = db.get('inbox_files') || [];
+        const i = list.findIndex(f => f.id === key);
+        if (merge && i === -1) return null;
+        const rec = Object.assign({}, merge && i >= 0 ? list[i] : {}, value, { id: key });
+        if (i >= 0) list[i] = rec; else list.push(rec);
+        db.set('inbox_files', list);
+        return rec;
+    } finally {
+        inboxMutex.release();
+    }
+}
+
 async function saveInbox(inbox) {
     await inboxMutex.acquire();
     try {
@@ -197,7 +213,24 @@ async function _processDocument(filePath, opts = {}) {
         console.warn(`⚠️ Soubor ${fileName} je prázdný nebo nelze přečíst.`);
         // Volající (upload) musí vědět, že dokument NEBYL zpracován — dřív API hlásilo
         // úspěch a dokument se v doručené poště vůbec neobjevil (test 2. 10. 2026).
-        return { ok: false, reason: 'z dokumentu nejde přečíst text (prázdný či poškozený soubor, nebo selhalo OCR)' };
+        // Simulace kanceláře 26. 10. 2026: nečitelný sken (OCR bez jazykových dat / bez sítě) navíc
+        // z doručené pošty zmizel úplně. Teď v ní zůstane jako „nečitelný — zařadit ručně“.
+        try {
+            const rel = path.relative(_watchedDir, filePath);
+            const prev = (db.get('inbox_files') || []).find(f => f.id === rel);
+            if (!prev || prev.unreadable) {
+                await upsertInboxFile(rel, {
+                    fileName, filePath, relativePath: rel, status: 'unread', unreadable: true,
+                    caseNumber: 'Neznámá sp. zn.', plaintiff: 'Nezjištěn', defendant: 'Nezjištěn',
+                    deadlineDays: 0, deadlineDate: null, wasOcr: IMAGE_EXTENSIONS.includes(path.extname(filePath).toLowerCase()) || /\.pdf$/i.test(filePath),
+                    isds: isds ? { dmID: isds.dmID, sender: isds.sender, annotation: isds.annotation, deliveryDate: isds.deliveryDate, deliveryHow: isds.deliveryHow } : null,
+                    summary: '⚠️ Nečitelný dokument — text nejde přečíst (sken bez rozpoznaného textu, poškozený soubor nebo selhalo OCR). Otevřete ho, zařaďte do spisu ručně a lhůty zadejte sami.',
+                    processedAt: new Date().toISOString()
+                });
+                logEvent('FileWatcher', 'Nečitelný dokument', fileName, { relativePath: rel });
+            }
+        } catch (e) { console.warn('⚠️ Záznam nečitelného dokumentu selhal:', e.message); }
+        return { ok: false, reason: 'z dokumentu nejde přečíst text (prázdný či poškozený soubor, nebo selhalo OCR) — v doručené poště je jako nečitelný, zařaďte ho ručně' };
     }
     
     // 1. Step: Run High-Quality Czech Heuristic Regex Engine (Bulletproof Fallback)
@@ -311,10 +344,10 @@ async function _processDocument(filePath, opts = {}) {
     let action = null;
     try { action = require('./doc_action').actionFor({ metadata, hearings: hearingsFound }); } catch (e) { action = null; }
 
-    // 3. Save to inbox
-    const inbox = await loadInbox();
+    // 3. Save to inbox — jeden záznam atomicky (dřív load → úprava → uložení celé doručené pošty:
+    //    dvě souběžná zpracování si mohla záznam navzájem přepsat)
     const relativePath = path.relative(_watchedDir, filePath);
-    inbox.files[relativePath] = {
+    await upsertInboxFile(relativePath, {
         fileName: fileName,
         filePath: filePath,
         relativePath: relativePath,
@@ -351,8 +384,7 @@ async function _processDocument(filePath, opts = {}) {
         hasLexisSpec: !!lexisSpec,
         lexisSpec: lexisSpec || null,
         processedAt: new Date().toISOString()
-    };
-    await saveInbox(inbox);
+    });
     // Automatické roztřídění do spisu podle sp. zn. (spisová služba). Best-effort —
     // selhání nesmí shodit zpracování dokumentu.
     try {
@@ -546,4 +578,4 @@ function repointWatcher(newDir) {
     return _watchedDir;
 }
 
-module.exports = { WATCH_DIR, loadInbox, saveInbox, processDocument, setWatcherState, checkAllInsolvencies, repointWatcher, applyIsdsDelivery };
+module.exports = { WATCH_DIR, loadInbox, saveInbox, upsertInboxFile, processDocument, setWatcherState, checkAllInsolvencies, repointWatcher, applyIsdsDelivery };

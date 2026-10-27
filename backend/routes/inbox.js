@@ -10,7 +10,14 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { WATCH_DIR } = require('../lib/config');
-const { loadInbox, saveInbox, processDocument } = require('../lib/watcher');
+const { loadInbox, saveInbox, processDocument, upsertInboxFile } = require('../lib/watcher');
+
+// Kdo dokument nahrál — nezařazený dokument ve firemním režimu vidí jen on, podatelna a správce (lib/file_acl.js).
+async function stampUploader(req, keys) {
+    const p = req.principal;
+    if (!p || p.kind !== 'user') return;
+    for (const k of keys || []) { try { await upsertInboxFile(k, { uploadedBy: p.userId }, true); } catch (e) { /* best-effort */ } }
+}
 const { deleteDocumentIndex } = require('../lib/rag');
 const { safePathInWatchDir } = require('../lib/pathsafe');
 const { loadAuditLogs } = require('../lib/audit');
@@ -225,6 +232,7 @@ router.post('/upload', async (req, res) => {
             const r = await require('../lib/isds_inbox').importZfo(buf);
             if (!r.ok) return res.status(400).json({ error: r.reason });
             if (r.duplicate) return res.json({ success: true, processed: true, duplicate: true, message: `Zpráva ${r.dmID} už byla dříve načtena.` });
+            await stampUploader(req, r.files.map(f => f.relativePath || f.file).filter(Boolean));
             const failed = r.files.filter(f => typeof f.processed === 'string');
             return res.status(failed.length ? 202 : 200).json({
                 success: true, processed: !failed.length, dmID: r.dmID, delivery: r.delivery, files: r.files,
@@ -264,6 +272,7 @@ router.post('/upload', async (req, res) => {
             console.warn(`⚠️ Watcher: Nepodařilo se vynutit okamžité zpracování souboru ${storedName}:`, procErr.message);
         }
 
+        await stampUploader(req, [path.relative(require('../lib/watcher').WATCH_DIR, filePath), storedName]);
         if (processingError) {
             // Soubor je uložený (watcher ho zkusí znovu), ale advokát musí vědět, že
             // metadata/lhůty zatím nejsou — dřív API hlásilo úspěch i při chybě.

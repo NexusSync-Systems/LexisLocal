@@ -89,6 +89,9 @@ describe('task-runner — schválené úlohy', () => {
         expect(k[k.indexOf('--user-data') + 1]).toBe('file://scripts/aws/bootstrap-kancelar.sh');
         expect(k.join(' ')).toContain('Value=lexis-test-1.2.0-kancelar');
         for (const zly of ['../x', 'judikatura; rm', 'plny']) expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { profil: zly } })).toThrow(/nepovolená hodnota/);
+        const k3 = R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'kancelar-3h' } }).args;
+        expect(k3[k3.indexOf('--user-data') + 1]).toBe('file://scripts/aws/bootstrap-kancelar-3h.sh');
+        expect(require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'scripts', 'aws', 'bootstrap-kancelar-3h.sh'), 'utf8')).toMatch(/OFFICE_HOURS=3/);
         expect(require('fs').existsSync(require('path').join(__dirname, '..', '..', 'scripts', 'aws', 'bootstrap-kancelar.sh'))).toBe(true);
         // typ jen ze seznamu jednoho-GPU typů, počet z požadavku nejde změnit
         expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { typ: 'p5.48xlarge' } })).toThrow(/nepovolená hodnota/);
@@ -97,6 +100,13 @@ describe('task-runner — schválené úlohy', () => {
         const b = R.sestav({ uloha: 'aws_spust_test', parametry: { count: 10 } }).args;
         expect(b[b.indexOf('--instance-type') + 1]).toBe('g6.xlarge');
         expect(b[b.indexOf('--count') + 1]).toBe('1');
+    });
+
+    test('office_day_mac: jen hodiny 1–8 a port 4100–4999, pevný skript', () => {
+        const c = R.sestav({ uloha: 'office_day_mac', parametry: { hodiny: 3 } });
+        expect(c.args).toEqual(['backend/scripts/office_day_local.js', '--hours', '3', '--port', '4199']);
+        expect(R.sestav({ uloha: 'office_day_mac' }).args).toContain('3');
+        for (const zle of [{ hodiny: 9 }, { hodiny: '3; rm -rf /' }, { port: 4000 }, { port: 80 }]) expect(() => R.sestav({ uloha: 'office_day_mac', parametry: zle })).toThrow(/rozsah|číslo/);
     });
 
     test('kb_balicek_test: jen balíček ze scratch/kb-balicek, instalace do dočasné datové složky', () => {

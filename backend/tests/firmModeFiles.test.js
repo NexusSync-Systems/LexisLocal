@@ -45,11 +45,11 @@ beforeAll(async () => {
     db.insert('invoices', { id: 'inv_tajna', spisId: spisA.id, variabilniSymbol: '2026001', toPay: 1000, status: 'unpaid' });
 });
 
-test('doručená pošta: cizí kolega nevidí dokument ze spisu bez přístupu, nezařazené ano', async () => {
+test('doručená pošta: cizí kolega nevidí dokument ze spisu bez přístupu; nezařazené jen podatelna/správce/kdo nahrál (27. 10. 2026)', async () => {
     const all = (await request(app).get('/api/inbox/all').set(as(B.token))).body.inbox.map(f => f.id);
-    expect(all).toEqual(['podatelna/nova.pdf']);
+    expect(all).toEqual([]);
     const own = (await request(app).get('/api/inbox/all').set(as(A.token))).body.inbox.map(f => f.id);
-    expect(own).toEqual(expect.arrayContaining(['tajne/zaloba.pdf', 'podatelna/nova.pdf']));
+    expect(own).toEqual(['tajne/zaloba.pdf']);
     expect((await request(app).get('/api/inbox/content').query({ fileName: 'tajne/zaloba.pdf' }).set(as(B.token))).statusCode).toBe(403);
     expect((await request(app).post('/api/inbox/delete').set(as(B.token)).send({ fileName: 'tajne/zaloba.pdf' })).statusCode).toBe(403);
     expect((await request(app).post('/api/inbox/mark-read').set(as(B.token)).send({ fileName: 'tajne/zaloba.pdf' })).statusCode).toBe(403);
@@ -82,7 +82,8 @@ test('RAG: úseky cizího spisu a neznámého původu se odfiltrují, KB zůstá
         { fileName: 'neznamy/soubor.pdf', text: 'bez záznamu' },
         { fileName: '0075a.txt', scope: '_kb_obcansky', text: '§ 75a' }
     ];
-    expect(fileAcl.filterChunks(chunks, pB()).map(c => c.fileName)).toEqual(['podatelna/nova.pdf', '0075a.txt']);
+    expect(fileAcl.filterChunks(chunks, pB()).map(c => c.fileName)).toEqual(['0075a.txt']);
+    expect(fileAcl.filterChunks(chunks, { kind: 'user', userId: 'asi', role: 'asistent', scopes: ['read', 'write'] }).map(c => c.fileName)).toEqual(['podatelna/nova.pdf', '0075a.txt']);
     const pA = { kind: 'user', userId: A.user.id, name: A.user.name, scopes: ['read', 'write'] };
     expect(fileAcl.filterChunks(chunks, pA).map(c => c.fileName)).toContain('tajne/zaloba.pdf');
     expect(fileAcl.filterChunks(chunks, { kind: 'user', userId: 'x', scopes: ['admin'] })).toHaveLength(4);

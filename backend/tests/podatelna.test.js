@@ -110,3 +110,27 @@ test('kontrola smluv: klauzule ze simulace kanceláře (i bez zmínky o spotřeb
     const benign = 'Smlouva o dílo\nČlánek 1\nZáruční doba činí 24 měsíců.\nČlánek 2\nVady lze oznámit do 30 dnů.\nČlánek 3\nSmluvní pokuta činí 0,05 % denně z dlužné částky a strany smlouvu podepsaly.\n';
     expect(cs.scanContract(benign).map(f => f.id)).toEqual([]);
 });
+
+test('nezařazený dokument: vidí ho kdo ho nahrál, podatelna a správce — ne ostatní kolegové', async () => {
+    const up = await request(app).post('/api/inbox/upload').set(as(ADV.token)).send({ fileName: 'smlouva_klienta_bez_spzn.txt',
+        base64: Buffer.from('SMLOUVA O DÍLO\nObjednatel: Klient Testovací\nCena 100 000 Kč.\n').toString('base64') });
+    expect([200, 202]).toContain(up.statusCode);
+    const X = (await request(app).post('/api/users').set(ADMIN).send({ name: 'Mgr. Jiný Advokát', role: 'advokat' })).body;
+    const ids = async (tok) => ((await request(app).get('/api/inbox/all').set(as(tok))).body.inbox || []).map(f => f.fileName);
+    expect(await ids(ADV.token)).toContain('smlouva_klienta_bez_spzn.txt');   // nahrál
+    expect(await ids(ASI.token)).toContain('smlouva_klienta_bez_spzn.txt');   // podatelna
+    expect(await ids(X.token)).not.toContain('smlouva_klienta_bez_spzn.txt'); // kolega bez vztahu
+    const un = (tok) => request(app).get('/api/spisy/unfiled').set(as(tok));
+    expect((await un(X.token)).body.files.map(f => f.fileName)).not.toContain('smlouva_klienta_bez_spzn.txt');
+    expect((await un(ASI.token)).body.files.map(f => f.fileName)).toContain('smlouva_klienta_bez_spzn.txt');
+}, 30000);
+
+test('nečitelný dokument zůstane v doručené poště se štítkem (dřív zmizel)', async () => {
+    const up = await request(app).post('/api/inbox/upload').set(as(ASI.token)).send({ fileName: 'prazdny_sken.txt', base64: Buffer.from('   \n  ').toString('base64') });
+    expect(up.statusCode).toBe(202);
+    expect(up.body.warning).toMatch(/nečitelný/);
+    const it = ((await request(app).get('/api/inbox/all').set(as(ASI.token))).body.inbox || []).find(f => f.fileName === 'prazdny_sken.txt');
+    expect(it).toBeTruthy();
+    expect(it.unreadable).toBe(true);
+    expect(it.summary).toMatch(/Nečitelný dokument/);
+}, 30000);

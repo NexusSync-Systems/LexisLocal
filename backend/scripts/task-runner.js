@@ -156,7 +156,8 @@ const ULOHY = {
         // Zóna dostupnosti (26. 10. 2026: „InsufficientInstanceCapacity“ pro g6.xlarge ve výchozí zóně).
         const az = oneOf(p.az, ['a', 'b', 'c'], null);
         // Profil: judikatura = serverový test 1.2.0, kancelar = simulace dne v kanceláři (office_day.js, ~10 h).
-        const profil = oneOf(p.profil, ['judikatura', 'kancelar'], 'judikatura');
+        // kancelar-3h = stejná simulace, den zhuštěný do 3 h (levnější ověření oprav)
+        const profil = oneOf(p.profil, ['judikatura', 'kancelar', 'kancelar-3h'], 'judikatura');
         // Typ instance: jen GPU typy s jednou GPU (26. 10. 2026 g6.xlarge v eu-central-1 bez kapacity ve všech zónách).
         // g5.xlarge = A10G 24 GB (rychlejší), g4dn.xlarge = T4 16 GB (pomalejší) — odezvy nejdou přímo srovnat s g6 (L4).
         const typ = oneOf(p.typ, ['g6.xlarge', 'g5.xlarge', 'g4dn.xlarge'], 'g6.xlarge');
@@ -200,6 +201,12 @@ const ULOHY = {
     aktualizace_judikatury: p => ({
         cmd: NODE,
         args: ['backend/scripts/aktualizace-judikatury.js', '--dni', String(int(p.dni, 7, 400, 60)), ...(p.bezNahrani ? ['--bez-nahrani'] : [])],
+    }),
+    // Simulace dne v kanceláři NA TOMTO MACU v oddělené dočasné instalaci (vlastní data, port, token;
+    // skutečná data aplikace se nemění). Báze z balíčku scratch/kb-balicek; výsledky scratch/ukoly/office_day_mac/.
+    office_day_mac: p => ({
+        cmd: NODE,
+        args: ['backend/scripts/office_day_local.js', '--hours', String(int(p.hodiny, 1, 8, 3)), '--port', String(int(p.port, 4100, 4999, 4199))],
     }),
     git_stav: () => ({ cmd: 'git', args: ['status', '--short', '--branch'] }),
     git_log: p => ({ cmd: 'git', args: ['log', '--oneline', '-n', String(int(p.n, 1, 50, 10))] }),

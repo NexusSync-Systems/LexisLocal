@@ -43,6 +43,16 @@ node backend/scripts/office_day.js --base https://<server> --token <token> --ins
 
 `--smoke` = 20 min den, 30 + 30 dokumentů. Tokeny uživatelů jsou jen v paměti procesu.
 
+Na Macu (jako budoucí Mac mini) v ODDĚLENÉ dočasné instalaci — skutečná data aplikace se nemění:
+
+```json
+{"uloha": "office_day_mac", "parametry": {"hodiny": 3}}
+```
+
+`backend/scripts/office_day_local.js`: ověří Ollamu, nainstaluje bázi z `scratch/kb-balicek/lexis-baze-*.tar.gz`,
+spustí vlastní backend na 127.0.0.1:4199, `caffeinate` drží Mac vzhůru, paměť backendu každou minutu, po skončení
+instanci zastaví a dočasná data smaže. Výsledky: `scratch/ukoly/office_day_mac/<čas>/`. Zastavení: `{"uloha":"stop"}`.
+
 ## Nová datová sada
 
 ```bash
