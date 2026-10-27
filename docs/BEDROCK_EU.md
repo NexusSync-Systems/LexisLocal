@@ -47,7 +47,8 @@ BEDROCK_MODEL_ID=eu.anthropic.claude-…   # přesné ID EU profilu z konzole Be
 # BEDROCK_MAX_TOKENS=4096
 ```
 
-Restartovat server. Ověření: dotaz na rešeršníka → v transparenčním logu je model `eu.anthropic…`;
+Restartovat server. Kontrola nastavení: `node backend/scripts/bedrock-check.js` (s `--volat` jeden zkušební
+dotaz se syntetickým textem). Ověření: dotaz na rešeršníka → v transparenčním logu je model `eu.anthropic…`;
 v CloudTrail (eu-central-1) jsou volání `Converse` pod uživatelem `lexislocal-bedrock`.
 
 **Ověřit cílové regiony profilu** (AWS upozorňuje, že prefix `eu.` sám nestačí):
@@ -56,6 +57,46 @@ aws bedrock get-inference-profile --region eu-central-1 \
   --inference-profile-identifier <BEDROCK_MODEL_ID> --query 'models[].modelArn'
 ```
 Všechny ARN musí být v `eu-*` regionech.
+
+## Jak zajistit, že data neodejdou do USA (kontrolní seznam)
+
+Každá vrstva sama nestačí — chrání až dohromady:
+
+1. **Kód LexisLocalu** — region jen `eu-*`, model jen `eu.…` profil nebo model v EU regionu; `us.`, `global.`
+   odmítne ještě před odesláním. Modely, u kterých AWS ukládá veškerý provoz (Claude Fable 5 / 5.1, až 30 dní
+   kvůli odhalování zneužití, s možnou ruční kontrolou AWS), odmítne, pokud kancelář výslovně nenastaví
+   `BEDROCK_POVOLIT_UKLADANI=1`. Pro spisy volte model Claude, který umožňuje nulové ukládání.
+2. **IAM politika** (šablona `bedrock-eu-kancelar.yaml`) — uživatel smí volat jen Anthropic přes EU profily,
+   Bedrock mimo `eu-*` má výslovně zakázaný, globální a jiné profily taky; nesmí přepnout uchovávání dat
+   na nic jiného než `none`.
+3. **Uchovávání dat v účtu = `none`** — v nastavení Bedrocku (data retention, pro každý EU region zvlášť;
+   nenastavený region se řídí výchozím chováním modelu). U modelů, které nulové ukládání umožňují, pak AWS
+   nic neukládá; poskytovatel modelu (Anthropic) k dotazům ani odpovědím přístup nemá nikdy.
+4. **Model invocation logging vypnuté** (výchozí stav) — jinak by se celé dotazy ukládaly do CloudWatch/S3.
+   CloudTrail ukládá jen metadata volání (kdo, kdy, který model, `inferenceRegion`), ne obsah.
+5. **Druhá pojistka pro celý účet** (AWS Organizations, SCP) — platí i pro jiné uživatele účtu:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       { "Sid": "BedrockJenEU", "Effect": "Deny", "Action": "bedrock:*", "Resource": "*",
+         "Condition": { "StringNotLike": { "aws:RequestedRegion": "eu-*" } } },
+       { "Sid": "JenNuloveUkladani", "Effect": "Deny", "Action": "bedrock:PutAccountDataRetention", "Resource": "*",
+         "Condition": { "StringNotEquals": { "bedrock:DataRetentionMode": "none" } } }
+     ]
+   }
+   ```
+6. **Klientské pasáže anonymizované** (LexisLocal) — i kdyby cokoli selhalo, ke cloudovému modelu jdou
+   bez rodných čísel, účtů, kontaktů a jmen; vyhledávání a znalostní báze zůstávají lokální.
+7. **Ověření** — `node backend/scripts/bedrock-check.js` (nastavení), s `--volat` jeden zkušební dotaz
+   se syntetickým textem; v CloudTrail (eu-central-1) u volání `Converse` zkontrolovat `inferenceRegion` (musí být `eu-*`).
+
+**Co technicky vyřešit nejde:** AWS je americká společnost (CLOUD Act). Data se zpracují v EU a při nulovém
+ukládání se neuchovávají, právní riziko přístupu orgánů USA ale posoudí advokát v DPIA a zpracovatelské
+smlouvě s AWS (`docs/kancelar/`). Pokud ho kancelář nepřijme, zůstává LexisLocal jen lokální (výchozí stav).
+
+Zdroje (10/2026): AWS Bedrock — Data protection, Data retention, Abuse detection; AWS blog „Cross-region
+inference for EU data processing“.
 
 ## Vypnutí
 

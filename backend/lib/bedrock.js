@@ -37,6 +37,12 @@ function modelId() {
         if (!/^arn:aws:bedrock:eu-[a-z]+-\d:/.test(m)) throw new Error(`Bedrock: ARN modelu „${m}" není v EU regionu.`);
         return m;
     }
+    // Modely, u kterých AWS ukládá VEŠKERÝ provoz až 30 dní (odhalování zneužití, možná ruční
+    // kontrola AWS) — Claude Fable 5 / 5.1 (dokumentace Bedrock „Abuse detection“, 10/2026).
+    // Pro advokátní mlčenlivost je odmítneme, pokud kancelář výslovně nepovolí BEDROCK_POVOLIT_UKLADANI=1.
+    if (/fable[-_.]?5/i.test(m) && process.env.BEDROCK_POVOLIT_UKLADANI !== '1') {
+        throw new Error(`Bedrock: model „${m}" AWS ukládá až 30 dní (odhalování zneužití) — pro spisy zvolte model Claude, který umožňuje nulové ukládání (data retention „none“), nebo vědomě nastavte BEDROCK_POVOLIT_UKLADANI=1.`);
+    }
     if (/^eu\.[a-z0-9-]+\./.test(m)) return m;
     if (/^[a-z]{2,6}\./.test(m) && !/^(anthropic|amazon|meta|mistral|cohere|ai21|deepseek|openai|qwen|writer)\./.test(m)) {
         throw new Error(`Bedrock: profil „${m}" může směrovat mimo EU — použij EU profil („eu.…“).`);

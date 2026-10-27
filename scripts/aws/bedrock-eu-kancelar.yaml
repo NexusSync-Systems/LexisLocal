@@ -46,6 +46,15 @@ Resources:
             Condition:
               StringNotLike:
                 aws:RequestedRegion: 'eu-*'
+          - Sid: ZakazZmenyUkladaniDat
+            # LexisLocal nesmí přepnout uchovávání dat Bedrocku na nic jiného než „none“ (nulové ukládání)
+            Effect: Deny
+            Action:
+              - bedrock:PutAccountDataRetention
+            Resource: '*'
+            Condition:
+              StringNotEquals:
+                bedrock:DataRetentionMode: 'none'
           - Sid: ZakazGlobalnichAJinychProfilu
             Effect: Deny
             Action:

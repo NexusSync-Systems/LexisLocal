@@ -30,7 +30,10 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
 - **Claude přes Amazon Bedrock v EU** (`AI_CHAT_PROVIDER=bedrock`): bez AWS SDK, zámek na `eu-*`
   regiony a EU inference profily v kódu, klientské pasáže ke cloudovému modelu jen anonymizované,
   režim „jen lokálně“ ho zakáže. Šablona CloudFormation pro účet kanceláře (`scripts/aws/bedrock-eu-kancelar.yaml`)
-  a návod `docs/BEDROCK_EU.md`. Ve výchozím stavu vypnuto.
+  a návod `docs/BEDROCK_EU.md`. Ve výchozím stavu vypnuto. Modely, u kterých AWS ukládá veškerý provoz
+  (Claude Fable 5 / 5.1), kód odmítne bez výslovného `BEDROCK_POVOLIT_UKLADANI=1`; IAM šablona zakáže přepnout
+  uchovávání dat na jiný režim než „none“; kontrola nastavení `backend/scripts/bedrock-check.js`;
+  v návodu kontrolní seznam „jak zajistit, že data neodejdou do USA“ včetně SCP pro celý účet.
 - **Kontrola dlouhých smluv po částech souběžně**: `AGENT_CHUNK_CONCURRENCY` (výchozí 1 = beze změny),
   `AGENT_CHUNK_NUM_PREDICT`. Doporučené hodnoty po měření na serveru.
 

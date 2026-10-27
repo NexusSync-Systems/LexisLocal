@@ -3,7 +3,7 @@ const fs = require('fs'), os = require('os'), path = require('path');
 const B = require('../lib/bedrock');
 
 const ENV = ['BEDROCK_REGION', 'AWS_REGION', 'BEDROCK_MODEL_ID', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN',
-    'AWS_PROFILE', 'AWS_SHARED_CREDENTIALS_FILE', 'AI_CHAT_PROVIDER', 'LEXIS_PILOT_LOCAL_ONLY', 'AI_LOCAL_ONLY'];
+    'AWS_PROFILE', 'AWS_SHARED_CREDENTIALS_FILE', 'AI_CHAT_PROVIDER', 'LEXIS_PILOT_LOCAL_ONLY', 'AI_LOCAL_ONLY', 'BEDROCK_POVOLIT_UKLADANI'];
 const saved = {};
 beforeEach(() => { for (const k of ENV) { saved[k] = process.env[k]; delete process.env[k]; } });
 afterEach(() => { for (const k of ENV) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } delete global.fetch; });
@@ -69,4 +69,14 @@ test('lokální režim zakáže Bedrock dřív, než cokoli odejde', async () =>
     global.fetch = jest.fn();
     await expect(require('../lib/ai_provider').chat({ messages: [{ role: 'user', content: 'x' }] })).rejects.toThrow(/LEXIS_PILOT_LOCAL_ONLY/);
     expect(global.fetch).not.toHaveBeenCalled();
+});
+
+test('model, který AWS ukládá (Claude Fable 5 / 5.1), se odmítne, pokud kancelář ukládání výslovně nepovolí', () => {
+    process.env.BEDROCK_MODEL_ID = 'eu.anthropic.claude-fable-5-1-v1:0';
+    expect(() => B.modelId()).toThrow(/ukládá až 30 dní/);
+    process.env.BEDROCK_POVOLIT_UKLADANI = '1';
+    expect(B.modelId()).toBe('eu.anthropic.claude-fable-5-1-v1:0');
+    delete process.env.BEDROCK_POVOLIT_UKLADANI;
+    process.env.BEDROCK_MODEL_ID = 'eu.anthropic.claude-opus-4-8-v1:0';
+    expect(B.modelId()).toBe('eu.anthropic.claude-opus-4-8-v1:0');
 });
