@@ -92,6 +92,11 @@ describe('task-runner — schválené úlohy', () => {
         const k3 = R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'kancelar-3h' } }).args;
         expect(k3[k3.indexOf('--user-data') + 1]).toBe('file://scripts/aws/bootstrap-kancelar-3h.sh');
         expect(require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'scripts', 'aws', 'bootstrap-kancelar-3h.sh'), 'utf8')).toMatch(/OFFICE_HOURS=3/);
+        const kv = R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'kancelar-velka', typ: 'g5.xlarge' } }).args;
+        expect(kv[kv.indexOf('--user-data') + 1]).toBe('file://scripts/aws/bootstrap-kancelar-velka.sh');
+        const bv = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'scripts', 'aws', 'bootstrap-kancelar-velka.sh'), 'utf8');
+        expect(bv).toMatch(/OFFICE_DATASET=backend\/eval\/office_day\/dataset-velka-v1\.tar\.gz/);
+        expect(require('fs').existsSync(require('path').join(__dirname, '..', 'eval', 'office_day', 'dataset-velka-v1.tar.gz'))).toBe(true);
         expect(require('fs').existsSync(require('path').join(__dirname, '..', '..', 'scripts', 'aws', 'bootstrap-kancelar.sh'))).toBe(true);
         // typ jen ze seznamu jednoho-GPU typů, počet z požadavku nejde změnit
         expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { typ: 'p5.48xlarge' } })).toThrow(/nepovolená hodnota/);

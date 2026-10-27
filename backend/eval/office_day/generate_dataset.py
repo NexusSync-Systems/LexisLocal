@@ -46,6 +46,20 @@ KANCELAR = {
 }
 ADVOKATI = [u for u in KANCELAR['uzivatele'] if u['role'] == 'advokat']
 
+# Větší kancelář pro zátěžový den (--velka): 6 advokátů, 2 koncipienti, 2 asistentky.
+KANCELAR_VELKA = {
+    'nazev': 'Advokátní kancelář Malá, Veselý & partneři (SIMULACE – velká)',
+    'uzivatele': KANCELAR['uzivatele'][:3] + [
+        {'key': 'horak', 'name': 'JUDr. Martin Horák', 'role': 'advokat'},
+        {'key': 'kralova', 'name': 'Mgr. Tereza Králová', 'role': 'advokat'},
+        {'key': 'benes', 'name': 'Mgr. David Beneš', 'role': 'advokat'},
+        KANCELAR['uzivatele'][3],
+        {'key': 'pokorna', 'name': 'Mgr. Hana Pokorná', 'role': 'koncipient'},
+        KANCELAR['uzivatele'][4],
+        {'key': 'urbanova', 'name': 'Alena Urbanová', 'role': 'asistent'},
+    ]
+}
+
 JMENA_M = ['Jan', 'Petr', 'Pavel', 'Martin', 'Tomáš', 'Jiří', 'Lukáš', 'Jakub', 'David', 'Michal', 'Ondřej', 'Radek', 'Vojtěch', 'Filip', 'Aleš']
 JMENA_Z = ['Eva', 'Jana', 'Lucie', 'Petra', 'Kateřina', 'Markéta', 'Veronika', 'Tereza', 'Hana', 'Zuzana', 'Alena', 'Monika', 'Barbora', 'Iveta']
 PRIJMENI = [('Novák', 'Nováková'), ('Svoboda', 'Svobodová'), ('Dvořák', 'Dvořáková'), ('Černý', 'Černá'), ('Procházka', 'Procházková'),
@@ -310,7 +324,12 @@ def main():
     ap.add_argument('--out', default='dataset'); ap.add_argument('--seed', type=int, default=20261103)
     ap.add_argument('--spisy', type=int, default=150); ap.add_argument('--onboarding', type=int, default=250)
     ap.add_argument('--den', type=int, default=150); ap.add_argument('--nove-spisy', type=int, default=8)
+    ap.add_argument('--velka', action='store_true', help='větší kancelář (10 lidí) pro zátěžový den')
     a = ap.parse_args()
+    global KANCELAR, ADVOKATI
+    if a.velka:
+        KANCELAR = KANCELAR_VELKA
+        ADVOKATI = [u for u in KANCELAR['uzivatele'] if u['role'] == 'advokat']
     g = Gen(a.seed)
     out = a.out
     for d in ('onboarding', 'den', 'knowhow'):
@@ -371,14 +390,17 @@ def main():
 
     # nové věci během dne (asistentka založí spis po kontrole střetu zájmů)
     nove = []
-    jmena = {x for s in spisy for x in (s['klient'], s['protistrana'])}
+    # klíč bez právní formy: „Alfa Logistika s.r.o.“ a „Alfa Logistika a.s.“ prověrka střetu správně bere jako tutéž firmu
+    def _klic(x):
+        return x.replace(' s.r.o.', '').replace(' a.s.', '').strip().lower()
+    jmena = {_klic(x) for s in spisy for x in (s['klient'], s['protistrana'])}
 
     def nova_strana():
         # nová věc bez střetu: jméno, které ve spisech kanceláře není (jinak by šlo o skutečný střet)
-        for _ in range(200):
+        for _ in range(400):
             x = g.strana()
-            if x not in jmena:
-                jmena.add(x); return x
+            if _klic(x) not in jmena:
+                jmena.add(_klic(x)); return x
         raise RuntimeError('málo jmen pro nové strany')
     for i in range(a.nove_spisy):
         ag = g.r.choice(AGENDY); soud, mesto = g.r.choice(SOUDY); adv = g.r.choice(ADVOKATI)
@@ -438,7 +460,8 @@ def main():
             fn = f'{slug}_zaloba_nova.pdf'; write_pdf(os.path.join(out, 'den', fn), zaloba(g, s)); exp = dict(caseNumber=s['spisZn'])
         else:  # písemnost k věci, kterou kancelář nemá → automaticky vznikne spis bez vlastníka
             ag = g.r.choice(AGENDY); soud, mesto = g.r.choice(SOUDY)
-            cizi = {'id': None, 'spisZn': g.spzn(ag[1]), 'soud': soud, 'soud_mesto': mesto, 'zalobce': g.strana(), 'zalovany': g.strana(), 'predmet': ag[3]}
+            # strany cizí věci nesmí kolidovat s klienty kanceláře (jinak by v systému vznikl skutečný střet zájmů)
+            cizi = {'id': None, 'spisZn': g.spzn(ag[1]), 'soud': soud, 'soud_mesto': mesto, 'zalobce': nova_strana(), 'zalovany': nova_strana(), 'predmet': ag[3]}
             fn = f'{slug}_neznama_vec.pdf'; write_pdf(os.path.join(out, 'den', fn), vyzva(g, cizi, dor))
             docs.append({'file': f'den/{fn}', 'phase': 'den', 'kind': 'neznama', 'spisId': None, 'spisZn': cizi['spisZn'], 't': t,
                          'expect': dict(caseNumber=cizi['spisZn'], deadlineDays=10, autoSpis=True)})

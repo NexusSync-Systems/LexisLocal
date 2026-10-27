@@ -25,6 +25,17 @@ Na serveru (GPU, plná báze, ~10 h, vypne se sám) — úloha spouštěče, **s
 {"uloha": "aws_spust_test", "parametry": {"profil": "kancelar", "az": "b"}}
 ```
 
+Profily (`"profil"` v úloze):
+
+| Profil | Kancelář | Den | Instance běží |
+|---|---|---|---|
+| `kancelar` | 5 lidí, 150 spisů, 250 + 150 dokumentů | 8 h | ~10 h |
+| `kancelar-3h` | totéž | zhuštěný do 3 h | ~4,5 h |
+| `kancelar-velka` | **zátěžový den**: 6 advokátů, 2 koncipienti, 2 asistentky, 300 spisů, 400 + 350 dokumentů, tempo práce ×1,5 (`--intenzita 1.5`) | 8 h | ~11 h |
+
+Simulace ověřuje i dashboard: název a logo kanceláře (Z12), že každý účet vidí sebe (K19) a připojení
+dalšího zařízení odkazem `/?pair=` s přihlášením vlastním účtem a zrušením zařízení (K20).
+
 Když g6.xlarge nemá kapacitu (`InsufficientInstanceCapacity`), lze zvolit `"typ": "g5.xlarge"` (A10G, rychlejší)
 nebo `"g4dn.xlarge"` (T4, pomalejší) — časy odezvy pak nejdou přímo srovnat s běhy na g6.
 

@@ -157,7 +157,8 @@ const ULOHY = {
         const az = oneOf(p.az, ['a', 'b', 'c'], null);
         // Profil: judikatura = serverový test 1.2.0, kancelar = simulace dne v kanceláři (office_day.js, ~10 h).
         // kancelar-3h = stejná simulace, den zhuštěný do 3 h (levnější ověření oprav)
-        const profil = oneOf(p.profil, ['judikatura', 'kancelar', 'kancelar-3h'], 'judikatura');
+        // kancelar-velka = zátěžový den větší kanceláře (10 lidí, 300 spisů, 350 písemností, tempo ×1,5; ~10,5 h)
+        const profil = oneOf(p.profil, ['judikatura', 'kancelar', 'kancelar-3h', 'kancelar-velka'], 'judikatura');
         // Typ instance: jen GPU typy s jednou GPU (26. 10. 2026 g6.xlarge v eu-central-1 bez kapacity ve všech zónách).
         // g5.xlarge = A10G 24 GB (rychlejší), g4dn.xlarge = T4 16 GB (pomalejší) — odezvy nejdou přímo srovnat s g6 (L4).
         const typ = oneOf(p.typ, ['g6.xlarge', 'g5.xlarge', 'g4dn.xlarge'], 'g6.xlarge');

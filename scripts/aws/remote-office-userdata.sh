@@ -73,7 +73,9 @@ if [ "$PROFILE" = "judikatura" ]; then
 fi
 if [ "$PROFILE" = "kancelar" ]; then
   OFFICE_HOURS="${OFFICE_HOURS:-8}"
-  MAX_MINUTES=$(( 210 + OFFICE_HOURS * 60 )); COMPARE_MODELS=""; SKIP_PROBE=1; RUN_SUITE=0; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
+  # Zátěžový den (bootstrap-kancelar-velka.sh): větší sada (10 lidí, 300 spisů, 750 dokumentů) a vyšší tempo
+  OFFICE_DATASET="${OFFICE_DATASET:-}"; OFFICE_INTENZITA="${OFFICE_INTENZITA:-1}"; OFFICE_UPLOAD_CONC="${OFFICE_UPLOAD_CONC:-2}"
+  MAX_MINUTES=$(( 210 + ${OFFICE_EXTRA_MIN:-0} + OFFICE_HOURS * 60 )); COMPARE_MODELS=""; SKIP_PROBE=1; RUN_SUITE=0; STOP_AFTER_TESTS="${STOP_AFTER_TESTS:-1}"
   RERANK="${RERANK_JUD:-0}"; RAG_AGENT_K="${RAG_AGENT_K_JUD:-4}"
   EMBED_MODEL_S3="${EMBED_MODEL_S3:-none}"
   KB_ARCHIVE_S3="${KB_ARCHIVE_S3:-s3://$RESULTS_BUCKET/_cache/kb-1.2.0.tar.gz}"
@@ -389,6 +391,7 @@ if [ "$PROFILE" = "kancelar" ]; then
   echo "=== office_day start $(date -Is) (den $OFFICE_HOURS h)"
   node backend/scripts/office_day.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
     --hours "$OFFICE_HOURS" --restart-cmd "systemctl restart lexislocal" --restart-at 4.5 \
+    --intenzita "$OFFICE_INTENZITA" --upload-concurrency "$OFFICE_UPLOAD_CONC" ${OFFICE_DATASET:+--dataset "$OFFICE_DATASET"} \
     --out "$OUT/kancelar" --label server > "$OUT/office_day.log" 2>&1 || echo "!! office_day skončil s chybou (viz office_day.log)"
   grep -E '^(  [✓✗]|Report|Kontroly)' "$OUT/office_day.log" | tail -n 70
   kill "$MEM_PID" 2>/dev/null; mem "po simulaci"

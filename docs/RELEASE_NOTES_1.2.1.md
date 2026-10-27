@@ -75,6 +75,8 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
 
 ## Testování
 
+- **Zátěžový den větší kanceláře** (profil `kancelar-velka`: 10 lidí, 300 spisů, 750 dokumentů, tempo ×1,5) a kontroly
+  dashboardu v simulaci (značka kanceláře, přihlášený účet, připojení zařízení odkazem).
 - **Simulace dne v kanceláři na Macu** (`office_day_local.js`, úloha spouštěče `office_day_mac`): oddělená dočasná
   instalace (vlastní data, port, token), báze z instalačního balíčku, paměť backendu každou minutu.
 - **Simulace dne v kanceláři** (`backend/scripts/office_day.js`, `docs/SIMULACE_KANCELARE.md`): zavedení
