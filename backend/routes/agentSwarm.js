@@ -44,6 +44,13 @@ router.post('/debate', async (req, res) => {
         return res.status(404).json({ error: "Jeden nebo oba vybraní agenti nebyli nalezeni." });
     }
 
+    // Pravidla cloudu (lib/cloud_policy.js) — viz routes/agent.js.
+    const cloudPolicy = require('../lib/cloud_policy');
+    cloudPolicy.declare({ dataClass: req.body.dataClass });
+    if (req.body.spisId) cloudPolicy.noteSpis(String(req.body.spisId));
+    if (req.body.caseNumber) cloudPolicy.noteCase(String(req.body.caseNumber));
+    if (context && !req.body.spisId && !req.body.caseNumber) cloudPolicy.noteUnknown('kontext dokumentu bez spisu');
+
     const selectedModel = model || CHAT_MODEL;
     console.log(`🤖 Spouštím Swarm Debatu: Tvůrce [${agent1.name}] & Oponent [${agent2.name}] s modelem [${selectedModel}]`);
 
@@ -66,6 +73,7 @@ router.post('/debate', async (req, res) => {
         const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true, rerank: true });
         const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
         require('../lib/file_acl').logChunkReads(highConfidenceMatches, 'Použití spisu agenty (debata)');
+        cloudPolicy.noteRagMatches(highConfidenceMatches);
 
         if (highConfidenceMatches.length > 0) {
             // 'redacted' (kterýkoli agent debaty) → klientské pasáže anonymizovaně; KB beze změny.
@@ -175,6 +183,7 @@ router.post('/debate', async (req, res) => {
         res.json({
             success: true,
             ...aiDisclosure.forResponse(),
+            cloudPolicy: cloudPolicy.shrnuti(),
             model: selectedModel,
             agent1: { id: agentId1, name: agent1.name, response: restore(answer1) },
             agent2: { id: agentId2, name: agent2.name, response: answer2 },
@@ -234,6 +243,13 @@ router.post('/orchestrate', async (req, res) => {
         return res.status(400).json({ error: "Zadání (prompt) je povinné." });
     }
 
+    // Pravidla cloudu (lib/cloud_policy.js) — viz routes/agent.js.
+    const cloudPolicy = require('../lib/cloud_policy');
+    cloudPolicy.declare({ dataClass: req.body.dataClass });
+    if (spisId) cloudPolicy.noteSpis(String(spisId));
+    if (req.body.caseNumber) cloudPolicy.noteCase(String(req.body.caseNumber));
+    if (context && !spisId && !req.body.caseNumber) cloudPolicy.noteUnknown('kontext dokumentu bez spisu');
+
     const selectedModel = model || CHAT_MODEL;
     console.log(`🧠 Express Server: Spouštím Chief Orchestrator pro: "${prompt.substring(0, 50)}..."`);
 
@@ -291,6 +307,7 @@ router.post('/orchestrate', async (req, res) => {
             }
         }
 
+        if (result && typeof result === 'object') result.cloudPolicy = cloudPolicy.shrnuti();
         res.json(result);
     } catch (err) {
         console.error("❌ Orchestrace selhala:", err.message);

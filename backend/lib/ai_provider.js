@@ -20,6 +20,12 @@
  *   BEDROCK_REGION, BEDROCK_MODEL_ID, AWS přístup — viz lib/bedrock.js
  * Anthropic (jen chat; embeddings API nemá):
  *   ANTHROPIC_API_KEY, ANTHROPIC_MODEL (def. claude-3-5-sonnet-latest), ANTHROPIC_VERSION
+ *
+ * PRAVIDLA SPISU (lib/cloud_policy.js): chat mimo lokální model projde jen tehdy, když to
+ * dovolí stupeň citlivosti a souhlas klienta u všech spisů, které do dotazu přispěly.
+ * Přímé API (Anthropic, veřejné OpenAI) je pro klientská data zakázané vždy; OpenAI-kompatibilní
+ * server na loopbacku / v LAN kanceláře je lokální model. Odepřený cloud → lokální Ollama
+ * (LEXIS_CLOUD_ODEPRENI=chyba → chyba), vše v auditu „Cloud AI“.
  */
 'use strict';
 
@@ -115,13 +121,8 @@ async function _anthropicChat(messages, options) {
 }
 
 // --- Veřejné API (kompatibilní s ollama lib) --------------------------------
-async function chat(params) {
-    params = params || {};
-    const p = _chatProvider();
-    _guardLocalOnly('chat', p);
-    if (p === 'openai') return _openaiChat(params.messages, params.options);
-    if (p === 'anthropic') return _anthropicChat(params.messages, params.options);
-    if (p === 'bedrock') return require('./bedrock').chat(params.messages, params.options);
+// Lokální Ollama se stropem délky odpovědi.
+function _ollamaChat(params) {
     // Strop délky odpovědi: bez num_predict může model „utéct“ a generovat minuty. Ollama
     // (stream:false) pošle hlavičky až po dogenerování, takže po 300 s spadne spojení
     // (serverový test 4. 10. 2026: souběh 8, jeden dotaz Sekretářky 313 s, „fetch failed“).
@@ -132,11 +133,52 @@ async function chat(params) {
     }
     return ollama.chat(params); // ollama default (respektuje params.model i options)
 }
+
+// --- Veřejné API (kompatibilní s ollama lib) --------------------------------
+// Každý dotaz mimo lokální model projde pravidly spisu (lib/cloud_policy.js): stupeň
+// citlivosti + souhlas klienta. Odepřený cloud → lokální model (nebo chyba, viz
+// LEXIS_CLOUD_ODEPRENI); obojí se zapíše do auditu.
+async function chat(params) {
+    params = params || {};
+    const p = _chatProvider();
+    _guardLocalOnly('chat', p);
+    const policy = require('./cloud_policy');
+    const decision = policy.rozhodni(p);
+    if (decision.druh !== 'lokalni') {
+        const cloudModel = p === 'bedrock' ? (process.env.BEDROCK_MODEL_ID || null) : p === 'anthropic' ? _env('ANTHROPIC_MODEL', null) : _env('OPENAI_CHAT_MODEL', null);
+        if (!decision.allowed) {
+            const fallback = policy.rezimOdepreni() === 'lokalne';
+            policy.zaznamenej(decision, { provider: p, model: cloudModel, fallback });
+            if (!fallback) {
+                const e = new Error('Cloud AI odepřen: ' + decision.duvody.join(' '));
+                e.code = 'CLOUD_POLICY'; e.status = 403; e.decision = decision;
+                throw e;
+            }
+            const local = Object.assign({}, params);
+            if (process.env.LEXIS_CLOUD_FALLBACK_MODEL) local.model = process.env.LEXIS_CLOUD_FALLBACK_MODEL;
+            const r = await _ollamaChat(local);
+            if (r && typeof r === 'object') r.lexisCloud = { cloud: false, odepreno: true, provider: 'ollama', code: decision.code, duvody: decision.duvody };
+            return r;
+        }
+        policy.zaznamenej(decision, { provider: p, model: cloudModel });
+    }
+    if (p === 'openai') return _openaiChat(params.messages, params.options);
+    if (p === 'anthropic') return _anthropicChat(params.messages, params.options);
+    if (p === 'bedrock') return require('./bedrock').chat(params.messages, params.options);
+    return _ollamaChat(params);
+}
 async function embeddings(params) {
     params = params || {};
     const p = _embedProvider();
     _guardLocalOnly('embed', p);
-    if (p === 'openai') return _openaiEmbeddings(params.prompt != null ? params.prompt : params.input);
+    if (p === 'openai') {
+        // Embeddingy počítáme z textu klientských dokumentů — veřejné API (bez EU regionu a smlouvy
+        // kanceláře) jen s výslovným LEXIS_POVOLIT_PRIME_API=1 (testy se syntetickými daty).
+        if (require('./cloud_policy').druhPoskytovatele('openai') !== 'lokalni' && !_truthy(process.env.LEXIS_POVOLIT_PRIME_API)) {
+            throw new Error('Embeddingy přes veřejné OpenAI API jsou zakázané — text klientských dokumentů nesmí odejít mimo kancelář. Použijte lokální model (AI_EMBED_PROVIDER=ollama) nebo OpenAI-kompatibilní server v síti kanceláře (OPENAI_BASE_URL).');
+        }
+        return _openaiEmbeddings(params.prompt != null ? params.prompt : params.input);
+    }
     if (p === 'anthropic' || p === 'bedrock') throw new Error(p + ' nemá embeddings API pro LexisLocal — vyhledávání zůstává lokální: AI_EMBED_PROVIDER=ollama.');
     return ollama.embeddings(params);
 }

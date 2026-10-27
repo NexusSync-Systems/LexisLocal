@@ -110,6 +110,20 @@ router.post('/:agentId', async (req, res) => {
         }
     }
 
+    // Pravidla cloudu (lib/cloud_policy.js): ze kterých spisů dotaz čerpá. Cloudový model
+    // dostane dotaz jen tehdy, když to dovolí stupeň citlivosti a souhlas klienta u každého
+    // z nich; dotaz bez spisu jen jako výslovně veřejný (dataClass: 'verejne'). Jinak lokálně.
+    const cloudPolicy = require('../lib/cloud_policy');
+    cloudPolicy.declare({ dataClass: req.body.dataClass });
+    let cloudSpisKnown = false;
+    if (draftSpisId) { cloudPolicy.noteSpis(draftSpisId); cloudSpisKnown = true; }
+    if (draftTarget) {
+        const dd0 = Drafts.getDraft(draftTarget.id);
+        if (dd0 && dd0.spisId) { cloudPolicy.noteSpis(dd0.spisId); cloudSpisKnown = true; }
+    }
+    if (req.body.caseNumber) { cloudPolicy.noteCase(String(req.body.caseNumber)); cloudSpisKnown = true; }
+    if (context && !cloudSpisKnown) cloudPolicy.noteUnknown('kontext dokumentu bez spisu');
+
     // Choose model (default to llama3 if not specified)
     const selectedModel = model || CHAT_MODEL;
     // Embedding model (bge-m3 apod.) neumí chat — dřív to skončilo „simulovaným fallbackem“
@@ -164,6 +178,7 @@ router.post('/:agentId', async (req, res) => {
             const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true, rerank: true });
             const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
             require('../lib/file_acl').logChunkReads(highConfidenceMatches, 'Použití spisu agentem');
+            cloudPolicy.noteRagMatches(highConfidenceMatches); // klientské úseky → jejich spisy (pravidla cloudu)
             ragSources = highConfidenceMatches.map(m => ({
                 fileName: m.fileName,
                 score: m.score,
@@ -621,10 +636,14 @@ router.post('/:agentId', async (req, res) => {
             }] : []) : null,
             outputGuard: outputGuard,
             examplesUsed: selfCheck ? selfCheck.examplesUsed : [],
+            cloudPolicy: cloudPolicy.shrnuti(), // kde se dotaz zpracoval a proč (null = jen lokální model)
             timestamp: new Date().toISOString()
         });
 
      } catch (err) {
+        if (err && err.code === 'CLOUD_POLICY') {
+            return res.status(403).json({ error: err.message, code: 'cloud_policy', cloudPolicy: err.decision || null });
+        }
         if (isModelMissingError(err)) {
             return res.status(400).json({ error: `Model „${selectedModel}“ není na serveru nainstalován. Zvolte jiný model nebo ho stáhněte v Nastavení.` });
         }

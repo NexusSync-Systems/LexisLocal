@@ -28,7 +28,8 @@ function freshProvider(env) {
     for (const k of [
         'AI_PROVIDER', 'AI_CHAT_PROVIDER', 'AI_EMBED_PROVIDER',
         'OPENAI_BASE_URL', 'OPENAI_API_KEY', 'OPENAI_CHAT_MODEL', 'OPENAI_EMBED_MODEL',
-        'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'ANTHROPIC_VERSION', 'ANTHROPIC_MAX_TOKENS'
+        'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'ANTHROPIC_VERSION', 'ANTHROPIC_MAX_TOKENS',
+        'LEXIS_POVOLIT_PRIME_API', 'LEXIS_CLOUD_ODEPRENI', 'LEXIS_CLOUD_BEZ_KONTEXTU'
     ]) {
         delete process.env[k];
     }
@@ -36,6 +37,13 @@ function freshProvider(env) {
     // re-mock po resetModules
     jest.doMock('../lib/ollama_client', () => ollamaMock);
     return require('../lib/ai_provider');
+}
+
+// Přímé API (veřejné OpenAI, Anthropic) projde jen jako výslovně veřejný dotaz bez spisu
+// a s LEXIS_POVOLIT_PRIME_API=1 (lib/cloud_policy.js) — mapování API tak testujeme v tomto rámci.
+function publicCall(fn) {
+    process.env.LEXIS_POVOLIT_PRIME_API = '1';
+    return require('../lib/cloud_policy').scope({ dataClass: 'verejne' }, fn);
 }
 
 describe('ai_provider — výchozí Ollama', () => {
@@ -89,7 +97,7 @@ describe('ai_provider — OpenAI', () => {
             json: async () => ({ choices: [{ message: { content: 'OPENAI_CHAT' } }] })
         });
         const ai = freshProvider({ AI_PROVIDER: 'openai', OPENAI_API_KEY: 'sk-test' });
-        const out = await ai.chat({ messages: [{ role: 'user', content: 'x' }], options: { temperature: 0.3 } });
+        const out = await publicCall(() => ai.chat({ messages: [{ role: 'user', content: 'x' }], options: { temperature: 0.3 } }));
         expect(out.message.content).toBe('OPENAI_CHAT');
         // ollama se NESMÍ zavolat
         expect(ollamaMock.chat).not.toHaveBeenCalled();
@@ -116,7 +124,7 @@ describe('ai_provider — OpenAI', () => {
             ok: true,
             json: async () => ({ data: [{ embedding: [1, 2, 3] }] })
         });
-        const ai = freshProvider({ AI_EMBED_PROVIDER: 'openai' });
+        const ai = freshProvider({ AI_EMBED_PROVIDER: 'openai', LEXIS_POVOLIT_PRIME_API: '1' });
         const out = await ai.embeddings({ prompt: 'věta' });
         expect(out.embedding).toEqual([1, 2, 3]);
         const [url, opts] = fetchMock.mock.calls[0];
@@ -127,7 +135,7 @@ describe('ai_provider — OpenAI', () => {
     it('chat vyhodí chybu při ne-2xx odpovědi', async () => {
         fetchMock.mockResolvedValueOnce({ ok: false, status: 401, text: async () => 'Unauthorized' });
         const ai = freshProvider({ AI_PROVIDER: 'openai' });
-        await expect(ai.chat({ messages: [] })).rejects.toThrow(/OpenAI chat 401/);
+        await expect(publicCall(() => ai.chat({ messages: [] }))).rejects.toThrow(/OpenAI chat 401/);
     });
 });
 
@@ -145,13 +153,13 @@ describe('ai_provider — Anthropic', () => {
             json: async () => ({ content: [{ type: 'text', text: 'ANT_' }, { type: 'text', text: 'HROPIC' }] })
         });
         const ai = freshProvider({ AI_CHAT_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'ak-test' });
-        const out = await ai.chat({
+        const out = await publicCall(() => ai.chat({
             messages: [
                 { role: 'system', content: 'Jsi asistent.' },
                 { role: 'user', content: 'Ahoj' }
             ],
             options: { temperature: 0.2 }
-        });
+        }));
         expect(out.message.content).toBe('ANT_HROPIC');
         const [url, opts] = fetchMock.mock.calls[0];
         expect(url).toBe('https://api.anthropic.com/v1/messages');
@@ -165,12 +173,32 @@ describe('ai_provider — Anthropic', () => {
 
     it('chat bez ANTHROPIC_API_KEY vyhodí srozumitelnou chybu', async () => {
         const ai = freshProvider({ AI_PROVIDER: 'anthropic' });
-        await expect(ai.chat({ messages: [{ role: 'user', content: 'x' }] })).rejects.toThrow(/ANTHROPIC_API_KEY/);
+        await expect(publicCall(() => ai.chat({ messages: [{ role: 'user', content: 'x' }] }))).rejects.toThrow(/ANTHROPIC_API_KEY/);
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('embeddings na Anthropic vyhodí chybu (API neexistuje)', async () => {
         const ai = freshProvider({ AI_EMBED_PROVIDER: 'anthropic' });
         await expect(ai.embeddings({ prompt: 'x' })).rejects.toThrow(/embeddings/);
+    });
+});
+
+describe('ai_provider — pravidla cloudu (lib/cloud_policy.js)', () => {
+    let fetchMock;
+    beforeEach(() => { fetchMock = jest.fn(); global.fetch = fetchMock; ollamaMock.chat.mockClear(); });
+    afterEach(() => { delete global.fetch; });
+
+    it('přímé Anthropic API bez veřejného kontextu: nic neodejde, odpoví lokální model', async () => {
+        const ai = freshProvider({ AI_CHAT_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'ak-test' });
+        const out = await ai.chat({ messages: [{ role: 'user', content: 'Spis klienta…' }] });
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(out.message.content).toBe('OLLAMA_CHAT_OK');
+        expect(out.lexisCloud).toMatchObject({ odepreno: true, code: 'prime_api' });
+    });
+
+    it('veřejné OpenAI embeddingy bez výslovného povolení vyhodí chybu', async () => {
+        const ai = freshProvider({ AI_EMBED_PROVIDER: 'openai' });
+        await expect(ai.embeddings({ prompt: 'x' })).rejects.toThrow(/zakázané/);
+        expect(fetchMock).not.toHaveBeenCalled();
     });
 });

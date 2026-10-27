@@ -331,6 +331,45 @@ router.post('/:id/revoke', (req, res) => {
     }
 });
 
+// --- Pravidla cloudu (lib/cloud_policy.js): stupeň citlivosti a souhlas klienta -----------
+// GET  /api/spisy/:id/cloud                 → stav (stupeň, souhlas, smí do cloudu?) + číselník stupňů
+// POST /api/spisy/:id/cloud/stupen          { stupen: 'A'|'B'|'C'|'D', duvod? } (snížení: advokát + důvod)
+// POST /api/spisy/:id/cloud/souhlas         { typ: 'spis'|'ramcovy', poznamka? } (jen advokát/správce)
+// POST /api/spisy/:id/cloud/souhlas/odvolat { duvod? } (kdokoli se zápisem — bezpečný směr)
+const cloudPolicy = require('../lib/cloud_policy');
+function _cloudErr(res, err) {
+    const status = err instanceof cloudPolicy.CloudPolicyError ? err.status : 400;
+    return res.status(status).json({ error: err.message, code: err.code || 'cloud_policy' });
+}
+router.get('/:id/cloud', (req, res) => {
+    const spis = gate(req, res, 'read');
+    if (!spis) return;
+    res.json({ cloud: cloudPolicy.stavSpisu(spis), stupne: cloudPolicy.STUPNE, typySouhlasu: cloudPolicy.TYPY_SOUHLASU });
+});
+router.post('/:id/cloud/stupen', (req, res) => {
+    if (!gate(req, res, 'write')) return;
+    try {
+        const b = req.body || {};
+        const updated = cloudPolicy.setStupen(req.params.id, b.stupen, { duvod: b.duvod, principal: req.principal });
+        res.json({ success: true, cloud: cloudPolicy.stavSpisu(updated) });
+    } catch (err) { _cloudErr(res, err); }
+});
+router.post('/:id/cloud/souhlas', (req, res) => {
+    if (!gate(req, res, 'write')) return;
+    try {
+        const b = req.body || {};
+        const updated = cloudPolicy.udelSouhlas(req.params.id, { typ: b.typ, poznamka: b.poznamka, principal: req.principal });
+        res.json({ success: true, cloud: cloudPolicy.stavSpisu(updated) });
+    } catch (err) { _cloudErr(res, err); }
+});
+router.post('/:id/cloud/souhlas/odvolat', (req, res) => {
+    if (!gate(req, res, 'write')) return;
+    try {
+        const updated = cloudPolicy.odvolejSouhlas(req.params.id, { duvod: (req.body || {}).duvod, principal: req.principal });
+        res.json({ success: true, cloud: cloudPolicy.stavSpisu(updated) });
+    } catch (err) { _cloudErr(res, err); }
+});
+
 // DELETE /api/spisy/:id — odstranění spisové hlavičky (jen ve stavu skartace)
 router.delete('/:id', (req, res) => {
     if (!gate(req, res, 'admin')) return; // jen vlastník nebo správce

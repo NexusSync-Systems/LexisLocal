@@ -56,7 +56,9 @@ test('Converse: system zvlášť, sloučení rolí, odpověď ve tvaru ollama; a
     let seen;
     global.fetch = jest.fn(async (url, init) => { seen = { url, init }; return { ok: true, json: async () => ({ output: { message: { content: [{ text: 'Ahoj' }, { text: '!' }] } }, stopReason: 'end_turn', usage: { inputTokens: 3 } }) }; });
     const ai = require('../lib/ai_provider');
-    const r = await ai.chat({ model: 'ignorovano', messages: [{ role: 'system', content: 'Jsi rešeršník.' }, { role: 'user', content: 'Dotaz' }], options: { temperature: 0.2 } });
+    // Veřejný dotaz bez spisu (lib/cloud_policy.js) — pravidla spisu testuje cloudPolicy.test.js.
+    const r = await require('../lib/cloud_policy').scope({ dataClass: 'verejne' }, () =>
+        ai.chat({ model: 'ignorovano', messages: [{ role: 'system', content: 'Jsi rešeršník.' }, { role: 'user', content: 'Dotaz' }], options: { temperature: 0.2 } }));
     expect(r.message.content).toBe('Ahoj!');
     expect(seen.url).toBe('https://bedrock-runtime.eu-central-1.amazonaws.com/model/eu.anthropic.claude-x-v1%3A0/converse');
     const body = JSON.parse(seen.init.body);

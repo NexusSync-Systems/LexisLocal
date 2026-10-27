@@ -46,6 +46,7 @@ const TOOLS = {
             const limit = _num(args.limit, 5, 1, 10);
             const filters = (ctx && ctx.ragFilters) || null; // scope/spisAccess řeší volající
             const results = await rag.searchSimilar(query, limit, filters, { lexicalFallback: true, rerank: true });
+            require('./cloud_policy').noteRagMatches(results); // pravidla cloudu: úseky → spisy
             return {
                 results: (results || []).map(r => ({
                     fileName: r.fileName,
@@ -69,6 +70,7 @@ const TOOLS = {
             const inbox = await watcher().loadInbox();
             const fileData = inbox && inbox.files && inbox.files[fileName];
             if (!fileData) return { error: 'Soubor nenalezen ve schránce.' };
+            require('./cloud_policy').noteFile(fileName); // pravidla cloudu: dokument → spis (jinak neznámý původ)
             const filePath = fileData.filePath;
             if (!filePath || !fs.existsSync(filePath)) return { error: 'Fyzický soubor na disku neexistuje.' };
             let content = '';

@@ -130,6 +130,7 @@ class ChiefOrchestrator {
                     }
                     const matches = await searchSimilar(step.instruction, 2, stepFilters, { lexicalFallback: true });
                     highConfidence = matches.filter(m => m.score >= RAG_MIN_SCORE);
+                    require('./cloud_policy').noteRagMatches(highConfidence); // pravidla cloudu: úseky → spisy
                     if (highConfidence.length > 0) {
                         ragContext = highConfidence
                             .map(m => `[Precedent ze spisu: ${m.fileName}]:\n${m.text}`)

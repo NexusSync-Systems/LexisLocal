@@ -15,6 +15,43 @@ Před zapnutím: aktualizovat DPIA (AWS jako zpracovatel, CLOUD Act) a informace
   a judikatura (veřejná data) jdou beze změny.
 - Bez AWS SDK — podpis požadavků (SigV4) ověřený oficiálním testovacím vektorem AWS.
 
+## Který spis smí do cloudu (stupeň citlivosti a souhlas klienta)
+
+Zapnutý Bedrock **neznamená, že do cloudu jde všechno.** Mlčenlivost je širší než GDPR
+(pseudonymizace řeší osobní údaje, ne důvěrné skutečnosti), proto rozhoduje každý spis
+(`backend/lib/cloud_policy.js`, kontrola přímo v `ai_provider.chat`):
+
+| Stupeň | Příklady | Cloud |
+|---|---|---|
+| A – přísně důvěrné | trestní obhajoba, zdravotní údaje, nezletilí, oznamovatelé | nikdy, ani se souhlasem |
+| B – důvěrné (**výchozí**) | civilní spory FO, pracovní, rodinné, dědické věci | jen s výslovným souhlasem klienta pro tento spis |
+| C – standardní | obchodní a korporátní věci PO | souhlas pro spis nebo rámcový souhlas ve smlouvě |
+| D – veřejné | zákony, judikatura, rešerše bez vazby na klienta | bez souhlasu |
+
+- **Dotaz nad více spisy** (RAG přidá úseky z jiných spisů) musí projít u každého z nich.
+- **Dotaz bez spisu** jde do cloudu jen jako výslovně veřejný (`dataClass: "verejne"`); text
+  neznámého původu (kontext dokumentu bez spisu, nezařazený dokument) → jen lokálně.
+- **Úlohy mimo asistenta** (watcher, e-mail, extrakce, výkazy) nemají kontext spisu → vždy lokálně.
+- **Odepřený cloud** → dotaz zpracuje lokální model (Ollama) a odpověď nese `cloudPolicy`
+  s důvodem; `LEXIS_CLOUD_ODEPRENI=chyba` místo toho vrátí 403. Lokální model lze určit
+  `LEXIS_CLOUD_FALLBACK_MODEL`.
+- **Zvýšit stupeň** smí každý se zápisem do spisu; **snížit** jen advokát/správce a s odůvodněním.
+  **Souhlas** zaznamenává jen advokát/správce (poznámka: jak byl získán); **odvolat** ho smí
+  kdokoli se zápisem a platí okamžitě. AI agent nemění nic.
+- **Audit:** každé rozhodnutí v auditu „Cloud AI“ (spisy, stupně, důvod); povolený dotaz
+  i do deníku spisu (`cloud_ai`) — přehled pro DPIA, které spisy kdy odešly do cloudu.
+- **Přímé API** (Anthropic, veřejné OpenAI) nemá EU region ani smlouvu kanceláře → klientská
+  data přes něj nejdou nikdy (veřejný dotaz jen s `LEXIS_POVOLIT_PRIME_API=1`, pro testy);
+  embeddingy přes veřejné OpenAI API jsou zakázané. OpenAI-kompatibilní server na loopbacku
+  nebo v LAN kanceláře (vLLM, LM Studio) je lokální model.
+
+API: `GET /api/spisy/:id/cloud`, `POST /api/spisy/:id/cloud/stupen` `{ stupen, duvod }`,
+`POST /api/spisy/:id/cloud/souhlas` `{ typ: "spis"|"ramcovy", poznamka }`,
+`POST /api/spisy/:id/cloud/souhlas/odvolat` `{ duvod }`. Asistenti (`/api/agent/:id`,
+`/api/agent-swarm/*`) berou `spisId` / `caseNumber` / `dataClass`.
+
+Jen pro testy se syntetickými daty: `LEXIS_CLOUD_BEZ_KONTEXTU=povolit` pustí do cloudu i dotazy bez kontextu.
+
 ## Nastavení v AWS (správce kanceláře)
 
 1. Účet AWS kanceláře (ne dodavatele). Doporučeno MFA na root účtu a samostatný účet jen pro LexisLocal.
