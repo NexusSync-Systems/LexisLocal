@@ -388,6 +388,13 @@ if [ "$PROFILE" = "kancelar" ]; then
   for i in $(seq 1 120); do curl -sfk -H "X-API-Token: $TOKEN" https://127.0.0.1/api/status >/dev/null && break; sleep 2; done
   sleep 120; mem "před simulací (studený start + předehřátí)"
   ( while sleep 300; do mem "průběh"; done ) & MEM_PID=$!
+  # Časový limit od ZAČÁTKU SIMULACE, ne od startu instance (27. 10. 2026): příprava báze trvá různě dlouho
+  # a nesmí ukrojit čas ze simulovaného dne. Den + rezerva (OFFICE_EXTRA_MIN, kontroly a záloha) + 60 min.
+  # Po doběhnutí se instance vypne sama (STOP_AFTER_TESTS); tohle je jen pojistka proti zaseknutí.
+  SIM_LIMIT=$(( OFFICE_HOURS * 60 + ${OFFICE_EXTRA_MIN:-0} + 60 ))
+  shutdown -c 2>/dev/null || true
+  shutdown -h +"$SIM_LIMIT" "LexisLocal remote test: časový limit (od začátku simulace)"
+  echo "=== časový limit přenastaven: vypnutí nejpozději za $SIM_LIMIT min (od začátku simulace)"
   echo "=== office_day start $(date -Is) (den $OFFICE_HOURS h)"
   node backend/scripts/office_day.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
     --hours "$OFFICE_HOURS" --restart-cmd "systemctl restart lexislocal" --restart-at 4.5 \

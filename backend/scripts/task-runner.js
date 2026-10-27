@@ -146,8 +146,8 @@ const ULOHY = {
                 '--exclude', '_connect.txt', '--exclude', '*/_connect.txt', '--only-show-errors'],
         };
     },
-    // Spuštění serverového testu — STOJÍ PENÍZE (g6.xlarge ~1 USD/h, sama se vypne po testech,
-    // nejpozději po 8 h). Claude ji zařadí jen po výslovném souhlasu v chatu. Vše pevné: typ,
+    // Spuštění serverového testu — STOJÍ PENÍZE (g6.xlarge ~1 USD/h, sama se vypne po testech;
+    // pojistka: limit podle profilu v remote-office-userdata.sh — u kancelářského dne od začátku simulace). Claude ji zařadí jen po výslovném souhlasu v chatu. Vše pevné: typ,
     // disk, role, security group (bez příchozích pravidel), user data z repozitáře; jen AMI
     // lze změnit (nová verze Deep Learning AMI). Oprávnění uživatele lexis-runner to vynucují i v AWS.
     aws_spust_test: p => {
