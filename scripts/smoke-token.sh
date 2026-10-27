@@ -31,7 +31,7 @@ if [ -z "$TOKEN" ]; then
   echo "❌ Nepodařilo se získat token (ani z env API_TOKEN, ani z $KEYDIR/api_token)."
   echo "   Log serveru:"; tail -n 20 /tmp/lexis_smoke.log; exit 1
 fi
-echo "🔑 Token pro editor: $TOKEN"
+echo "🔑 Token …${TOKEN: -6} (celý v souboru tokenu, nevypisuje se)"
 
 echo "▶ Test 1: /api/status BEZ tokenu (očekávám 401)…"
 C1=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PORT/api/status")

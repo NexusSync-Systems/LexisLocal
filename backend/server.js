@@ -34,7 +34,8 @@ const API_TOKEN = resolveApiToken();
 const ENFORCE_TOKEN = process.env.LEXIS_ENFORCE_TOKEN !== '0';
 if (ENFORCE_TOKEN && !process.env.API_TOKEN) {
     // Dashboard token dostane automaticky (vstřikuje se); editor si ho čte ze souboru.
-    console.log(`🔑 Vynucení API tokenu ZAPNUTO (výchozí). Token pro editor: ${API_TOKEN}`);
+    // Celý token do konzole nepíšeme (skončí ve screenshotech a logech) — editor i skripty ho čtou ze souboru.
+    console.log(`🔑 Vynucení API tokenu ZAPNUTO (výchozí). Token …${String(API_TOKEN).slice(-6)} je v ${require('./lib/api_token').tokenFile()} (editor si ho čte sám; skripty: --token-file).`);
     console.log('   Nouzové vypnutí: spusťte backend s LEXIS_ENFORCE_TOKEN=0');
 } else if (!ENFORCE_TOKEN) {
     console.warn('⚠️  Vynucení API tokenu VYPNUTO (LEXIS_ENFORCE_TOKEN=0) — API je bez tokenu, jen pro lokální ladění.');
@@ -229,6 +230,7 @@ app.use('/api/case', require('./routes/case'));
 app.use('/api/campaigns', require('./routes/campaigns'));
 app.use('/api/inbox', require('./routes/inbox'));
 app.use('/api/spisy', require('./routes/spisy'));
+app.use('/api/ai-usage', require('./routes/aiUsage')); // spotřeba a rozpočet cloudové AI (jen správce)
 app.use('/api/drafts', require('./routes/drafts'));
 app.use('/api/users', require('./routes/users').admin);   // správa uživatelů (jen správce, viz lib/authz.js)
 app.use('/api/me', require('./routes/users').me);         // kdo jsem + moje zařízení // sdílené koncepty (webový LexisEditor Lite)
@@ -292,6 +294,9 @@ if (typeof process.env.JEST_WORKER_ID === 'undefined') {
     const _hearingsFirst = setTimeout(_runHearings, 2 * 60 * 1000);
     if (_hearingsFirst && typeof _hearingsFirst.unref === 'function') _hearingsFirst.unref();
     if (_hearingsTimer && typeof _hearingsTimer.unref === 'function') _hearingsTimer.unref();
+    // Cloudová AI: večer porovnat odhad nákladů s fakturací AWS (lib/aws_billing.js) —
+    // jen když je zapnutý Bedrock; LEXIS_AWS_SYNC_HOUR (výchozí 22), LEXIS_AWS_BILLING_SYNC=0 vypne.
+    require('./lib/aws_billing').spustPlanovac();
 }
 
 const USE_HTTPS = process.env.USE_HTTPS === 'true';
