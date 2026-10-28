@@ -39,6 +39,8 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
 
 ## Opravy
 
+- **Přerušená spojení při vytížení serveru** (zátěžový den 10 lidí: 6 z 12 773 požadavků) — server drží volné
+  spojení 65 s místo 5 s, takže ho zavírá klient, ne server uprostřed dotazu (`HTTP_KEEPALIVE_TIMEOUT_MS`).
 - **Spisové značky s rejstříkem o více slovech** („19 P a Nc 57/2026“ — opatrovnické věci) se
   rozpoznají; dřív dokument zůstal bez spisu. „Sp. zn.“ s tečkou se nově bere jako označení
   (přednost před první zmínkou jiné věci v textu). Společně pro doručenou poštu, Paperless a datové

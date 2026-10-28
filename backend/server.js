@@ -1,6 +1,8 @@
 require('dotenv').config();
 
 const express = require('express');
+// keep-alive delší než u klientů — jinak ECONNRESET při vytížení (lib/http_timeouts.js)
+const { applyHttpTimeouts } = require('./lib/http_timeouts');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
@@ -379,22 +381,22 @@ if (require.main === module) {
                 key: fs.readFileSync(SSL_KEY_PATH),
                 cert: fs.readFileSync(SSL_CERT_PATH)
             };
-            https.createServer(sslOptions, app).listen(PORT, BIND_HOST, () => {
+            applyHttpTimeouts(https.createServer(sslOptions, app).listen(PORT, BIND_HOST, () => {
                 console.log(`🚀🔒 LexisLocal AI ZABEZPEČENÝ backend (HTTPS) běží na https://${BIND_HOST}:${PORT}`);
-            });
+            }));
         } catch (httpsErr) {
             console.error("❌ Nepodařilo se spustit HTTPS server, padám zpět na HTTP:", httpsErr.message);
-            app.listen(PORT, BIND_HOST, () => {
+            applyHttpTimeouts(app.listen(PORT, BIND_HOST, () => {
                 console.log(`🚀 LexisLocal AI backend běží na http://${BIND_HOST}:${PORT}`);
-            });
+            }));
         }
     } else {
         if (USE_HTTPS) {
             console.warn(`⚠️ V konfiguraci je vyžadováno HTTPS, ale chybí soubory certifikátu (${SSL_KEY_PATH} / ${SSL_CERT_PATH}). Spouštím na HTTP.`);
         }
-        app.listen(PORT, BIND_HOST, () => {
+        applyHttpTimeouts(app.listen(PORT, BIND_HOST, () => {
             console.log(`🚀 LexisLocal AI backend běží na http://${BIND_HOST}:${PORT}`);
-        });
+        }));
     }
     // Znalostní báze (zákony + judikatura) do paměti hned po startu, ne až při prvním dotazu.
     require('./lib/rag').warmKnowledgeBases().catch(e => console.warn('⚠️ RAG: předehřátí bází selhalo:', e.message));

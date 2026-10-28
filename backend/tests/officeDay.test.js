@@ -95,3 +95,28 @@ describe('office_day.js — pomocné funkce', () => {
         expect(m.kancelar.uzivatele.map(u => u.role).sort()).toEqual(['advokat', 'advokat', 'advokat', 'asistent', 'koncipient']);
     });
 });
+
+describe('office_day.js — přerušené spojení (zátěžový den 27. 10. 2026)', () => {
+    const http = require('http');
+    const od = require('../scripts/office_day');
+    let srv, n;
+    beforeAll(async () => {
+        n = 0;
+        srv = http.createServer((req, res) => { n++; if (req.url === '/reset' && n % 2 === 1) return req.socket.destroy(); res.end('{"ok":true}'); });
+        await new Promise(r => srv.listen(0, '127.0.0.1', r));
+        od._setOptions({ base: `http://127.0.0.1:${srv.address().port}`, insecure: false });
+    });
+    afterAll(() => new Promise(r => srv.close(r)));
+    test('GET se po ECONNRESET jednou zopakuje a označí', async () => {
+        const r = await od.request('GET', '/reset');
+        expect(r.status).toBe(200);
+        expect(r.retried).toMatch(/ECONNRESET|socket hang up/);
+    });
+    test('POST se neopakuje', async () => {
+        n = 0;
+        const r = await od.request('POST', '/reset', { body: {} });
+        expect(r.status).toBe(0);
+        expect(n).toBe(1);
+    });
+});
+

@@ -82,7 +82,18 @@ function rng(seed) {
 
 // ─── HTTP ────────────────────────────────────────────────────────────────────
 let O = null;
-function request(method, urlPath, { body, token, timeout = 120000 } = {}) {
+// Přerušené spojení (ECONNRESET apod.) u čtení (GET) zopakujeme jednou — jako prohlížeč; počítá se zvlášť (K17b).
+const TRANSIENT = /ECONNRESET|EPIPE|socket hang up/i;
+async function request(method, urlPath, opts = {}) {
+    const r = await request1(method, urlPath, opts);
+    if (r.status === 0 && method === 'GET' && TRANSIENT.test(r.error || '')) {
+        const r2 = await request1(method, urlPath, opts);
+        r2.retried = r.error; r2.ms += r.ms;
+        return r2;
+    }
+    return r;
+}
+function request1(method, urlPath, { body, token, timeout = 120000 } = {}) {
     return new Promise((resolve) => {
         const u = new URL(O.base + urlPath);
         const lib = u.protocol === 'https:' ? https : http;
@@ -144,7 +155,7 @@ async function call(user, action, method, p, body, opt = {}) {
     const inRestart = !!restartWindow && at >= restartWindow.from && (at - r.ms) <= (restartWindow.to || at);
     const expected = opt.expect ? opt.expect.includes(r.status) : ok2(r.status);
     ops.push({ phase, at: at - T0, clock: clock(at), user, action, status: r.status, ms: r.ms, ok: expected, restart: !!inRestart,
-        note: expected ? undefined : short(r.error || (r.json && r.json.error) || r.text, 160) });
+        note: expected ? undefined : short(r.error || (r.json && r.json.error) || r.text, 160), retried: r.retried || undefined });
     return r;
 }
 const get = (u, a, p, opt) => call(u, a, 'GET', p, undefined, opt);
@@ -225,7 +236,7 @@ async function onboarding(M, R) {
         const r = await post('admin', 'users_create', '/api/users', { name: u.name, role: u.role, deviceLabel: 'Simulace – prohlížeč' });
         if (ok2(r.status) && r.json && r.json.token) U[u.key] = { key: u.key, name: u.name, role: u.role, id: r.json.user.id, token: r.json.token };
     }
-    check('Z2', 'Založení 5 účtů (role advokát / koncipient / asistent)', Object.keys(U).length === M.kancelar.uzivatele.length,
+    check('Z2', `Založení ${M.kancelar.uzivatele.length} účtů (role advokát / koncipient / asistent)`, Object.keys(U).length === M.kancelar.uzivatele.length,
         { severity: 'critical', detail: Object.values(U).map(u => `${u.name} (${u.role})`).join(', ') });
     if (Object.keys(U).length !== M.kancelar.uzivatele.length) throw new Error('Nepodařilo se založit účty.');
     ASIST = Object.values(U).filter(u => u.role === 'asistent').map(u => u.key);
@@ -515,7 +526,7 @@ async function act(ev, M, R) {
             if (!text) return;
             const rizika = (d.expect && d.expect.rizika) || [];
             await runAgent(u, 'kontrola_smlouvy', 'kontrolor', { prompt: 'Zkontroluj přiloženou smlouvu pro našeho klienta (objednatele). Vypiš rizika a nevyvážená ustanovení s odkazem na článek a zákon.', context: text },
-                resp => { const found = rizika.filter(p => rx(p).test(resp)); return { pass: found.length >= Math.ceil(rizika.length * 0.67), score: rizika.length ? found.length / rizika.length : 1, rizika: `${found.length}/${rizika.length}`, doc: d.file }; });
+                resp => { const found = rizika.filter(p => rx(p).test(resp)); return { pass: found.length >= Math.ceil(rizika.length * 0.67), score: rizika.length ? found.length / rizika.length : 1, rizika: `${found.length}/${rizika.length}`, chybi: rizika.filter(p => !found.includes(p)), doc: d.file }; });
             return;
         }
         case 'koncept': {
@@ -837,6 +848,9 @@ async function endOfDay(M) {
     const e5 = dayOps.filter(o => o.status >= 500 || o.status === 0);
     check('K17', 'Během dne žádné chyby serveru (5xx / spadlé spojení)', e5.length === 0,
         { severity: e5.length > 5 ? 'high' : 'medium', detail: `${e5.length} z ${dayOps.length}${e5.length ? ': ' + summarizeErrors(e5) : ''}` });
+    const rt = dayOps.filter(o => o.retried);
+    check('K17b', 'Žádná přerušená spojení (čtení opakováno klientem)', rt.length === 0,
+        { severity: 'low', detail: `${rt.length} z ${dayOps.length}${rt.length ? ': ' + summarizeErrors(rt.map(o => Object.assign({}, o, { status: 0, note: o.retried }))) : ''}` });
     const e4 = dayOps.filter(o => !o.ok && o.status >= 400 && o.status < 500);
     check('K18', 'Během dne žádné neočekávané odmítnutí (4xx)', e4.length === 0, { severity: 'medium', detail: `${e4.length}${e4.length ? ': ' + summarizeErrors(e4) : ''}` });
 }
@@ -933,4 +947,4 @@ async function main() {
 }
 
 if (require.main === module) main();
-module.exports = { parseArgs, rng, schedule, scoreCase, pctl };
+module.exports = { parseArgs, rng, schedule, scoreCase, pctl, request, _setOptions: o => { O = o; } };

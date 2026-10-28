@@ -85,3 +85,10 @@ restart bez ztráty dat, paměť backendu 1,1–1,3 GB celý den. Opraveno 27. 1
 - OCR „P a Nc“ → „P a Ne“ vytvořilo spis navíc → oprava podle existujícího spisu (`spisy.findByCaseOcr`),
 - asistentka ztratila přístup ke spisu, který založila → úroveň **podatelna** (`lib/access.js`),
 - záloha ověřovala jen záznamy AI → ověřuje i hlavní auditní log (`scripts/backup.js`).
+
+Zátěžový den 27. 10. 2026 (`kancelar-velka`, g4dn.xlarge / T4, 10 lidí, tempo ×1,5, 8 h): 49/50 kontrol, 12 775 požadavků,
+fronta po 16:30 0 min, AI p50 19–31 s (p95 ráno 135 s, jinak do 60 s), digitalizace 22,9 dok./min, paměť backendu 1,1–1,3 GB.
+Opraveno 28. 10.:
+- 6× přerušené spojení (ECONNRESET) při vytížení serveru — server držel volné spojení jen 5 s jako klient → keep-alive
+  65 s (`lib/http_timeouts.js`, `HTTP_KEEPALIVE_TIMEOUT_MS`); simulace čtení (GET) po přerušení jednou zopakuje a počítá zvlášť (K17b),
+- popisek Z2 podle počtu účtů v sadě, kontrola smlouvy ukládá, které rizikové klauzule chyběly (`chybi` v .json).
