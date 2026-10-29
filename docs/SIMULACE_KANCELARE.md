@@ -31,6 +31,7 @@ Profily (`"profil"` v úloze):
 |---|---|---|---|
 | `kancelar` | 5 lidí, 150 spisů, 250 + 150 dokumentů | 8 h | ~10 h |
 | `kancelar-3h` | totéž | zhuštěný do 3 h | ~4,5 h |
+| `kancelar-bedrock` | 5 lidí jako `kancelar-3h`, server navíc s **Claude přes Bedrock EU** (role instance, Sonnet 4.6); souhlas klienta u ~1/3 spisů, obecné rešerše jako veřejné; K21 ověří, že do cloudu nejde nic bez souhlasu | zhuštěný do 3 h | ~4,5 h (+ řádově jednotky USD za Claude) |
 | `kancelar-velka` | **zátěžový den**: 6 advokátů, 2 koncipienti, 2 asistentky, 300 spisů, 400 + 350 dokumentů, tempo práce ×1,5 (`--intenzita 1.5`) | 8 h | ~11 h |
 
 Simulace ověřuje i dashboard: název a logo kanceláře (Z12), že každý účet vidí sebe (K19) a připojení

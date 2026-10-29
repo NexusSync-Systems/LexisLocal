@@ -83,6 +83,15 @@ EU profilů: výchozí Sonnet 4.6, dále Sonnet / Haiku / Opus 5.5). Jen synteti
 `bedrock_srovnani` = `model_bench.js` s lokálním qwen 7B a Claude na stejné sadě (`eval/model_bench.json`, vč. úlohy
 na moderaci smluvní pokuty — § 2051, ne § 2248); výsledek `bench-results/model_bench_*.md` s tokeny za sadu.
 
+## Serverový test LexisLocalu s Bedrockem (AWS)
+
+Profil spouštěče `kancelar-bedrock` (`scripts/aws/bootstrap-kancelar-bedrock.sh`): GPU instance s plnou bází jako u ostatních
+simulací, LexisLocal s `AI_CHAT_PROVIDER=bedrock` a `BEDROCK_CREDENTIALS=instance` — klíče bere z role instance
+(IMDSv2, `lib/bedrock.js`), na disku žádný klíč. **Předpoklad:** roli `lexis-bench-ec2` správce přidá spravovanou politiku,
+kterou vytvořil stack `bedrock-eu-kancelar.yaml` (IAM → Roles → lexis-bench-ec2 → Add permissions → Attach policies →
+politika „…BedrockEuPolitika…“). V rozhraní asistenta je pak volba „☁️ Obecný dotaz — Claude (EU)“ a pod odpovědí,
+který model odpovídal (K7b).
+
 ## Test proti AWS před pilotem
 
 `node backend/scripts/aws-pilot-test.js` (volitelně `--latence 5`, `--bez-ce`) — jen syntetická data, dočasná

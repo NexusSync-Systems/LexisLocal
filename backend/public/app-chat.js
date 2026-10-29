@@ -105,6 +105,7 @@ Object.assign(LexisLocalApp.prototype, {
     populateChatModelSelect() {
         const select = document.getElementById('chat-model-select');
         if (!select) return;
+        this.loadCloudStav(); // K7b: nabídnout „obecný dotaz“ na cloudovém modelu, jen když je zapnutý
 
         let html = '';
         if (this.models.length === 0) {
@@ -117,6 +118,33 @@ Object.assign(LexisLocalApp.prototype, {
             });
         }
         select.innerHTML = html;
+    },
+
+    async loadCloudStav() {
+        const item = document.getElementById('chat-cloud-item');
+        if (!item) return;
+        try {
+            const res = await fetch(`${this.apiBase}/agent/cloud-stav`, { headers: this.getHeaders() });
+            const st = res.ok ? await res.json() : null;
+            this.cloudStav = st;
+            item.style.display = st && st.aktivni ? '' : 'none';
+            const lbl = document.getElementById('chat-cloud-model');
+            if (lbl && st && st.model) lbl.textContent = `${st.model.nazev}${st.model.eu ? ' (EU)' : ''}`;
+        } catch (e) { item.style.display = 'none'; }
+    },
+
+    /** Kdo odpověděl a proč (K7b): cloudový model, lokální model, nebo lokální po odepření cloudu. */
+    modelBadgeHtml(data) {
+        const mu = data && data.modelUsed;
+        const cp = data && data.cloudPolicy;
+        if (mu && mu.cloud) {
+            const usd = cp && cp.naklady && !cp.naklady.bezCeniku && typeof cp.naklady.odhadUsd === 'number' ? ` · ~${cp.naklady.odhadUsd.toFixed(3)} USD` : '';
+            return `☁️ ${escapeHtml(mu.nazev)}${mu.eu ? ' (cloud EU)' : ' (cloud)'}${usd}`;
+        }
+        if (cp && cp.cloud === false && (cp.duvody || []).length) {
+            return `💻 Lokální model ${escapeHtml((mu && mu.nazev) || data.model || '')} — cloud nepoužit: ${escapeHtml(cp.duvody.join(' '))}`;
+        }
+        return `💻 Lokální model ${escapeHtml((mu && mu.nazev) || data.model || '')}`;
     },
 
     async pullOllamaModel() {
@@ -400,11 +428,12 @@ Object.assign(LexisLocalApp.prototype, {
             const res = await fetch(`${this.apiBase}/agent/${agentId}`, {
                 method: 'POST',
                 headers: this.getHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({
+                body: JSON.stringify(Object.assign({
                     prompt: userText,
                     model: modelName,
                     saveDraft: 'auto' // agent píšící dokumenty (Spisovatel) uloží koncept „ke kontrole“
-                })
+                }, (document.getElementById('chat-cloud-verejne') || {}).checked && this.cloudStav && this.cloudStav.aktivni
+                    ? { dataClass: 'verejne' } : {}))
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -429,7 +458,7 @@ Object.assign(LexisLocalApp.prototype, {
                         <p>${formatted}</p>
                         ${this.draftBadgeHtml(data.draft)}
                         <span class="subtext" style="display:block; margin-top:5px; font-size:0.7rem; color:var(--text-muted);">
-                            Model: ${escapeHtml(data.model)} | ${new Date(data.timestamp).toLocaleTimeString('cs-CZ')}
+                            ${this.modelBadgeHtml(data)} | ${new Date(data.timestamp).toLocaleTimeString('cs-CZ')}
                         </span>
                     </div>
                 </div>

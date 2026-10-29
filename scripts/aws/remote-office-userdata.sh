@@ -46,6 +46,9 @@ BRANCH="release-prep"
 #               rešerše, kontroly smluv, koncepty, schvalování, lhůtník, kalendář, fakturace), v poledne
 #               restart serveru, na konci kontrola dat, oprávnění a auditu + záloha. OFFICE_HOURS=3 zhustí den.
 #               ~10 h, vypne se nejpozději po 11,5 h.
+#               OFFICE_CLOUD=1 (bootstrap-kancelar-bedrock.sh): server navíc s Claude přes Amazon Bedrock v EU
+#               (role instance, BEDROCK_CREDENTIALS=instance, žádný klíč na disku); simulace s --cloud zaznamená
+#               souhlas klienta u ~1/3 spisů a ověří, že do cloudu jde jen to, co smí (K21).
 PROFILE="${PROFILE:-plny}"
 # Reranker (cross-encoder) nad výsledky RAG — VÝCHOZÍ ZAPNUTÝ (vypnutí: export RERANK=0). Lokální služba
 # scripts/rerank_server.py na GPU, backend ho volá přes RAG_RERANK_URL (lib/rerank_service.js).
@@ -283,6 +286,13 @@ if [ "$RERANK_OK" = "1" ]; then
 fi
 
 [ -n "${KB_SAVE_DEBOUNCE:-}" ] && echo "RAG_KB_SAVE_DEBOUNCE_MS=$KB_SAVE_DEBOUNCE" >> /opt/LexisLocal/.env
+if [ "${OFFICE_CLOUD:-0}" = "1" ]; then
+  # Claude přes Bedrock v EU (jen syntetická data). Přístup z role instance (lexis-bench-ec2 musí mít politiku
+  # z scripts/aws/bedrock-eu-kancelar.yaml); lokální Ollama zůstává pro spisy bez souhlasu a pro embeddingy.
+  sed -i -e 's/^LEXIS_PILOT_LOCAL_ONLY=1$/LEXIS_PILOT_LOCAL_ONLY=0/' -e 's/^AI_CHAT_PROVIDER=ollama$/AI_CHAT_PROVIDER=bedrock/' /opt/LexisLocal/.env
+  printf 'BEDROCK_REGION=eu-central-1\nBEDROCK_MODEL_ID=%s\nBEDROCK_CREDENTIALS=instance\nLEXIS_AWS_BILLING_SYNC=0\n' "${BEDROCK_MODEL_ID:-eu.anthropic.claude-sonnet-4-6}" >> /opt/LexisLocal/.env
+  echo "=== cloud: Bedrock EU (${BEDROCK_MODEL_ID:-eu.anthropic.claude-sonnet-4-6}), přístup z role instance"
+fi
 [ -n "${AGENT_CHUNK_CONCURRENCY:-}" ] && echo "AGENT_CHUNK_CONCURRENCY=$AGENT_CHUNK_CONCURRENCY" >> /opt/LexisLocal/.env
 cat > /etc/systemd/system/lexislocal.service <<UNIT
 [Unit]
@@ -399,7 +409,7 @@ if [ "$PROFILE" = "kancelar" ]; then
   node backend/scripts/office_day.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
     --hours "$OFFICE_HOURS" --restart-cmd "systemctl restart lexislocal" --restart-at 4.5 \
     --intenzita "$OFFICE_INTENZITA" --upload-concurrency "$OFFICE_UPLOAD_CONC" ${OFFICE_DATASET:+--dataset "$OFFICE_DATASET"} \
-    --out "$OUT/kancelar" --label server > "$OUT/office_day.log" 2>&1 || echo "!! office_day skončil s chybou (viz office_day.log)"
+    $([ "${OFFICE_CLOUD:-0}" = "1" ] && echo --cloud) --out "$OUT/kancelar" --label server > "$OUT/office_day.log" 2>&1 || echo "!! office_day skončil s chybou (viz office_day.log)"
   grep -E '^(  [✓✗]|Report|Kontroly)' "$OUT/office_day.log" | tail -n 70
   kill "$MEM_PID" 2>/dev/null; mem "po simulaci"
   echo "=== office_day hotovo $(date -Is)"

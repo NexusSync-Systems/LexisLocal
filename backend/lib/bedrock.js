@@ -78,6 +78,30 @@ function credentials() {
     throw new Error(`Bedrock: chybí přístup k AWS (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY nebo profil „${prof}" v ~/.aws/credentials).`);
 }
 
+// Role instance EC2 (BEDROCK_CREDENTIALS=instance): dočasné klíče z IMDSv2 — server v AWS bez uloženého klíče
+// (serverový test 10/2026; role instance musí mít politiku z scripts/aws/bedrock-eu-kancelar.yaml).
+const IMDS = 'http://169.254.169.254/latest';
+let _imds = null;
+function instanceMode() { return String(process.env.BEDROCK_CREDENTIALS || '').toLowerCase() === 'instance'; }
+async function _imdsCredentials(fetchImpl) {
+    const f = fetchImpl || fetch;
+    if (_imds && _imds.exp - Date.now() > 5 * 60 * 1000) return _imds.creds;
+    const tok = await (await f(IMDS + '/api/token', { method: 'PUT', headers: { 'X-aws-ec2-metadata-token-ttl-seconds': '21600' }, signal: AbortSignal.timeout(2000) })).text();
+    const h = { 'X-aws-ec2-metadata-token': tok };
+    const role = String(await (await f(IMDS + '/meta-data/iam/security-credentials/', { headers: h, signal: AbortSignal.timeout(2000) })).text()).split('\n')[0].trim();
+    if (!role) throw new Error('Bedrock: instance nemá roli IAM (BEDROCK_CREDENTIALS=instance).');
+    const j = await (await f(IMDS + '/meta-data/iam/security-credentials/' + encodeURIComponent(role), { headers: h, signal: AbortSignal.timeout(2000) })).json();
+    if (!j || !j.AccessKeyId) throw new Error('Bedrock: role instance nevrátila přístupové údaje.');
+    const creds = { accessKeyId: j.AccessKeyId, secretAccessKey: j.SecretAccessKey, sessionToken: j.Token || null, role };
+    _imds = { creds, exp: Date.parse(j.Expiration) || (Date.now() + 15 * 60 * 1000) };
+    return creds;
+}
+/** Přístup k AWS pro volání: role instance (BEDROCK_CREDENTIALS=instance), jinak proměnné prostředí / ~/.aws/credentials. */
+async function credentialsAsync(opts) {
+    if (instanceMode()) return _imdsCredentials(opts && opts.fetch);
+    return credentials();
+}
+
 const sha256 = d => crypto.createHash('sha256').update(d, 'utf8').digest('hex');
 const hmac = (k, d) => crypto.createHmac('sha256', k).update(d, 'utf8').digest();
 // RFC 3986 (AWS): vše kromě A–Z a–z 0–9 - _ . ~
@@ -121,7 +145,7 @@ function toConverse(messages) {
 }
 
 async function chat(messages, options = {}) {
-    const reg = region(), model = modelId(), creds = credentials();
+    const reg = region(), model = modelId(), creds = await credentialsAsync();
     const host = `bedrock-runtime.${reg}.amazonaws.com`;
     const conv = toConverse(messages);
     const inferenceConfig = { maxTokens: parseInt(process.env.BEDROCK_MAX_TOKENS || '4096', 10) };
@@ -139,4 +163,4 @@ async function chat(messages, options = {}) {
     return { message: { content }, model, usage: data.usage || null, stopReason: data.stopReason || null };
 }
 
-module.exports = { chat, sign, toConverse, region, modelId, credentials };
+module.exports = { chat, sign, toConverse, region, modelId, credentials, credentialsAsync, instanceMode, _resetImds: () => { _imds = null; } };

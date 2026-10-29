@@ -24,7 +24,9 @@ async function main() {
     const volat = process.argv.includes('--volat');
     const region = zkus('Region', () => B.region());
     const model = zkus('Model', () => B.modelId());
-    zkus('Přístup k AWS', () => { const c = B.credentials(); return `nalezen (klíč …${String(c.accessKeyId).slice(-4)}${c.sessionToken ? ', dočasný' : ''})`; });
+    if (B.instanceMode()) {
+        try { const c = await B.credentialsAsync(); ok.push(`Přístup k AWS: role instance „${c.role}“ (dočasné klíče)`); } catch (e) { bad.push('Přístup k AWS: ' + e.message); }
+    } else zkus('Přístup k AWS', () => { const c = B.credentials(); return `nalezen (klíč …${String(c.accessKeyId).slice(-4)}${c.sessionToken ? ', dočasný' : ''})`; });
     if (process.env.AI_CHAT_PROVIDER !== 'bedrock') warn.push(`AI_CHAT_PROVIDER=${process.env.AI_CHAT_PROVIDER || '(nenastaveno)'} — aplikace Bedrock nepoužije, dokud nebude „bedrock“`);
     if (process.env.LEXIS_PILOT_LOCAL_ONLY === '1') warn.push('LEXIS_PILOT_LOCAL_ONLY=1 — lokální režim mlčenlivosti Bedrock zakáže (to je v pořádku, dokud ho kancelář nechce)');
     const emb = String(process.env.AI_EMBED_PROVIDER || process.env.AI_PROVIDER || 'ollama').toLowerCase();

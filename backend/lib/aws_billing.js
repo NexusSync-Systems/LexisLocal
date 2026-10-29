@@ -53,7 +53,7 @@ async function _ce(target, payload, creds) {
 /** Náklady Bedrocku/Claude po dnech: { dny: {YYYY-MM-DD: usd}, celkem, sluzby: [{nazev, usd}] }. */
 async function nakladyAws(od, doEx, opts) {
     opts = opts || {};
-    const creds = opts.creds || require('./bedrock').credentials();
+    const creds = opts.creds || await require('./bedrock').credentialsAsync();
     const dny = {}; const sluzby = new Map(); const vsechny = new Set();
     let token, pages = 0;
     do {

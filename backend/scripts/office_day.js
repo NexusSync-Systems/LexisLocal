@@ -64,6 +64,7 @@ function parseArgs(argv) {
         else if (a === '--no-firm') o.firm = false;
         else if (a === '--intenzita') o.intenzita = Math.min(5, Math.max(0.2, parseFloat(n()) || 1)); // násobek tempa práce lidí
         else if (a === '--smoke') o.smoke = true;
+        else if (a === '--cloud') o.cloud = true; // server s cloudovým modelem (Bedrock EU): souhlasy klientů, obecné dotazy jako veřejné
         else if (a === '-h' || a === '--help') o.help = true;
     }
     if (o.smoke) { o.hours = o.hours === 8 ? 1 / 3 : o.hours; o.maxOnboarding = o.maxOnboarding || 30; o.maxDen = o.maxDen || 30; o.pollS = Math.min(o.pollS, 20); }
@@ -202,6 +203,7 @@ const S = {
     drafts: [],         // { id, spisZn, author, status }
     nove: [],           // výsledky nových věcí
     cases: [],          // sada cases.json (rešerše bez spisu)
+    souhlas: {},        // spisZn → true: klient souhlasí s cloudem (jen --cloud)
     preRestart: null
 };
 
@@ -288,6 +290,21 @@ async function onboarding(M, R) {
     }
     check('Z7', 'Sdílení spisů vlastníkem (asistentka podatelna u všech, koncipient ~40 %, kolegové občas)', shareFail === 0,
         { severity: 'high', detail: `chyb ${shareFail}; koncipient má ${Object.values(S.shared).filter(x => x[KONC[0]]).length} spisů` });
+
+    // Cloud (--cloud): u ~třetiny spisů advokát zaznamená souhlas klienta s cloudovým modelem (ostatní zůstávají
+    // stupeň B bez souhlasu = jen lokálně). Kontroly K21 pak ověří, že do cloudu šlo jen, co smí.
+    if (O.cloud) {
+        let sFail = 0;
+        for (const zn of Object.keys(S.spisByZn)) {
+            if (!R.chance(1 / 3)) continue;
+            const s = S.spisByZn[zn];
+            const r = await post(s.ownerKey, 'cloud_souhlas', `/api/spisy/${s.id}/cloud/souhlas`, { typ: 'spis', poznamka: 'Simulace: písemný souhlas klienta s cloudovým modelem (EU)' });
+            if (ok2(r.status)) S.souhlas[zn] = true; else sFail++;
+        }
+        const st = await get('admin', 'cloud_stav', '/api/agent/cloud-stav');
+        check('Z13', 'Cloudový model zapnutý a souhlas klienta zaznamenán u ~1/3 spisů', sFail === 0 && !!(st.json && st.json.aktivni),
+            { severity: 'high', detail: `souhlas ${Object.keys(S.souhlas).length} spisů, chyb ${sFail}; model ${(st.json && st.json.model && st.json.model.nazev) || '—'}` });
+    }
 
     // interní postupy → báze rešeršníka
     let kbOk = 0; const kbFiles = fs.readdirSync(path.join(M.dir, 'knowhow'));
@@ -424,6 +441,12 @@ async function runAgent(user, kind, agent, body, grade) {
     // Dotaz přerušený plánovaným restartem v poledne (běh 29. 10.: 2× „socket hang up“) není chyba modelu —
     // do kvality AI se nepočítá, v souhrnu je zvlášť.
     if (r.restart && !ok2(r.status)) run.restart = true;
+    // Kde se dotaz zpracoval (K7b): cloud / lokálně, důvod odepření, odhad ceny.
+    const cp = r.json && r.json.cloudPolicy;
+    run.cloud = !!(r.json && r.json.modelUsed && r.json.modelUsed.cloud);
+    run.verejne = body.dataClass === 'verejne';
+    if (cp && !cp.cloud && cp.code) run.cloudOdepreno = cp.code;
+    if (cp && cp.naklady && typeof cp.naklady.odhadUsd === 'number') run.cloudUsd = cp.naklady.odhadUsd;
     delete run._caseId;
     agentRuns.push(run);
     return { r, run };
@@ -515,7 +538,7 @@ async function act(ev, M, R) {
                 `Jaké lhůty běží ve věci ${zn} a co z nich plyne pro klienta ${row.klient}?`,
                 `Na co se zaměřit v odvolání ve věci ${zn} (${row.predmet})? Uveď relevantní ustanovení.`,
                 `Připrav podklady pro poradu ke spisu ${zn}: strany, předmět, poslední písemnosti.`]);
-            await runAgent(u, 'resersnik_spis', 'resersnik', { prompt: q, ragFilters: { caseNumber: zn } },
+            await runAgent(u, 'resersnik_spis', 'resersnik', Object.assign({ prompt: q, ragFilters: { caseNumber: zn } }, O.cloud ? { caseNumber: zn } : {}),
                 (resp, r) => ({ pass: ok2(r.status) && resp.length > 150, score: resp.length > 150 ? 1 : 0, spisZn: zn,
                     zminkaSpisu: resp.includes(zn) || resp.includes(row.klient) }));
             return;
@@ -524,7 +547,7 @@ async function act(ev, M, R) {
             const pool2 = S.cases.filter(c => c.agent === 'resersnik' && !c.doc);
             if (!pool2.length) return;
             const c = R.pick(pool2);
-            await runAgent(u, 'resersnik_obecne', 'resersnik', { prompt: c.prompt, _caseId: c.id }, resp => scoreCase(c, resp));
+            await runAgent(u, 'resersnik_obecne', 'resersnik', Object.assign({ prompt: c.prompt, _caseId: c.id }, O.cloud ? { dataClass: 'verejne' } : {}), resp => scoreCase(c, resp));
             return;
         }
         case 'kontrola_smlouvy': {
@@ -832,6 +855,20 @@ async function endOfDay(M) {
     // kdo je přihlášen: /api/me každého účtu = jeho jméno a role (hlavička dashboardu)
     const meOk = [];
     for (const u of Object.values(U)) { const r = await get(u.key, 'me', '/api/me'); meOk.push(!!(r.json && r.json.name === u.name && r.json.role === u.role && r.json.kind === 'user')); }
+    if (O.cloud) {
+        // K21: do cloudu jen veřejné dotazy a spisy se souhlasem klienta — nic jiného (mlčenlivost).
+        const done = agentRuns.filter(r => ok2(r.status));
+        const poruseni = done.filter(r => r.cloud && !(r.verejne || (r.spisZn && S.souhlas[r.spisZn])));
+        check('K21a', 'Do cloudu nic bez souhlasu klienta ani text neznámého původu', poruseni.length === 0,
+            { severity: 'critical', detail: `${poruseni.length} porušení z ${done.length}${poruseni.length ? ': ' + poruseni.slice(0, 5).map(r => `${r.kind} ${r.spisZn || ''}`).join(', ') : ''}` });
+        const ver = done.filter(r => r.verejne);
+        check('K21b', 'Obecné dotazy (bez klientských dat) odpověděl cloudový model', !ver.length || ver.filter(r => r.cloud).length / ver.length >= 0.8,
+            { severity: 'medium', detail: `${ver.filter(r => r.cloud).length}/${ver.length} v cloudu; odepřeno: ${[...new Set(ver.filter(r => !r.cloud).map(r => r.cloudOdepreno).filter(Boolean))].join(', ') || '—'}` });
+        const sou = done.filter(r => r.spisZn && S.souhlas[r.spisZn]);
+        const usd = done.reduce((a, r) => a + (r.cloudUsd || 0), 0);
+        check('K21c', 'Spisy se souhlasem klienta mohou do cloudu (informativně)', true,
+            { severity: 'low', detail: `${sou.filter(r => r.cloud).length}/${sou.length} v cloudu (ostatní odepřeno kvůli podkladům z jiných spisů); celkem v cloudu ${done.filter(r => r.cloud).length}/${done.length}, odhad ${usd.toFixed(2)} USD` });
+    }
     check('K19', 'Hlavička dashboardu: každý účet vidí sebe (jméno, role)', meOk.every(Boolean), { severity: 'high', detail: `${meOk.filter(Boolean).length}/${meOk.length}` });
     // další zařízení: párovací odkaz pro dashboard → přihlášení tímto účtem → zrušení zařízení
     const adv = Object.values(U).find(u => u.role === 'advokat');

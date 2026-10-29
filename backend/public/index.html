@@ -403,6 +403,15 @@
                                     <!-- Dynamic options -->
                                 </select>
                             </div>
+
+                            <!-- K7b: chytřejší režim — jen když kancelář zapnula cloudový model (GET /api/agent/cloud-stav) -->
+                            <div class="config-item" id="chat-cloud-item" style="display:none;">
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;" title="Dotaz bez spisu a bez klientských údajů odpoví silnější model v cloudu (EU). Dotazy se spisem se řídí stupněm spisu a souhlasem klienta.">
+                                    <input type="checkbox" id="chat-cloud-verejne">
+                                    <span>☁️ Obecný dotaz — <span id="chat-cloud-model">Claude (EU)</span></span>
+                                </label>
+                                <span class="subtext" style="font-size:0.7rem; color:var(--text-muted);">Nepište jména ani údaje klientů.</span>
+                            </div>
                         </div>
 
                         <!-- Chat Output Area -->

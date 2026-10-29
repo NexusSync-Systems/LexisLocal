@@ -61,8 +61,11 @@ function zapis(kod, nazev, stav, detail) { vysledky.push({ kod, nazev, stav, det
 async function krok(kod, nazev, fn) { try { const r = await fn(); if (r !== false) zapis(kod, nazev, (r && r.stav) || 'ok', r && r.detail); } catch (e) { zapis(kod, nazev, 'chyba', String(e.message || e).slice(0, 300)); } }
 const ask = (opts, notes) => P.scope(opts, async () => { if (notes) notes(); const r = await ai.chat({ model: 'local-test', messages: [{ role: 'user', content: SYNT }], options: { temperature: 0 } }); return { r, sh: P.shrnuti() }; });
 
+// Odepření v IAM: AWS vrací 403 s „AccessDenied“ nebo (Bedrock, 10/2026) „… is not authorized to perform: bedrock:…“.
+function odepreno(r) { return r.status === 403 && /AccessDenied|not authorized to perform/i.test(r.text); }
+
 async function signed(method, host, segs, reg, service, body, extra) {
-    const s = B.sign({ method, host, pathSegments: segs, headers: Object.assign({ 'content-type': 'application/json' }, extra || {}), body: body || '', service, region: reg, creds: B.credentials() });
+    const s = B.sign({ method, host, pathSegments: segs, headers: Object.assign({ 'content-type': 'application/json' }, extra || {}), body: body || '', service, region: reg, creds: await B.credentialsAsync() });
     const res = await realFetch(`https://${host}${s.path}`, { method, headers: s.headers, body: method === 'GET' ? undefined : body });
     return { status: res.status, text: await res.text() };
 }
@@ -72,7 +75,7 @@ async function main() {
     let region, model;
     await krok('A1', 'Region jen EU', () => { region = B.region(); return { detail: region }; });
     await krok('A2', 'Model: EU profil', () => { model = B.modelId(); return { detail: model }; });
-    await krok('A3', 'Přístup k AWS', () => { const c = B.credentials(); return { detail: `klíč …${String(c.accessKeyId).slice(-4)}${c.sessionToken ? ' (dočasný)' : ''}` }; });
+    await krok('A3', 'Přístup k AWS', async () => { const c = await B.credentialsAsync(); return { detail: c.role ? `role instance „${c.role}“` : `klíč …${String(c.accessKeyId).slice(-4)}${c.sessionToken ? ' (dočasný)' : ''}` }; });
     await krok('A4', 'Embeddingy lokálně', () => { const e = String(process.env.AI_EMBED_PROVIDER || 'ollama').toLowerCase(); if (e !== 'ollama') throw new Error('AI_EMBED_PROVIDER=' + e); return { detail: 'ollama' }; });
     if (!region || !model) { zapis('—', 'Další kroky přeskočeny', 'chyba', 'opravte nastavení A'); return; }
 
@@ -140,14 +143,14 @@ async function main() {
         const body = JSON.stringify({ messages: [{ role: 'user', content: [{ text: 'test' }] }], inferenceConfig: { maxTokens: 5 } });
         const r = await signed('POST', 'bedrock-runtime.us-east-1.amazonaws.com', ['model', model.replace(/^eu\./, 'us.'), 'converse'], 'us-east-1', 'bedrock', body);
         if (r.status === 200) throw new Error('VOLÁNÍ MIMO EU PROŠLO — IAM/SCP zámek nefunguje!');
-        if (!/AccessDenied/i.test(r.text)) return { stav: 'varovani', detail: `HTTP ${r.status}, ne AccessDenied: ${r.text.slice(0, 150)}` };
+        if (!odepreno(r)) return { stav: 'varovani', detail: `HTTP ${r.status}, ne odepření IAM: ${r.text.slice(0, 150)}` };
         return { detail: 'odepřeno v AWS' };
     });
     await krok('F2', 'IAM: globální profil v EU regionu → AccessDenied', async () => {
         const body = JSON.stringify({ messages: [{ role: 'user', content: [{ text: 'test' }] }], inferenceConfig: { maxTokens: 5 } });
         const r = await signed('POST', `bedrock-runtime.${region}.amazonaws.com`, ['model', model.replace(/^eu\./, 'global.'), 'converse'], region, 'bedrock', body);
         if (r.status === 200) throw new Error('GLOBÁLNÍ PROFIL PROŠEL — IAM zámek nefunguje!');
-        if (!/AccessDenied/i.test(r.text)) return { stav: 'varovani', detail: `HTTP ${r.status}, ne AccessDenied: ${r.text.slice(0, 150)}` };
+        if (!odepreno(r)) return { stav: 'varovani', detail: `HTTP ${r.status}, ne odepření IAM: ${r.text.slice(0, 150)}` };
         return { detail: 'odepřeno v AWS' };
     });
 

@@ -46,6 +46,20 @@ function outsideContextLine(cc) {
     return `• Mimo podklady: ${uniq.join(', ')} — paragraf existuje, ale v podkladech k dotazu nebyl. Ověřte, že se na věc opravdu vztahuje.`;
 }
 
+// K7b (29. 10. 2026): „chytřejší režim“ — zda kancelář má zapnutý cloudový model (Claude přes Bedrock v EU).
+// Rozhraní podle toho nabídne volbu „obecný dotaz bez klientských dat“ (dataClass: verejne). O tom, co
+// do cloudu smí, dál rozhoduje lib/cloud_policy.js (spisy, souhlas klienta, rozpočet), ne tahle volba.
+function cloudModelLabel(provider) {
+    const id = provider === 'bedrock' ? String(process.env.BEDROCK_MODEL_ID || '') : provider === 'anthropic' ? String(process.env.ANTHROPIC_MODEL || '') : String(process.env.OPENAI_CHAT_MODEL || '');
+    const m = /claude-([a-z]+)-(\d+)-(\d+)/i.exec(id) || /claude-([a-z]+)-(\d+)(?![-\d])/i.exec(id);
+    const nazev = m ? `Claude ${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? '.' + m[3] : ''}` : (id || provider);
+    return { id: id || null, nazev, eu: provider === 'bedrock' && /^eu\./.test(id) };
+}
+router.get('/cloud-stav', (req, res) => {
+    const st = require('../lib/cloud_policy').stavKancelare();
+    res.json({ aktivni: !!st.cloudAktivni, provider: st.provider, model: st.cloudAktivni ? cloudModelLabel(st.provider) : null, rezimOdepreni: st.rezimOdepreni });
+});
+
 router.post('/:agentId', async (req, res) => {
     const { agentId } = req.params;
     const { prompt, model } = req.body;
@@ -646,6 +660,8 @@ router.post('/:agentId', async (req, res) => {
             outputGuard: outputGuard,
             examplesUsed: selfCheck ? selfCheck.examplesUsed : [],
             cloudPolicy: cloudPolicy.shrnuti(), // kde se dotaz zpracoval a proč (null = jen lokální model)
+            // Který model skutečně odpovídal (K7b): cloud → Claude, jinak lokální model (i když cloud odmítl).
+            modelUsed: (() => { const sh = cloudPolicy.shrnuti(); return sh && sh.cloud ? Object.assign({ cloud: true }, cloudModelLabel(sh.provider)) : { cloud: false, id: selectedModel, nazev: selectedModel }; })(),
             timestamp: new Date().toISOString()
         });
 

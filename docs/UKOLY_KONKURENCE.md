@@ -58,7 +58,7 @@ jen jako „D – veřejné“), napojení na Bedrock EU taky (`lib/bedrock.js`)
 - **K7a Živý test Bedrocku:** správce v AWS povolí modely Claude (eu-central-1), nasadí `scripts/aws/bedrock-eu-kancelar.yaml`,
   nastaví uchovávání dat Bedrocku na „none“; pak `scripts/bedrock-check.js --volat` a rešeršní sada (vč. J1) na Claude
   i qwen 7B. **Hotovo, když:** tabulka kvalita / čas / cena za dotaz pro obě varianty.
-- **K7b „Chytřejší režim“:** obecné právní otázky bez klientských dat → Claude (Bedrock EU), cokoli se spisem lokálně podle
+- **K7b „Chytřejší režim“ — ✅ 29. 10. (volba „☁️ Obecný dotaz“ v asistentovi, pod odpovědí kdo odpovídal; ověří běh `kancelar-bedrock`):** obecné právní otázky bez klientských dat → Claude (Bedrock EU), cokoli se spisem lokálně podle
   `cloud_policy`; advokát vidí, který model odpovídal (transparenční log). **Hotovo, když:** J1 ≥ 19/20 na Claude,
   dotaz se spisem stupně B bez souhlasu nikdy neodejde (test).
 - **K7c Alternativa bez cloudu:** větší lokální model (qwen 14B/32B) podle paměti Mac mini pro pilot; srovnání na stejné sadě.
