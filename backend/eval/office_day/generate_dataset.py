@@ -97,7 +97,7 @@ RIZIKA = [
     ('Všechny spory z této smlouvy rozhodne rozhodce jmenovaný výhradně zhotovitelem.', r'rozhod[čc]|rozhodce'),
     ('Za prodlení objednatele s úhradou náleží zhotoviteli smluvní pokuta 1 % denně z dlužné částky bez omezení.', r'1\s?%|smluvn[ií] pokut'),
     ('Smlouva se automaticky prodlužuje vždy o 10 let, nevypoví-li ji objednatel nejpozději 2 roky před uplynutím doby.', r'prodlu|10 let|automatick'),
-    ('Odpovědnost zhotovitele za vady díla se vylučuje v plném rozsahu.', r'vylu[čc]|odpov[eě]dnost za vad'),
+    ('Odpovědnost zhotovitele za vady díla se vylučuje v plném rozsahu.', r'vylu[čc]|odpov[eě]dnost za vad|pr[áa]v\S* z vadn\S* pln[ěe]n'),
     ('Objednatel se vzdává práva odstoupit od smlouvy z jakéhokoli důvodu.', r'odstoup|vzd[aá]v'),
     ('Záruční doba činí 3 měsíce a vady je nutné oznámit do 2 dnů od jejich vzniku.', r'z[aá]ru[čc]|3 m[eě]s|2 dn'),
 ]

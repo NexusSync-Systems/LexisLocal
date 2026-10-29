@@ -238,6 +238,41 @@ function verifyOne(citation, contextNorm, referenceIndex) {
 }
 
 /**
+ * „Mimo podklady“ (29. 10. 2026, úkol K2): paragraf v zákoně existuje (ověřeno), ale v podkladech
+ * k dotazu (RAG pasáže, zadání, kontext) vůbec nebyl. Typicky skutečný, ale nesouvisející §
+ * (zátěžový den: § 2248 OZ = zvýšení nájemného u otázky na moderaci smluvní pokuty, § 2051 OZ).
+ * Není to halucinace (stav zůstává ověřený, hallucinationRate se nemění) — jen upozornění advokátovi.
+ */
+function contextParagraphs(contextText) {
+    const set = new Set();
+    const re = /§§?\s*((?:\d+[a-z]?(?:\s*(?:,|a|až|–|—|-|nebo)\s*(?=\d))?)+)/gi;
+    let m;
+    while ((m = re.exec(String(contextText || '')))) {
+        const seq = m[1];
+        const tok = seq.match(/\d+[a-z]?|až|–|—|-/gi) || [];
+        for (let i = 0; i < tok.length; i++) {
+            const t = tok[i].toLowerCase();
+            if (/^\d/.test(t)) { set.add(t); continue; }
+            // rozsah „2048 až 2052“ / „2048–2052“ (jen rozumně krátký)
+            const a = parseInt(tok[i - 1], 10), b = parseInt(tok[i + 1], 10);
+            if (Number.isFinite(a) && Number.isFinite(b) && b > a && b - a <= 60) for (let k = a + 1; k < b; k++) set.add(String(k));
+        }
+    }
+    return set;
+}
+// Upozorňujeme jen tehdy, když podklady nějaké paragrafy obsahují (pasáže z báze zákonů apod.).
+// Podklady bez jediného § (např. smlouva bez pasáží zákona) by značily každou citaci → šum.
+function markOutsideContext(citations, ctxPars) {
+    const hasContext = ctxPars.size > 0;
+    for (const c of citations) {
+        const ok = c.status === 'verified' || c.status === 'verified_by_source';
+        c.outsideContext = !!(hasContext && ok && c.type === 'paragraf' && c.paragraph
+            && !ctxPars.has(String(c.paragraph).toLowerCase()));
+    }
+    return citations.filter(c => c.outsideContext).length;
+}
+
+/**
  * Hlavní API. Ověří všechny citace v odpovědi.
  * @param {string} text            Odpověď modelu.
  * @param {object} opts
@@ -322,6 +357,8 @@ function verifyCitations(text, opts = {}) {
     const hallucinationRate = citations.length
         ? +(unverified.length / citations.length).toFixed(3)
         : 0;
+    const ctxText = contextChunks.map(c => (c && c.text) ? c.text : '').join('\n');
+    const outsideContextCount = markOutsideContext(citations, contextParagraphs(ctxText));
 
     return {
         ok: strict ? unverified.length === 0 : true,
@@ -330,6 +367,7 @@ function verifyCitations(text, opts = {}) {
         total: citations.length,
         unverifiedCount: unverified.length,
         hallucinationRate,
+        outsideContextCount,
         unverified,
         annotatedText: annotateText(text, citations)
     };
@@ -398,6 +436,8 @@ async function verifyCitationsWithSources(text, opts = {}) {
     const VERIFIED = new Set(['verified', 'verified_by_source']);
     const unverified = citations.filter(c => !VERIFIED.has(c.status));
     const counts = citations.reduce((acc, c) => { acc[c.status] = (acc[c.status] || 0) + 1; return acc; }, {});
+    const ctxText = (Array.isArray(opts.contextChunks) ? opts.contextChunks : []).map(c => (c && c.text) ? c.text : '').join('\n');
+    const outsideContextCount = markOutsideContext(citations, contextParagraphs(ctxText));
     return {
         ok: opts.strict ? unverified.length === 0 : true,
         citations,
@@ -405,6 +445,7 @@ async function verifyCitationsWithSources(text, opts = {}) {
         total: citations.length,
         unverifiedCount: unverified.length,
         hallucinationRate: citations.length ? +(unverified.length / citations.length).toFixed(3) : 0,
+        outsideContextCount,
         unverified,
         annotatedText: annotateText(text, citations),
         sourcesConsulted: consulted
@@ -419,5 +460,6 @@ module.exports = {
     annotateText,
     normalizeCitation,
     // interní, exportováno kvůli testům
-    _verifyOne: verifyOne
+    _verifyOne: verifyOne,
+    _contextParagraphs: contextParagraphs
 };

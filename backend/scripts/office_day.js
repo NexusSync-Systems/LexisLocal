@@ -398,7 +398,10 @@ async function verifyDocs(docs, id, label) {
 }
 
 // ─── hodnocení agentů ────────────────────────────────────────────────────────
-const rx = s => new RegExp(s, 'iu');
+// Vzory rizik ze starších datových sad rozšířené o rovnocenné formulace (běh 28. 10. 2026: kontrolor
+// správně napsal „vzdání se práv z vadného plnění“, vzor chtěl jen „vyloučení / odpovědnost za vady“).
+const RX_ALIAS = { 'vylu[čc]|odpov[eě]dnost za vad': 'vylu[čc]|odpov[eě]dnost za vad|pr[áa]v\\S* z vadn\\S* pln[ěe]n' };
+const rx = s => new RegExp(RX_ALIAS[s] || s, 'iu');
 function scoreCase(c, resp) {
     const miss = [], hit = [];
     for (const p of c.must || []) if (!rx(p).test(resp)) miss.push(p);
@@ -423,8 +426,11 @@ async function runAgent(user, kind, agent, body, grade) {
 }
 function summarizeCit(cc) {
     const items = cc.items || cc.citations || [];
-    const bad = items.filter(i => i && (i.status === 'unverified' || i.status === 'missing' || i.ok === false));
-    return { celkem: items.length, neovereno: bad.length };
+    // Verifier značí ověření polem `verified` (stavy verified / verified_by_source); dřív se tu hledaly
+    // neexistující stavy „unverified/missing“ → neověřené citace se v souhrnu nepočítaly.
+    const bad = items.filter(i => i && (typeof i.verified === 'boolean' ? !i.verified : (i.status === 'unverified' || i.status === 'missing' || i.ok === false)));
+    const mimo = items.filter(i => i && i.outsideContext);
+    return { celkem: items.length, neovereno: bad.length, mimoPodklady: mimo.length, mimo: [...new Set(mimo.map(i => i.raw))].slice(0, 5) };
 }
 
 // ─── 1: den ──────────────────────────────────────────────────────────────────
@@ -907,6 +913,13 @@ function writeReport(meta) {
     hours.forEach(h => L.push(`| ${h.hodina} | ${h.pozadavku} | ${h.chyb} | ${h.prijem} | ${h.agentu} | ${fmtS(h.agentP50)} | ${fmtS(h.agentP95)} |`));
     L.push('', '## Asistenti AI', '', '| Úloha | Počet | Prošlo kontrolou | p50 | p95 |', '|---|---|---|---|---|');
     Object.entries(json.agentKinds).forEach(([k, v]) => L.push(`| ${k} | ${v.n} | ${v.pass} (${Math.round(v.pass / Math.max(1, v.n) * 100)} %)${v.simulated ? ` · simulováno ${v.simulated}` : ''} | ${fmtS(v.p50)} | ${fmtS(v.p95)} |`));
+    {
+        const cr = agentRuns.filter(r => r.citations);
+        const sum = k => cr.reduce((n, r) => n + (r.citations[k] || 0), 0);
+        const mimo = {}; cr.forEach(r => (r.citations.mimo || []).forEach(m => { mimo[m] = (mimo[m] || 0) + 1; }));
+        const top = Object.entries(mimo).sort((x, y) => y[1] - x[1]).slice(0, 8).map(([m, n]) => `${m} ×${n}`).join(', ');
+        L.push('', `Citace v odpovědích: ${sum('celkem')}, neověřeno ${sum('neovereno')}, mimo podklady ${sum('mimoPodklady')}${top ? ` (nejčastěji ${top})` : ''}.`);
+    }
     L.push('', '## Akce (odezva)', '', '| Akce | Počet | Chyb | p50 | p95 | max |', '|---|---|---|---|---|---|');
     actRows.forEach(a => L.push(`| ${a.action} | ${a.n} | ${a.chyby} | ${fmtS(a.p50)} | ${fmtS(a.p95)} | ${fmtS(a.max)} |`));
     if ((S.docErrors || []).length) { L.push('', '## Odchylky ve zpracování dokumentů (prvních 40)', ''); S.docErrors.slice(0, 40).forEach(e => L.push('- ' + e)); }

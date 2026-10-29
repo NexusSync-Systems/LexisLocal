@@ -38,6 +38,14 @@ const { selectExamples, examplesMessages } = require('../lib/agent_examples');
 const _isConnError = e => /fetch failed|ECONN|ETIMEDOUT|EHOSTUNREACH|socket|timeout|aborted|terminated/i.test(String(e && (e.message || e.cause && e.cause.code) || ''));
 
 // POST /api/agent/:agentId - Volání agenta s modelem dle výběru
+// K2 (29. 10. 2026): paragraf existuje, ale v podkladech k dotazu nebyl → upozornění pod odpovědí.
+function outsideContextLine(cc) {
+    const list = cc && Array.isArray(cc.citations) ? cc.citations.filter(c => c.outsideContext) : [];
+    if (!list.length) return '';
+    const uniq = [...new Set(list.map(c => c.raw))].slice(0, 5);
+    return `• Mimo podklady: ${uniq.join(', ')} — paragraf existuje, ale v podkladech k dotazu nebyl. Ověřte, že se na věc opravdu vztahuje.`;
+}
+
 router.post('/:agentId', async (req, res) => {
     const { agentId } = req.params;
     const { prompt, model } = req.body;
@@ -209,7 +217,7 @@ router.post('/:agentId', async (req, res) => {
                     messages.push({
                         role: 'system',
                         content: `Podklady ze znalostní báze (zákony, judikatura):\n${kbMatches.map(fmt).join('\n\n---\n\n')}\n\n` +
-                            'Při odpovědi vycházej z těchto podkladů a cituj jen ustanovení, která v nich jsou. Lhůty a čísla přebírej doslovně. U každého § uveď i zákon (např. „§ 2248 OZ“, „§ 204 o. s. ř.“). Pokud podklady na otázku nestačí, řekni to.'
+                            'Při odpovědi vycházej z těchto podkladů a cituj jen ustanovení, která v nich jsou. Lhůty a čísla přebírej doslovně. U každého § uveď i zákon (ve tvaru „§ [číslo] OZ“, „§ [číslo] o. s. ř.“). Pokud podklady na otázku nestačí, řekni to.'
                     });
                 }
                 if (clientMatches.length > 0) {
@@ -489,6 +497,7 @@ router.post('/:agentId', async (req, res) => {
             citationCheck = cc ? {
                 total: cc.total,
                 unverifiedCount: cc.unverifiedCount,
+                outsideContextCount: cc.outsideContextCount || 0,
                 citations: cc.citations,
                 annotatedText: cc.annotatedText,
                 sourcesConsulted: cc.sourcesConsulted
@@ -546,7 +555,7 @@ router.post('/:agentId', async (req, res) => {
                 selfCheck.structuredLetter && selfCheck.missing.length ? `• Dopis sestavil program; doplňte: ${selfCheck.missing.join(', ')}.` : '',
                 ...selfCheck.remainingText.map(t => `• Kontrola: ${t.replace(/^V dopise /, 'v dopise ').replace(/ Uveď.*$| Oprav.*$/, '')}`)
             ] : [];
-            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), oppLine, dwLine, ...scLines, (revisionCheck && revisionCheck.newParties) ? `• V novém znění jsou strany/osoby, které v konceptu ani v připomínkách nebyly — ověřte: ${revisionCheck.newParties.join(', ')}.` : ''] });
+            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), outsideContextLine(citationCheck), oppLine, dwLine, ...scLines, (revisionCheck && revisionCheck.newParties) ? `• V novém znění jsou strany/osoby, které v konceptu ani v připomínkách nebyly — ověřte: ${revisionCheck.newParties.join(', ')}.` : ''] });
             response.message.content = body + warn;
             draftBody = body; draftWarn = warn;
             outputGuard = { repeatsRemoved: rep.removed, replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,

@@ -17,7 +17,7 @@ const DEFAULT_AGENTS = {
         name: "Rešeršník",
         emoji: "📚",
         role: "Vyhledávání v zákonech a judikatuře. Formulace právních argumentů.",
-        systemPrompt: "Jsi zkušený český advokátní koncipient zaměřený na rešerše. Tvým úkolem je na základě zadaných právních předpisů a judikátů vypracovat objektivní právní rozbor. U každého paragrafu vždy uveď i zákon, ke kterému patří (např. „§ 2248 OZ“, „§ 204 o. s. ř.“ nebo „§ 2248 zákona č. 89/2012 Sb.“) — holé „§ 629“ nelze ověřit, protože stejné číslo má více zákonů.",
+        systemPrompt: "Jsi zkušený český advokátní koncipient zaměřený na rešerše. Tvým úkolem je na základě zadaných právních předpisů a judikátů vypracovat objektivní právní rozbor. U každého paragrafu vždy uveď i zákon, ke kterému patří ve tvaru „§ [číslo] OZ“, „§ [číslo] o. s. ř.“ nebo „§ [číslo] zákona č. [číslo]/[rok] Sb.“ (číslo paragrafu ber jen z podkladů, nikdy z tohoto vzoru) — holý paragraf bez zákona nelze ověřit, protože stejné číslo má více zákonů.",
         isSystem: true,
         preferredModel: CHAT_MODEL,
         permissions: {
@@ -45,7 +45,7 @@ const DEFAULT_AGENTS = {
         name: "Kontrolor",
         emoji: "⚖️",
         role: "Detekce rizik, protimluvů a slabých míst v argumentaci.",
-        systemPrompt: "Jsi oponentní právní zástupce. Tvým úkolem je kriticky zhodnotit předložený text, najít v něm logické chyby, slabá místa a navrhnout protiargumenty. U každého paragrafu vždy uveď i zákon, ke kterému patří (např. „§ 2248 OZ“, „§ 204 o. s. ř.“ nebo „§ 2248 zákona č. 89/2012 Sb.“) — holé „§ 629“ nelze ověřit, protože stejné číslo má více zákonů.",
+        systemPrompt: "Jsi oponentní právní zástupce. Tvým úkolem je kriticky zhodnotit předložený text, najít v něm logické chyby, slabá místa a navrhnout protiargumenty. U každého paragrafu vždy uveď i zákon, ke kterému patří ve tvaru „§ [číslo] OZ“, „§ [číslo] o. s. ř.“ nebo „§ [číslo] zákona č. [číslo]/[rok] Sb.“ (číslo paragrafu ber jen z podkladů, nikdy z tohoto vzoru) — holý paragraf bez zákona nelze ověřit, protože stejné číslo má více zákonů.",
         isSystem: true,
         // Model řídí ROLE_MODEL (REVIEW_MODEL) přes normalizeAgent; tady jen bezpečný default.
         preferredModel: CHAT_MODEL,
@@ -165,9 +165,22 @@ function normalizeAgent(agent) {
         const defs = agent.isSystem ? require('./agent_examples').DEFAULT_EXAMPLES[id] : null;
         agent.examples = defs ? JSON.parse(JSON.stringify(defs)) : [];
     }
-    // Systémové agenty: systemPrompt/role/emoji/name jsou řízené KÓDEM (DEFAULT_AGENTS),
-    // aby vylepšení promptů platila bez ruční úpravy .agents.json.
+    // Uložené prompty (.agents.json) si kancelář může upravit, proto je nepřepisujeme celé.
+    // Známé vadné věty z dřívějších výchozích promptů ale opravíme i v uložené kopii (PROMPT_MIGRATIONS).
+    if (typeof agent.systemPrompt === 'string') agent.systemPrompt = migratePrompt(agent.systemPrompt);
     return agent;
+}
+// Opravy vět z dřívějších výchozích promptů — [stará věta, nová věta].
+// 29. 10. 2026: vzor „§ 2248 OZ“ model přebíral jako obsah (zátěžový den: § 2248 místo § 2051 OZ
+// u moderace smluvní pokuty v 7–8 z 20 odpovědí) → vzor bez konkrétního čísla.
+const PROMPT_MIGRATIONS = [
+    ['(např. „§ 2248 OZ“, „§ 204 o. s. ř.“ nebo „§ 2248 zákona č. 89/2012 Sb.“) — holé „§ 629“ nelze ověřit, protože stejné číslo má více zákonů.',
+        've tvaru „§ [číslo] OZ“, „§ [číslo] o. s. ř.“ nebo „§ [číslo] zákona č. [číslo]/[rok] Sb.“ (číslo paragrafu ber jen z podkladů, nikdy z tohoto vzoru) — holý paragraf bez zákona nelze ověřit, protože stejné číslo má více zákonů.'],
+];
+function migratePrompt(text) {
+    let t = text;
+    for (const [from, to] of PROMPT_MIGRATIONS) if (t.includes(from)) t = t.split(from).join(to);
+    return t;
 }
 function normalizeAgents(agents) {
     for (const k of Object.keys(agents || {})) normalizeAgent(agents[k]);
@@ -294,5 +307,6 @@ module.exports = {
     normalizeAgent,
     SPIS_ACCESS_LEVELS,
     KB_PREFIX,
-    DEFAULT_AGENTS
+    DEFAULT_AGENTS,
+    migratePrompt
 };

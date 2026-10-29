@@ -90,3 +90,16 @@ Serverový test 13. 10. 2026 ukázal, že všech 29 neověřených citací byl p
   **`ambiguous_law`** — počítá se mezi neověřené, v důvodu jsou kandidátní zákony.
 - Prompty rešeršníka a kontrolora (a pokyn k podkladům z báze) vyžadují u každého § i zákon.
 - Na dnešních 29 citacích: 19 ověřeno s odvozeným zákonem, 10 `ambiguous_law`, 0 beze změny.
+
+## Mimo podklady (29. 10. 2026)
+
+Zátěžový den ukázal, že ověřovač pustí **skutečný, ale nesouvisející** paragraf: u otázky na moderaci smluvní pokuty
+model 7–8× z 20 uvedl § 2248 OZ (zvýšení nájemného) — v zákoně existuje, takže `verified`. Příčinou byl i vzor
+„§ 2248 OZ“ přímo v systémovém promptu (opraveno, K1).
+
+- Citace paragrafu, který je ověřený, ale jeho číslo se v podkladech k dotazu (RAG pasáže, zadání, kontext) neobjevilo,
+  dostane `outsideContext: true`; výsledek má `outsideContextCount`. Podklady se čtou i s výčty a rozsahy („§§ 2048 až 2052“).
+- Stav citace ani `hallucinationRate` se nemění — není to halucinace, jen upozornění: pod odpovědí řádek
+  „Mimo podklady: § … — paragraf existuje, ale v podkladech k dotazu nebyl. Ověřte, že se na věc opravdu vztahuje.“
+- Když podklady neobsahují žádný § (např. jen text smlouvy), neupozorňuje se — každá citace by byla „mimo“.
+

@@ -367,6 +367,9 @@
       "anyOf": [
         "\\d+\\s?Cdo\\s?\\d+/\\d{4}"
       ],
+      "mustNot": [
+        "§\\s*2248"
+      ],
       "severity": "medium",
       "_pozn": "V bázi je NS 31 Cdo 2273/2022 (přiměřenost se posuzuje u konkrétního nároku, ne u ujednání)."
     },

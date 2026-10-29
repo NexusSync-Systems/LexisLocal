@@ -39,6 +39,9 @@ Změny od 1.2.0 (25. 10. 2026). Verze v `package.json` zatím 1.2.0 — zvýšit
 
 ## Opravy
 
+- **Citace paragrafů** — vzor formátu v promptech rešeršníka a kontrolora obsahoval konkrétní „§ 2248 OZ“ a model ho
+  přebíral do odpovědí (u smluvní pokuty místo § 2051 OZ). Vzor je bez čísla; opraví se i uložené prompty kanceláře.
+  Nově se pod odpovědí upozorní na paragraf, který existuje, ale v podkladech k dotazu nebyl („Mimo podklady“).
 - **Přerušená spojení při vytížení serveru** (zátěžový den 10 lidí: 6 z 12 773 požadavků) — server drží volné
   spojení 65 s místo 5 s, takže ho zavírá klient, ne server uprostřed dotazu (`HTTP_KEEPALIVE_TIMEOUT_MS`).
 - **Spisové značky s rejstříkem o více slovech** („19 P a Nc 57/2026“ — opatrovnické věci) se
