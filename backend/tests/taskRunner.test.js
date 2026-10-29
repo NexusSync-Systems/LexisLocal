@@ -134,6 +134,7 @@ describe('task-runner — schválené úlohy', () => {
         const s = R.sestav({ uloha: 'bedrock_srovnani', parametry: { model: 'eu.anthropic.claude-haiku-5-5', rag: true, jen: 'resersnik' } });
         expect(s.args).toEqual(['backend/scripts/model_bench.js', '--models', 'qwen2.5:7b,bedrock:eu.anthropic.claude-haiku-5-5', '--no-pull',
             '--out', 'bench-results', '--rag', '--only', 'resersnik']);
+        expect(R.sestav({ uloha: 'bedrock_srovnani', parametry: { lokalni: 'zadny' } }).args.slice(1, 3)).toEqual(['--models', 'bedrock:eu.anthropic.claude-sonnet-4-6']);
         for (const zly of ['qwen2.5:7b,bedrock:us.x', 'a b', '../x', 'qwen;ls']) {
             expect(() => R.sestav({ uloha: 'bedrock_srovnani', parametry: { lokalni: zly } })).toThrow(/nepovolený lokální model/);
         }

@@ -230,13 +230,16 @@ const ULOHY = {
         env: bedrockEnv(p),
     }),
     // Srovnání lokálního modelu s Claude na syntetické sadě (eval/model_bench.json); rag = s podklady ze znalostní báze.
+    // lokalni: "zadny" = jen Claude (29. 10. 2026: qwen 7B na notebooku 0,7 tok/s a zasekával Mac — lokální výsledky
+    // bereme ze serverových běhů).
     bedrock_srovnani: p => {
         const env = bedrockEnv(p);
         const lokalni = String(p.lokalni || 'qwen2.5:7b');
-        if (!/^[a-z0-9][a-z0-9._-]{0,30}(:[a-z0-9._-]{1,20})?$/.test(lokalni)) throw new Error(`nepovolený lokální model „${lokalni}"`);
+        if (lokalni !== 'zadny' && !/^[a-z0-9][a-z0-9._-]{0,30}(:[a-z0-9._-]{1,20})?$/.test(lokalni)) throw new Error(`nepovolený lokální model „${lokalni}"`);
+        const modely = (lokalni === 'zadny' ? [] : [lokalni]).concat(`bedrock:${env.BEDROCK_MODEL_ID}`).join(',');
         return {
             cmd: NODE,
-            args: ['backend/scripts/model_bench.js', '--models', `${lokalni},bedrock:${env.BEDROCK_MODEL_ID}`, '--no-pull',
+            args: ['backend/scripts/model_bench.js', '--models', modely, '--no-pull',
                 '--out', 'bench-results', ...(p.rag ? ['--rag'] : []), ...(p.jen ? ['--only', oneOf(p.jen, ['resersnik', 'spisovatel', 'kontrolor'], null)] : [])],
             env,
         };
