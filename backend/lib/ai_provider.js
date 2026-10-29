@@ -181,10 +181,27 @@ async function chat(params) {
         }
         policy.zaznamenej(decision, { provider: p, model: cloudModel });
         let r;
-        if (p === 'openai') r = await _openaiChat(params.messages, params.options);
-        else if (p === 'anthropic') r = await _anthropicChat(params.messages, params.options);
-        else if (p === 'bedrock') r = await require('./bedrock').chat(params.messages, params.options);
-        else throw new Error('Neznámý poskytovatel AI: ' + p);
+        try {
+            if (p === 'openai') r = await _openaiChat(params.messages, params.options);
+            else if (p === 'anthropic') r = await _anthropicChat(params.messages, params.options);
+            else if (p === 'bedrock') r = await require('./bedrock').chat(params.messages, params.options);
+            else throw new Error('Neznámý poskytovatel AI: ' + p);
+        } catch (cloudErr) {
+            // Cloud nedostupný (síť, oprávnění, model nepovolen, výpadek AWS): dotaz dokončí lokální model —
+            // dřív to skončilo „simulovanou“ odpovědí z fallbacku agenta (test rozhraní 29. 10. 2026).
+            // Jen výpadek Bedrocku za běhu (HTTP chyba AWS, síť, časový limit). Chybné nastavení (region mimo EU,
+            // chybějící klíč nebo model) dál vyhodí chybu — to se má opravit, ne tiše obcházet.
+            const vypadek = p === 'bedrock' && /^Bedrock \d{3}:|fetch failed|aborted|abort|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|timeout/i.test(String(cloudErr.message || cloudErr.name));
+            if (policy.rezimOdepreni() !== 'lokalne' || !vypadek) throw cloudErr;
+            const fail = Object.assign({}, decision, { allowed: false, code: 'chyba_cloudu', duvody: ['Cloudový model je nedostupný (' + String(cloudErr.message).slice(0, 160) + ') — odpověděl lokální model.'] });
+            policy.zaznamenej(fail, { provider: p, model: cloudModel, fallback: true });
+            _countRequest('odepreno');
+            const local = Object.assign({}, params);
+            if (process.env.LEXIS_CLOUD_FALLBACK_MODEL) local.model = process.env.LEXIS_CLOUD_FALLBACK_MODEL;
+            const lr = await _ollamaChat(local);
+            if (lr && typeof lr === 'object') lr.lexisCloud = { cloud: false, odepreno: true, provider: 'ollama', code: 'chyba_cloudu', duvody: fail.duvody };
+            return lr;
+        }
         _countRequest('cloud');
         // Spotřeba tokenů a odhad ceny (živě) — ke spisům, ze kterých dotaz čerpal.
         const rec = usage.zaznamenej({ provider: p, model: (r && r.model) || cloudModel, usage: r && r.usage, spisIds: (decision.spisy || []).map(x => x.id) });

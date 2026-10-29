@@ -204,6 +204,10 @@ const S = {
     nove: [],           // výsledky nových věcí
     cases: [],          // sada cases.json (rešerše bez spisu)
     souhlas: {},        // spisZn → true: klient souhlasí s cloudem (jen --cloud)
+    odvolano: {},       // spisZn → čas (ms) odvolání souhlasu během dne
+    stupenA: {},        // spisZn → true: přísně důvěrné (nikdy cloud)
+    strop: null,        // { od, do } okno tvrdého stropu rozpočtu (ms)
+    cloudEvents: [],    // průběh cloudových zásahů během dne
     preRestart: null
 };
 
@@ -301,6 +305,20 @@ async function onboarding(M, R) {
             const r = await post(s.ownerKey, 'cloud_souhlas', `/api/spisy/${s.id}/cloud/souhlas`, { typ: 'spis', poznamka: 'Simulace: písemný souhlas klienta s cloudovým modelem (EU)' });
             if (ok2(r.status)) S.souhlas[zn] = true; else sFail++;
         }
+        // ~5 spisů je přísně důvěrných (stupeň A): ani se souhlasem nesmí do cloudu
+        let aFail = 0, aSouhlas = [];
+        for (const zn of Object.keys(S.spisByZn).filter(z => !S.souhlas[z]).slice(0, 5)) {
+            const sp = S.spisByZn[zn];
+            const r = await post(sp.ownerKey, 'cloud_stupen', `/api/spisy/${sp.id}/cloud/stupen`, { stupen: 'A', duvod: 'Simulace: trestní obhajoba / zdravotní údaje' });
+            if (ok2(r.status)) S.stupenA[zn] = true; else aFail++;
+            const so = await post(sp.ownerKey, 'cloud_souhlas_A', `/api/spisy/${sp.id}/cloud/souhlas`, { typ: 'spis', poznamka: 'Simulace: souhlas u stupně A' }, { expect: [200, 400, 403, 409, 422] });
+            aSouhlas.push(so.status);
+            if (ok2(so.status)) S.souhlas[zn] = 'A'; // souhlas zaznamenán, ale stupeň A ho musí přebít
+        }
+        S.cloudA = { aFail, aSouhlas };
+        // rozpočet kanceláře na cloud (bez tvrdého stropu; strop se zkusí odpoledne)
+        const bs = await post('admin', 'ai_rozpocet', '/api/ai-usage/settings', { mesicniRozpocetUsd: 50, varovaniPct: 80, tvrdyStrop: false });
+        S.cloudEvents.push({ t: Date.now(), co: 'rozpočet 50 USD', status: bs.status });
         const st = await get('admin', 'cloud_stav', '/api/agent/cloud-stav');
         check('Z13', 'Cloudový model zapnutý a souhlas klienta zaznamenán u ~1/3 spisů', sFail === 0 && !!(st.json && st.json.aktivni),
             { severity: 'high', detail: `souhlas ${Object.keys(S.souhlas).length} spisů, chyb ${sFail}; model ${(st.json && st.json.model && st.json.model.nazev) || '—'}` });
@@ -444,6 +462,7 @@ async function runAgent(user, kind, agent, body, grade) {
     // Kde se dotaz zpracoval (K7b): cloud / lokálně, důvod odepření, odhad ceny.
     const cp = r.json && r.json.cloudPolicy;
     run.cloud = !!(r.json && r.json.modelUsed && r.json.modelUsed.cloud);
+    run.t0 = Date.now() - r.ms; run.t1 = Date.now();
     run.verejne = body.dataClass === 'verejne';
     if (cp && !cp.cloud && cp.code) run.cloudOdepreno = cp.code;
     if (cp && cp.naklady && typeof cp.naklady.odhadUsd === 'number') run.cloudUsd = cp.naklady.odhadUsd;
@@ -489,6 +508,11 @@ function buildPlan(M, R) {
     }
     if (KONC.length) ev.push({ min: 300, user: KONC[0], kind: 'schvalit_bez_opravneni' });
     ev.push({ min: 120, user: 'admin', kind: 'readiness' });
+    if (O.cloud) {
+        ev.push({ min: 300, user: 'admin', kind: 'cloud_odvolani' });   // 13:00 klienti odvolají souhlas
+        ev.push({ min: 420, user: 'admin', kind: 'cloud_strop_on' });   // 15:00 vyčerpaný rozpočet s tvrdým stropem
+        ev.push({ min: 450, user: 'admin', kind: 'cloud_strop_off' });  // 15:30 rozpočet navýšen
+    }
     return ev.sort((a, b) => a.min - b.min);
 }
 
@@ -669,6 +693,30 @@ async function act(ev, M, R) {
             return;
         }
         case 'readiness': await get('admin', 'readiness', '/api/readiness'); return;
+        case 'cloud_odvolani': {
+            // čtvrtina spisů se souhlasem: klient souhlas odvolá (odvolat smí kdokoli se zápisem, platí okamžitě)
+            const zns = Object.keys(S.souhlas).filter(z => S.souhlas[z] === true);
+            let n = 0;
+            for (const zn of zns.filter((z, i) => i % 4 === 0)) {
+                const sp = S.spisByZn[zn];
+                const r = await post(sp.ownerKey, 'cloud_odvolani', `/api/spisy/${sp.id}/cloud/souhlas/odvolat`, { duvod: 'Simulace: klient odvolal souhlas' });
+                if (ok2(r.status)) { S.odvolano[zn] = Date.now(); n++; }
+            }
+            S.cloudEvents.push({ t: Date.now(), co: `odvolán souhlas u ${n} spisů` });
+            return;
+        }
+        case 'cloud_strop_on': {
+            const r = await post('admin', 'ai_strop', '/api/ai-usage/settings', { mesicniRozpocetUsd: 0.01, tvrdyStrop: true });
+            if (ok2(r.status)) S.strop = { od: Date.now(), do: null };
+            S.cloudEvents.push({ t: Date.now(), co: 'tvrdý strop: rozpočet 0,01 USD', status: r.status });
+            return;
+        }
+        case 'cloud_strop_off': {
+            const r = await post('admin', 'ai_strop', '/api/ai-usage/settings', { mesicniRozpocetUsd: 50, tvrdyStrop: false });
+            if (S.strop) S.strop.do = Date.now();
+            S.cloudEvents.push({ t: Date.now(), co: 'rozpočet zpět 50 USD', status: r.status });
+            return;
+        }
         default: return;
     }
 }
@@ -858,14 +906,36 @@ async function endOfDay(M) {
     if (O.cloud) {
         // K21: do cloudu jen veřejné dotazy a spisy se souhlasem klienta — nic jiného (mlčenlivost).
         const done = agentRuns.filter(r => ok2(r.status));
-        const poruseni = done.filter(r => r.cloud && !(r.verejne || (r.spisZn && S.souhlas[r.spisZn])));
-        check('K21a', 'Do cloudu nic bez souhlasu klienta ani text neznámého původu', poruseni.length === 0,
+        // smí do cloudu: veřejný dotaz, nebo spis se souhlasem, který není stupně A a nebyl před dotazem odvolán
+        const smi = r => r.verejne || (r.spisZn && S.souhlas[r.spisZn] === true && !S.stupenA[r.spisZn]
+            && !(S.odvolano[r.spisZn] && S.odvolano[r.spisZn] <= r.t0));
+        const poruseni = done.filter(r => r.cloud && !smi(r));
+        check('K21a', 'Do cloudu nic bez souhlasu klienta, nic ze spisu stupně A ani po odvolání souhlasu, nic neznámého původu', poruseni.length === 0,
             { severity: 'critical', detail: `${poruseni.length} porušení z ${done.length}${poruseni.length ? ': ' + poruseni.slice(0, 5).map(r => `${r.kind} ${r.spisZn || ''}`).join(', ') : ''}` });
         const ver = done.filter(r => r.verejne);
         check('K21b', 'Obecné dotazy (bez klientských dat) odpověděl cloudový model', !ver.length || ver.filter(r => r.cloud).length / ver.length >= 0.8,
             { severity: 'medium', detail: `${ver.filter(r => r.cloud).length}/${ver.length} v cloudu; odepřeno: ${[...new Set(ver.filter(r => !r.cloud).map(r => r.cloudOdepreno).filter(Boolean))].join(', ') || '—'}` });
         const sou = done.filter(r => r.spisZn && S.souhlas[r.spisZn]);
         const usd = done.reduce((a, r) => a + (r.cloudUsd || 0), 0);
+        const vA = done.filter(r => r.spisZn && S.stupenA[r.spisZn]);
+        check('K21d', 'Spisy stupně A nikdy v cloudu (ani se zaznamenaným souhlasem)', !vA.some(r => r.cloud) && S.cloudA && S.cloudA.aFail === 0,
+            { severity: 'critical', detail: `${vA.length} dotazů na spisy A, v cloudu ${vA.filter(r => r.cloud).length}; nastavení A chyb ${S.cloudA ? S.cloudA.aFail : '?'}; pokus o souhlas u A → ${S.cloudA ? S.cloudA.aSouhlas.join(',') : '?'}` });
+        const poOdv = done.filter(r => r.spisZn && S.odvolano[r.spisZn] && r.t0 >= S.odvolano[r.spisZn]);
+        check('K21e', 'Po odvolání souhlasu klientem už nic do cloudu', !poOdv.some(r => r.cloud),
+            { severity: 'critical', detail: `odvoláno ${Object.keys(S.odvolano).length} spisů; dotazů po odvolání ${poOdv.length}, v cloudu ${poOdv.filter(r => r.cloud).length}` });
+        if (S.strop) {
+            const vOkne = done.filter(r => r.t0 >= S.strop.od && (!S.strop.do || r.t1 <= S.strop.do));
+            check('K21f', 'Tvrdý strop rozpočtu: v okně nic do cloudu, po navýšení zase ano', !vOkne.some(r => r.cloud),
+                { severity: 'high', detail: `v okně ${vOkne.length} dotazů, v cloudu ${vOkne.filter(r => r.cloud).length}, odepřeno kvůli rozpočtu ${vOkne.filter(r => r.cloudOdepreno === 'rozpocet').length}; po navýšení v cloudu ${done.filter(r => S.strop.do && r.t0 > S.strop.do && r.cloud).length}` });
+        }
+        const sumR = await get('admin', 'ai_souhrn', '/api/ai-usage/summary');
+        const logs = await get('admin', 'audit_logs', '/api/audit/logs');
+        const vCloudu = done.filter(r => r.cloud).length;
+        const auditOdeslano = ((logs.json && logs.json.logs) || []).filter(l => l.operation === 'Dotaz odeslán do cloudu').length;
+        const evid = sumR.json || {};
+        const evidDotazu = (evid.poModelech || evid.modely || []).reduce ? (evid.poModelech || evid.modely || []).reduce((a, x) => a + (x.dotazu || 0), 0) : null;
+        check('K21g', 'Každý dotaz v cloudu je v auditu a v evidenci spotřeby', auditOdeslano >= vCloudu && (evidDotazu == null || evidDotazu >= vCloudu),
+            { severity: 'high', detail: `odpovědí z cloudu ${vCloudu}; audit „Dotaz odeslán do cloudu“ ${auditOdeslano}; evidence spotřeby ${evidDotazu == null ? '?' : evidDotazu} dotazů, odhad ${evid.celkem != null ? evid.celkem + ' USD' : '?'}` });
         check('K21c', 'Spisy se souhlasem klienta mohou do cloudu (informativně)', true,
             { severity: 'low', detail: `${sou.filter(r => r.cloud).length}/${sou.length} v cloudu (ostatní odepřeno kvůli podkladům z jiných spisů); celkem v cloudu ${done.filter(r => r.cloud).length}/${done.length}, odhad ${usd.toFixed(2)} USD` });
     }
@@ -959,6 +1029,7 @@ function writeReport(meta) {
         const sum = k => cr.reduce((n, r) => n + (r.citations[k] || 0), 0);
         const mimo = {}; cr.forEach(r => (r.citations.mimo || []).forEach(m => { mimo[m] = (mimo[m] || 0) + 1; }));
         const top = Object.entries(mimo).sort((x, y) => y[1] - x[1]).slice(0, 8).map(([m, n]) => `${m} ×${n}`).join(', ');
+        if (S.cloudEvents.length) L.push('', 'Cloud během dne: ' + S.cloudEvents.map(e => `${clock(e.t)} ${e.co}`).join(' · ') + '.');
         L.push('', `Citace v odpovědích: ${sum('celkem')}, neověřeno ${sum('neovereno')}, mimo podklady ${sum('mimoPodklady')}${top ? ` (nejčastěji ${top})` : ''}.`);
     }
     L.push('', '## Akce (odezva)', '', '| Akce | Počet | Chyb | p50 | p95 | max |', '|---|---|---|---|---|---|');

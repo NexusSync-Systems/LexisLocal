@@ -414,6 +414,26 @@ if [ "$PROFILE" = "kancelar" ]; then
   kill "$MEM_PID" 2>/dev/null; mem "po simulaci"
   echo "=== office_day hotovo $(date -Is)"
   upload
+  if [ "${OFFICE_CLOUD:-0}" = "1" ]; then
+    # Komplexní test cloudu (jen syntetická data): pilotní test proti AWS z role instance (zámky EU, IAM, pravidla spisu,
+    # strop, Cost Explorer), srovnání lokální model × Claude na stejné GPU a sadě, kontrola rozhraní v Chromiu.
+    ( set -a; . /opt/LexisLocal/.env; set +a
+      echo "=== cloud: pilotní test proti AWS $(date -Is)"
+      timeout 15m node backend/scripts/aws-pilot-test.js --latence 5 > "$OUT/aws-pilot-test.log" 2>&1 || echo "!! aws-pilot-test s chybou"
+      cp scratch/aws-test-*.md "$OUT/" 2>/dev/null
+      grep -E '^(✅|⚠️|❌)' "$OUT/aws-pilot-test.log" | tail -n 25
+      echo "=== cloud: srovnání $CHAT_MODEL × $BEDROCK_MODEL_ID $(date -Is)"
+      timeout 60m node backend/scripts/model_bench.js --models "$CHAT_MODEL,bedrock:$BEDROCK_MODEL_ID" --rag --no-pull --out "$OUT/bench" > "$OUT/model_bench.log" 2>&1 || echo "!! model_bench s chybou"
+      grep -E '^( +[✅🟡❌]|   = |  [0-9]+\.)' "$OUT/model_bench.log" | tail -n 30 )
+    upload
+    echo "=== cloud: kontrola rozhraní (Chromium) $(date -Is)"
+    ( cd /opt/LexisLocal && timeout 15m npm i --no-save --no-audit --no-fund playwright@1.60.0 >/dev/null 2>&1 \
+        && timeout 15m npx playwright install --with-deps chromium >/dev/null 2>&1 \
+        && LEXIS_API_TOKEN="$TOKEN" timeout 20m node backend/scripts/ui_cloud_check.js --base https://127.0.0.1 --out "$OUT/ui" ) \
+      || echo "!! kontrola rozhraní se nespustila (Playwright/Chromium)"
+    cat "$OUT/ui/ui_cloud.md" 2>/dev/null
+    upload
+  fi
 fi
 
 # 6) Základ bez sítě: stejný test přes loopback (pro srovnání se vzdáleným přístupem)

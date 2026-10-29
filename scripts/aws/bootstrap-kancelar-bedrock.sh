@@ -7,6 +7,7 @@
 export PROFILE=kancelar
 export OFFICE_HOURS=3
 export OFFICE_CLOUD=1
+export OFFICE_EXTRA_MIN=90   # pilotní test proti AWS, srovnání modelů, kontrola rozhraní
 export BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-4-6
 export KB_ARCHIVE_S3=s3://lexislocal-bench-results-485237569555/_cache/kb-1.2.0.tar.gz
 exec > >(tee -a /var/log/lexis-bootstrap.log) 2>&1

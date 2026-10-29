@@ -158,6 +158,15 @@ describe('vynucení v ai_provider.chat', () => {
         expect(r.lexisCloud).toMatchObject({ odepreno: true, code: 'spis' });
         expect(ollamaMock.chat.mock.calls[0][0].model).toBe('llama-lokal');
     });
+    test('cloud nedostupný (chyba Bedrocku) → odpoví lokální model s důvodem, ne simulace', async () => {
+        bedrockEnv();
+        global.fetch = jest.fn(async () => ({ ok: false, status: 403, text: async () => 'AccessDeniedException: model is not available for this account' }));
+        const r = await ask({ dataClass: 'verejne' });
+        expect(global.fetch).toHaveBeenCalled();
+        expect(r.message.content).toBe('LOKALNE');
+        expect(r.lexisCloud).toMatchObject({ cloud: false, odepreno: true, code: 'chyba_cloudu' });
+        expect(r.lexisCloud.duvody[0]).toMatch(/nedostupný/);
+    });
     test('LEXIS_CLOUD_ODEPRENI=chyba → chyba CLOUD_POLICY místo lokálního modelu', async () => {
         bedrockEnv(); bedrockFetch(); process.env.LEXIS_CLOUD_ODEPRENI = 'chyba';
         await expect(ask({}, () => P.noteSpis(sB.id))).rejects.toMatchObject({ code: 'CLOUD_POLICY' });
