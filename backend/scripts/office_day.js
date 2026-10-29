@@ -156,6 +156,7 @@ async function call(user, action, method, p, body, opt = {}) {
     const expected = opt.expect ? opt.expect.includes(r.status) : ok2(r.status);
     ops.push({ phase, at: at - T0, clock: clock(at), user, action, status: r.status, ms: r.ms, ok: expected, restart: !!inRestart,
         note: expected ? undefined : short(r.error || (r.json && r.json.error) || r.text, 160), retried: r.retried || undefined });
+    r.restart = !!inRestart;
     return r;
 }
 const get = (u, a, p, opt) => call(u, a, 'GET', p, undefined, opt);
@@ -420,6 +421,9 @@ async function runAgent(user, kind, agent, body, grade) {
         status: r.status, ms: r.ms, simulated: simulated(r, resp), prompt: body.prompt, response: resp,
         draftId: r.json && r.json.draft && r.json.draft.id, citations: r.json && r.json.citationCheck ? summarizeCit(r.json.citationCheck) : null }, g);
     run.pass = run.pass && ok2(r.status) && !run.simulated;
+    // Dotaz přerušený plánovaným restartem v poledne (běh 29. 10.: 2× „socket hang up“) není chyba modelu —
+    // do kvality AI se nepočítá, v souhrnu je zvlášť.
+    if (r.restart && !ok2(r.status)) run.restart = true;
     delete run._caseId;
     agentRuns.push(run);
     return { r, run };
@@ -889,11 +893,11 @@ function writeReport(meta) {
             prijem: l.filter(o => /^prijem/.test(o.action)).length });
     }
     const byKind = {};
-    agentRuns.forEach(r => { const k = r.kind; byKind[k] = byKind[k] || { n: 0, pass: 0, ms: [], sim: 0 }; byKind[k].n++; if (r.pass) byKind[k].pass++; if (r.simulated) byKind[k].sim++; byKind[k].ms.push(r.ms); });
+    agentRuns.forEach(r => { const k = r.kind; byKind[k] = byKind[k] || { n: 0, pass: 0, ms: [], sim: 0, restart: 0 }; if (r.restart) { byKind[k].restart++; return; } byKind[k].n++; if (r.pass) byKind[k].pass++; if (r.simulated) byKind[k].sim++; byKind[k].ms.push(r.ms); });
     const failed = checks.filter(c => !c.ok);
     const SEV = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
     failed.sort((a, b) => SEV[a.severity] - SEV[b.severity]);
-    const json = { meta, checks, hours, actions: actRows, agentKinds: Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, { n: v.n, pass: v.pass, simulated: v.sim, p50: pctl(v.ms, 50), p95: pctl(v.ms, 95) }])),
+    const json = { meta, checks, hours, actions: actRows, agentKinds: Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, { n: v.n, pass: v.pass, simulated: v.sim, restart: v.restart, p50: pctl(v.ms, 50), p95: pctl(v.ms, 95) }])),
         nove: S.nove, drafts: S.drafts, docErrors: S.docErrors || [], aclProbes: S.aclProbes || [], telemetry, agentRuns, ops };
     fs.writeFileSync(base + '.json', JSON.stringify(json, null, 1));
 
@@ -912,7 +916,7 @@ function writeReport(meta) {
     L.push('', '## Den po hodinách', '', '| Hodina | Požadavků | Chyb | Přijato písemností | Odpovědí AI | AI p50 | AI p95 |', '|---|---|---|---|---|---|---|');
     hours.forEach(h => L.push(`| ${h.hodina} | ${h.pozadavku} | ${h.chyb} | ${h.prijem} | ${h.agentu} | ${fmtS(h.agentP50)} | ${fmtS(h.agentP95)} |`));
     L.push('', '## Asistenti AI', '', '| Úloha | Počet | Prošlo kontrolou | p50 | p95 |', '|---|---|---|---|---|');
-    Object.entries(json.agentKinds).forEach(([k, v]) => L.push(`| ${k} | ${v.n} | ${v.pass} (${Math.round(v.pass / Math.max(1, v.n) * 100)} %)${v.simulated ? ` · simulováno ${v.simulated}` : ''} | ${fmtS(v.p50)} | ${fmtS(v.p95)} |`));
+    Object.entries(json.agentKinds).forEach(([k, v]) => L.push(`| ${k} | ${v.n} | ${v.pass} (${Math.round(v.pass / Math.max(1, v.n) * 100)} %)${v.simulated ? ` · simulováno ${v.simulated}` : ''}${v.restart ? ` · přerušeno restartem ${v.restart}` : ''} | ${fmtS(v.p50)} | ${fmtS(v.p95)} |`));
     {
         const cr = agentRuns.filter(r => r.citations);
         const sum = k => cr.reduce((n, r) => n + (r.citations[k] || 0), 0);
