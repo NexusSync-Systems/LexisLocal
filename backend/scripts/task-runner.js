@@ -17,6 +17,9 @@
  *  • AWS (aws_stav, aws_behy, aws_vysledky) jen čte — přes AWS CLI s přihlášením na Macu;
  *    pevný region a bucket, _connect.txt s tokenem se nestahuje. aws_spust_test spustí
  *    serverový test s pevnými parametry (stojí peníze — jen po souhlasu v chatu).
+ *  • Bedrock (bedrock_check, bedrock_pilot_test, bedrock_srovnani) volá Claude v EU pod samostatným
+ *    profilem „lexislocal-bedrock“ (~/.aws/credentials na Macu), jen se syntetickými daty; model jen
+ *    z výčtu EU profilů. Stojí centy — Claude ji zařadí jen po souhlasu v chatu.
  *  • Jedna úloha najednou. Zastavení: požadavek {"uloha":"stop"} nebo Ctrl+C v terminálu.
  *
  * Spuštění (z kořene projektu, nechte běžet v samostatném okně terminálu):
@@ -89,6 +92,15 @@ const AWS_REGION = 'eu-central-1';
 const AWS_BUCKET = 'lexislocal-bench-results-485237569555';
 const AWS_TEST_AMI = 'ami-0bac4f1462de1bb51';   // Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04) 20261016
 const AWS_TEST_SG = 'sg-08da0035b6d9a171c';      // bez příchozích pravidel
+
+// Bedrock (úkol K7a): jen EU profily Claude, samostatný profil AWS (ne lexis-runner), pevný region.
+// Výchozí Sonnet 4.6: 29. 10. 2026 ověřeno na účtu s uchováváním dat „none“ v eu-central-1; modely 5.5 účet zatím nemá povolené.
+const BEDROCK_MODELY = ['eu.anthropic.claude-sonnet-4-6', 'eu.anthropic.claude-sonnet-5-5', 'eu.anthropic.claude-haiku-5-5', 'eu.anthropic.claude-opus-5-5'];
+function bedrockEnv(p) {
+    return { AWS_PROFILE: 'lexislocal-bedrock', BEDROCK_REGION: AWS_REGION,
+        BEDROCK_MODEL_ID: oneOf(p.model, BEDROCK_MODELY, BEDROCK_MODELY[0]),
+        AI_CHAT_PROVIDER: 'bedrock', AI_EMBED_PROVIDER: 'ollama', LEXIS_PILOT_LOCAL_ONLY: '0' };
+}
 
 // --- Schválené úlohy ----------------------------------------------------------------
 // Každá vrací { cmd, args, env? } — cmd je vždy pevný (node / npx), argumenty jako pole.
@@ -209,6 +221,26 @@ const ULOHY = {
         cmd: NODE,
         args: ['backend/scripts/office_day_local.js', '--hours', String(int(p.hodiny, 1, 8, 3)), '--port', String(int(p.port, 4100, 4999, 4199))],
     }),
+    // Bedrock v EU — kontrola nastavení (volat: jeden zkušební dotaz se syntetickým textem).
+    bedrock_check: p => ({ cmd: NODE, args: ['backend/scripts/bedrock-check.js', ...(p.volat ? ['--volat'] : [])], env: bedrockEnv(p) }),
+    // Test proti skutečnému AWS (EU zámky, pravidla spisu, strop, Cost Explorer) nad dočasnou databází.
+    bedrock_pilot_test: p => ({
+        cmd: NODE,
+        args: ['backend/scripts/aws-pilot-test.js', ...(p.latence ? ['--latence', String(int(p.latence, 1, 10, 3))] : []), ...(p.bezCe ? ['--bez-ce'] : [])],
+        env: bedrockEnv(p),
+    }),
+    // Srovnání lokálního modelu s Claude na syntetické sadě (eval/model_bench.json); rag = s podklady ze znalostní báze.
+    bedrock_srovnani: p => {
+        const env = bedrockEnv(p);
+        const lokalni = String(p.lokalni || 'qwen2.5:7b');
+        if (!/^[a-z0-9][a-z0-9._-]{0,30}(:[a-z0-9._-]{1,20})?$/.test(lokalni)) throw new Error(`nepovolený lokální model „${lokalni}"`);
+        return {
+            cmd: NODE,
+            args: ['backend/scripts/model_bench.js', '--models', `${lokalni},bedrock:${env.BEDROCK_MODEL_ID}`, '--no-pull',
+                '--out', 'bench-results', ...(p.rag ? ['--rag'] : []), ...(p.jen ? ['--only', oneOf(p.jen, ['resersnik', 'spisovatel', 'kontrolor'], null)] : [])],
+            env,
+        };
+    },
     git_stav: () => ({ cmd: 'git', args: ['status', '--short', '--branch'] }),
     git_log: p => ({ cmd: 'git', args: ['log', '--oneline', '-n', String(int(p.n, 1, 50, 10))] }),
 };

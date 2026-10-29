@@ -20,6 +20,10 @@
  *   node backend/scripts/model_bench.js --cpu                 # simulace PC bez GPU
  *   node backend/scripts/model_bench.js --judge qwen2.5:32b   # + známka od soudce
  *   node backend/scripts/model_bench.js --only spisovatel     # jen úlohy jednoho agenta
+ *   node backend/scripts/model_bench.js --models qwen2.5:7b,bedrock:eu.anthropic.claude-sonnet-5-5
+ *                                                             # + Claude přes Amazon Bedrock v EU (lib/bedrock.js:
+ *                                                             # jen eu-* region a EU profil; přístup přes AWS_PROFILE,
+ *                                                             # BEDROCK_REGION). Jen syntetické úlohy a veřejné podklady.
  *   node backend/scripts/model_bench.js --rag                 # SE ZDROJI: k úloze přidá top pasáže
  *                                                             # ze znalostní báze agenta (_kb_<agent>)
  * Další přepínače: --cases <soubor>  --out <složka>  --num-ctx 8192  --no-pull
@@ -105,6 +109,51 @@ function parseArgs(argv) {
     if (!/^https?:\/\//.test(out.host)) out.host = 'http://' + out.host;
     out.host = out.host.replace(/\/+$/, '');
     return out;
+}
+
+// ---------------------------------------------------------------- Bedrock (Claude v EU)
+// Model „bedrock:<EU profil>“ — srovnání lokálního modelu s Claude (úkol K7a, 29. 10. 2026).
+// Volání jde přes lib/bedrock.js se všemi zámky na EU; měří se čas, tokeny a důvod ukončení.
+const isBedrock = m => /^bedrock:/.test(String(m));
+async function bedrockGenerate(model, system, prompt, opts) {
+    const B = require('../lib/bedrock');
+    const prev = { id: process.env.BEDROCK_MODEL_ID, max: process.env.BEDROCK_MAX_TOKENS, to: process.env.BEDROCK_TIMEOUT_MS };
+    process.env.BEDROCK_MODEL_ID = model.replace(/^bedrock:/, '');
+    process.env.BEDROCK_MAX_TOKENS = String(opts.maxTokens);
+    process.env.BEDROCK_TIMEOUT_MS = String(opts.timeoutS * 1000);
+    try {
+        const msgs = (system ? [{ role: 'system', content: system }] : []).concat([{ role: 'user', content: prompt }]);
+        const r = await B.chat(msgs, { temperature: 0.2 });
+        const u = r.usage || {};
+        return { response: r.message.content || '', inputTokens: u.inputTokens || 0, outputTokens: u.outputTokens || 0,
+            truncated: r.stopReason === 'max_tokens' };
+    } finally {
+        for (const [k, v] of [['BEDROCK_MODEL_ID', prev.id], ['BEDROCK_MAX_TOKENS', prev.max], ['BEDROCK_TIMEOUT_MS', prev.to]]) {
+            if (v === undefined) delete process.env[k]; else process.env[k] = v;
+        }
+    }
+}
+
+async function benchBedrock(model, cases, prompts, opts) {
+    const results = [];
+    for (const tc of cases) {
+        const ctx = opts.contexts ? opts.contexts[tc.id] : null;
+        const system = buildSystem(tc.system || prompts[tc.agent] || '', ctx);
+        let r = null, error = null;
+        const started = Date.now();
+        try { r = await bedrockGenerate(model, system, tc.prompt, opts); } catch (e) { error = e.message; }
+        const wallS = (Date.now() - started) / 1000;
+        const answer = r ? r.response.trim() : '';
+        const checks = error ? [{ name: 'odpověď', pass: false, detail: error }] : runChecks(tc, answer);
+        if (r && r.truncated) checks.push({ name: 'dokončená odpověď', pass: false, detail: `utnuto na ${opts.maxTokens} tokenech` });
+        const passed = checks.filter(c => c.pass).length;
+        results.push({ id: tc.id, agent: tc.agent, ragSources: ctx ? ctx.sources : undefined, truncated: !!(r && r.truncated), wallS,
+            genTokS: r && wallS ? r.outputTokens / wallS : null, ttftS: null, tokens: r ? r.outputTokens : 0,
+            inputTokens: r ? r.inputTokens : 0, passed, total: checks.length, checks, judge: null, answer, error });
+        const mark = passed === checks.length ? '✅' : (passed ? '🟡' : '❌');
+        console.log(`   ${mark} ${tc.id.padEnd(34)} ${passed}/${checks.length}  ${wallS.toFixed(1)} s${error ? `  ⚠️ ${error.split('\n')[0].slice(0, 80)}` : ''}`);
+    }
+    return { model, loadS: null, mem: null, results, summary: summarize(results) };
 }
 
 // ---------------------------------------------------------------- Ollama API
@@ -464,7 +513,9 @@ function summarize(results) {
         tokS: avg(results.map(r => r.genTokS)),
         ttftS: avg(results.map(r => r.ttftS)),
         wallS: avg(results.map(r => r.wallS)),
-        judge: avg(results.map(r => r.judge && r.judge.score))
+        judge: avg(results.map(r => r.judge && r.judge.score)),
+        inputTokens: results.reduce((a, r) => a + (r.inputTokens || 0), 0),
+        outputTokens: results.reduce((a, r) => a + (r.tokens || 0), 0)
     };
 }
 
@@ -495,6 +546,11 @@ function toMarkdown(runs, meta) {
     });
     const skipped = runs.filter(r => r.skipped);
     if (skipped.length) L.push('', `Přeskočeno: ${skipped.map(r => `${r.model} (${r.skipped})`).join(', ')}`);
+    const cloud = rankRows(runs).filter(r => isBedrock(r.model));
+    if (cloud.length) {
+        L.push('', '**Cloud (Bedrock EU) — tokeny za celou sadu** (cenu dopočítejte podle aktuálního ceníku AWS; skutečná částka je v Cost Exploreru pod poskytovatelem modelu):', '');
+        cloud.forEach(r => L.push(`- ${r.model}: vstup ${r.summary.inputTokens}, výstup ${r.summary.outputTokens} tokenů (${r.summary.cases} úloh)`));
+    }
     L.push('', '> Pro plynulou práci advokáta chceme ≥ 15 tok/s a ⌀ úlohu pod ~30 s. Kvalita je podle automatických kontrol — před rozhodnutím si přečti i odpovědi níže.', '');
 
     L.push('## Nesplněné kontroly', '');
@@ -540,8 +596,11 @@ async function main() {
     const prompts = loadSystemPrompts();
     const models = opts.models || suite.models || DEFAULT_MODELS;
 
-    try { await ollama(opts.host, '/api/tags', null, 10); } catch (e) {
-        throw new Error(`Ollama na ${opts.host} neodpovídá (${e.message}). Spusť ji: \`ollama serve\``);
+    const needOllama = models.some(m => !isBedrock(m)) || opts.judge || opts.rag;
+    if (needOllama) {
+        try { await ollama(opts.host, '/api/tags', null, 10); } catch (e) {
+            throw new Error(`Ollama na ${opts.host} neodpovídá (${e.message}). Spusť ji: \`ollama serve\``);
+        }
     }
 
     const meta = {
@@ -579,11 +638,11 @@ async function main() {
     for (const model of models) {
         console.log(`▶ ${model}`);
         try {
-            if (!(await ensureModel(opts.host, model, opts.pull))) { runs.push({ model, skipped: 'není k dispozici' }); continue; }
-            const run = await benchModel(opts.host, model, cases, prompts, opts);
+            if (!isBedrock(model) && !(await ensureModel(opts.host, model, opts.pull))) { runs.push({ model, skipped: 'není k dispozici' }); continue; }
+            const run = isBedrock(model) ? await benchBedrock(model, cases, prompts, opts) : await benchModel(opts.host, model, cases, prompts, opts);
             runs.push(run);
             const s = run.summary;
-            console.log(`   = kvalita ${(s.quality * 100).toFixed(0)} %, ${f1(s.tokS)} tok/s, načtení ${f1(run.loadS)} s${run.mem ? `, ${f1(run.mem.sizeGb)} GB` : ''}\n`);
+            console.log(`   = kvalita ${(s.quality * 100).toFixed(0)} %, ${f1(s.tokS)} tok/s${run.loadS != null ? `, načtení ${f1(run.loadS)} s` : ''}${run.mem ? `, ${f1(run.mem.sizeGb)} GB` : ''}${isBedrock(model) ? `, tokeny ${s.inputTokens}/${s.outputTokens}` : ''}\n`);
         } catch (e) {
             console.log(`   ⚠️  chyba: ${e.message}\n`);
             runs.push({ model, skipped: e.message.slice(0, 120) });
@@ -591,7 +650,7 @@ async function main() {
         save(); // průběžně — při pádu/vypnutí instance nepřijdeme o hotové modely
     }
     if (opts.judge) await judgeAll(opts.host, runs, cases, opts);
-    await unloadAll(opts.host);
+    if (needOllama) await unloadAll(opts.host);
     save();
 
     console.log('🏁 Pořadí:');
@@ -606,4 +665,4 @@ if (require.main === module) {
     main().catch(e => { console.error('❌ ' + e.message); process.exit(1); });
 }
 
-module.exports = { runChecks, englishRatio, extractJson, summarize, toMarkdown, parseArgs, fetchContexts, buildSystem, buildKbIndex };
+module.exports = { runChecks, englishRatio, extractJson, summarize, toMarkdown, parseArgs, fetchContexts, buildSystem, buildKbIndex, isBedrock, benchBedrock };

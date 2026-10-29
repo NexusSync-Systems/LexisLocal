@@ -69,6 +69,20 @@ Jen pro testy se syntetickými daty: `LEXIS_CLOUD_BEZ_KONTEXTU=povolit` pustí d
   (`/api/ai-usage/settings`, jen správce).
 - **Tvrdý strop** (volitelný): po vyčerpání měsíčního rozpočtu jdou dotazy jen na lokální model (kód `rozpocet`).
 
+## Test na Macu přes spouštěč úloh (vývoj, 10/2026)
+
+Bez zásahu do `.env` aplikace — úlohy si nastaví Bedrock samy (profil `lexislocal-bedrock`, eu-central-1, model z výčtu
+EU profilů: výchozí Sonnet 4.6, dále Sonnet / Haiku / Opus 5.5). Jen syntetická data, řádově centy:
+
+```json
+{"uloha": "bedrock_check", "parametry": {"volat": true}}
+{"uloha": "bedrock_pilot_test", "parametry": {"latence": 3}}
+{"uloha": "bedrock_srovnani", "parametry": {"model": "eu.anthropic.claude-sonnet-4-6", "rag": true}}
+```
+
+`bedrock_srovnani` = `model_bench.js` s lokálním qwen 7B a Claude na stejné sadě (`eval/model_bench.json`, vč. úlohy
+na moderaci smluvní pokuty — § 2051, ne § 2248); výsledek `bench-results/model_bench_*.md` s tokeny za sadu.
+
 ## Test proti AWS před pilotem
 
 `node backend/scripts/aws-pilot-test.js` (volitelně `--latence 5`, `--bez-ce`) — jen syntetická data, dočasná
@@ -79,8 +93,11 @@ stupně A / bez souhlasu nic neodešle, zámek v kódu (us./global.), zámek v A
 ## Nastavení v AWS (správce kanceláře)
 
 1. Účet AWS kanceláře (ne dodavatele). Doporučeno MFA na root účtu a samostatný účet jen pro LexisLocal.
-2. V konzoli Bedrock (region **eu-central-1**) povolit přístup k modelům Anthropic (Model access),
-   vyplnit formulář pro Anthropic, pokud ho konzole vyžaduje.
+2. V konzoli Bedrock (region **eu-central-1**) otevřít model Claude (doporučeno **Claude Sonnet 5.5**, levnější
+   **Haiku 5.5**; pokud účet hlásí „not available for this account“, požádat AWS o přístup nebo použít
+   **Claude Sonnet 4.6**) a jednou ho vyzkoušet v Playground pod účtem správce. Modely Anthropic se prodávají přes AWS Marketplace —
+   první použití správcem založí předplatné; pokud konzole chce formulář pro Anthropic (use case), vyplnit.
+   Náklady se pak v Cost Exploreru ukazují pod poskytovatelem modelu, ne pod „Amazon Bedrock“.
 3. CloudFormation → Create stack → šablona `scripts/aws/bedrock-eu-kancelar.yaml` (region eu-central-1).
    Vytvoří IAM uživatele `lexislocal-bedrock` s politikou jen na Claude přes EU profily, explicitní
    zákaz Bedrocku mimo EU a měsíční rozpočet s upozorněním e-mailem.
@@ -104,7 +121,8 @@ AI_CHAT_PROVIDER=bedrock
 AI_EMBED_PROVIDER=ollama
 AWS_PROFILE=lexislocal-bedrock
 BEDROCK_REGION=eu-central-1
-BEDROCK_MODEL_ID=eu.anthropic.claude-…   # přesné ID EU profilu z konzole Bedrock (Model catalog)
+BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-4-6   # EU profil (z eu-central-1 jen do EU regionů); ověřeno s uchováváním „none“
+# eu.anthropic.claude-sonnet-5-5 / haiku-5-5: novější, ale nový účet je může mít zablokované („not available for this account“)
 # BEDROCK_MAX_TOKENS=4096
 ```
 
@@ -130,9 +148,15 @@ Každá vrstva sama nestačí — chrání až dohromady:
 2. **IAM politika** (šablona `bedrock-eu-kancelar.yaml`) — uživatel smí volat jen Anthropic přes EU profily,
    Bedrock mimo `eu-*` má výslovně zakázaný, globální a jiné profily taky; nesmí přepnout uchovávání dat
    na nic jiného než `none`.
-3. **Uchovávání dat v účtu = `none`** — v nastavení Bedrocku (data retention, pro každý EU region zvlášť;
-   nenastavený region se řídí výchozím chováním modelu). U modelů, které nulové ukládání umožňují, pak AWS
-   nic neukládá; poskytovatel modelu (Anthropic) k dotazům ani odpovědím přístup nemá nikdy.
+3. **Uchovávání dat v účtu = `none`** — v konzoli to (10/2026) nastavit nejde, jen příkazem (např. v CloudShellu),
+   a to pro každý region zvlášť (výchozí je `inherit` = výchozí chování modelu):
+   ```
+   aws bedrock put-account-data-retention --mode none --region eu-central-1
+   aws bedrock get-account-data-retention --region eu-central-1    # → "mode": "none"
+   ```
+   V režimu `none` AWS nic neukládá a poskytovatel modelu (Anthropic) k dotazům nemá přístup. **Funguje jen u modelů,
+   které mají nulové ukládání na účtu povolené** (u ostatních volání selže, Claude Fable 5/5.1 ho nepodporují vůbec).
+   Ověřeno 29. 10. 2026: účet NexusSync, eu-central-1, `eu.anthropic.claude-sonnet-4-6` odpovídá v režimu `none`.
 4. **Model invocation logging vypnuté** (výchozí stav) — jinak by se celé dotazy ukládaly do CloudWatch/S3.
    CloudTrail ukládá jen metadata volání (kdo, kdy, který model, `inferenceRegion`), ne obsah.
 5. **Druhá pojistka pro celý účet** (AWS Organizations, SCP) — platí i pro jiné uživatele účtu:

@@ -3,6 +3,16 @@
 Podklad: `docs/SROVNANI_JONSBOK.md`, zátěžový den 27. 10. 2026 (`docs/SIMULACE_KANCELARE.md`).
 Priorita: **P0** před pilotem (citace jsou to, v čem nás advokáti budou srovnávat), **P1** během pilotu, **P2** po pilotu.
 
+## Pořadí (29. 10. 2026, po ověření údajů o Jónsbóku)
+
+Pozice: nesoutěžit „kdo má lepší chat“, ale „celá kancelář na jednom místě, data neopustí kancelář“. Dohnat to,
+kde prohráváme (kvalita modelu, Word/Outlook, hromadná analýza, důvěra bez ISO).
+
+1. **Hned:** K7 — živý test Bedrocku, pak „chytřejší režim“ pro rešerše bez klientských dat.
+2. **Během pilotu:** K10 Review Grid, K11 balíček podle stanoviska ČAK, K12 stránka „pokrytí českého práva“.
+3. **Souběžně s pilotem:** K8 prototyp doplňku do Wordu.
+4. **Po pilotu:** K9 Outlook — podle odezvy advokátů (K6).
+
 ## P0 — správnost citací
 
 ### K1 Prompty: pryč s konkrétním „§ 2248 OZ“ v příkladu — ✅ 29. 10. (čeká na ověření během)
@@ -42,26 +52,45 @@ Z `docs/SROVNANI_JONSBOK.md` krátká verze pro kancelář (1 strana, bez intern
 Do dotazníku pilotu: „Chybí vám práce přímo ve Wordu / Outlooku?“, „Jak často opravujete citace?“, „Kdy byste
 zapnuli cloudový model?“. Výsledek rozhodne o pořadí K8–K10.
 
-### K7 Rešerše na silnějším modelu (volitelně)
-Živý test Claude přes Bedrock v EU (`scripts/bedrock-check.js --volat`) a srovnání s qwen 7B na sadě K3.
-- **Hotovo, když:** tabulka kvalita / čas / cena za dotaz pro obě varianty.
+### K7 Silnější model pro rešerše — **P0, rozpracováno 29. 10.**
+Pravidla pro cloud už jsou hotová (`lib/cloud_policy.js`: stupně citlivosti spisu A–D, souhlas klienta, dotaz bez spisu
+jen jako „D – veřejné“), napojení na Bedrock EU taky (`lib/bedrock.js`) — chybí ověření naostro a cesta v rozhraní.
+- **K7a Živý test Bedrocku:** správce v AWS povolí modely Claude (eu-central-1), nasadí `scripts/aws/bedrock-eu-kancelar.yaml`,
+  nastaví uchovávání dat Bedrocku na „none“; pak `scripts/bedrock-check.js --volat` a rešeršní sada (vč. J1) na Claude
+  i qwen 7B. **Hotovo, když:** tabulka kvalita / čas / cena za dotaz pro obě varianty.
+- **K7b „Chytřejší režim“:** obecné právní otázky bez klientských dat → Claude (Bedrock EU), cokoli se spisem lokálně podle
+  `cloud_policy`; advokát vidí, který model odpovídal (transparenční log). **Hotovo, když:** J1 ≥ 19/20 na Claude,
+  dotaz se spisem stupně B bez souhlasu nikdy neodejde (test).
+- **K7c Alternativa bez cloudu:** větší lokální model (qwen 14B/32B) podle paměti Mac mini pro pilot; srovnání na stejné sadě.
 
-## P2 — po pilotu
+## P2 — souběžně s pilotem / po pilotu
 
-### K8 Doplněk do Wordu (PoC)
+### K8 Doplněk do Wordu (PoC) — souběžně s pilotem
 Office add-in (Office.js), připojený k LexisLocalu v kanceláři přes HTTPS a token uživatele (párování jako dashboard
 `/?pair=`). Funkce: rešerše k označenému textu, kontrola otevřené smlouvy (kontrolor + `clause_scan`), vložení
 schváleného konceptu ze spisu. Žádná data mimo kancelář.
-- Ověřit: instalace bez Microsoft Store (sideload / centrální nasazení v M365), Word pro Mac i Windows, self-signed
-  certifikát kanceláře.
+- Ověřit: instalace bez Microsoft Store (sideload / centrální nasazení v M365), Word pro Mac i Windows.
+- **Hlavní riziko — certifikát:** Word nepřijme certifikát podepsaný sám sebou; instalátor musí vytvořit certifikační
+  autoritu kanceláře a přidat ji do systému (stránku doplňku servíruje přímo LexisLocal → stejný origin, CORS beze změn).
 - **Hotovo, když:** PoC na Macu ve Wordu proti zkušební instalaci; seznam omezení.
 
 ### K9 Doplněk do Outlooku
 Uložit e-mail a přílohy do spisu (podatelna, rozpoznání sp. zn.), návrh odpovědi Spisovatelem **ke schválení** —
 nikdy automatické odeslání klientovi.
 
-### K10 Porovnání více dokumentů vedle sebe
-Tabulka „dokumenty × otázky“ (např. 10 smluv: doba trvání, pokuty, rozhodčí doložka) nad dokumenty spisu.
+### K10 Porovnání více dokumentů vedle sebe (Review Grid) — **přesunuto do P1**
+Tabulka „dokumenty × otázky“ (např. 10 smluv: doba trvání, pokuty, rozhodčí doložka, omezení odpovědnosti, výpověď)
+nad dokumenty spisu; buňka = odpověď + článek smlouvy; export do Excelu a Wordu. Staví na kontrolorovi a `clause_scan`,
+běží lokálně. **Hotovo, když:** 10 smluv ze sady simulace < 10 min na Mac mini, export funguje.
+
+### K11 Balíček pro kancelář podle stanoviska ČAK (místo ISO 27001) — P1
+Kontrolní seznam „požadavek ze stanoviska ČAK k AI (20. 10. 2026) → jak to řeší LexisLocal → kde je důkaz“ + přehled
+zabezpečení (šifrování databáze, auditní řetězec, zálohy se zkouškou obnovy, role a práva, cloud jen podle `cloud_policy`),
+odkazy na DPIA, zpracovatelskou smlouvu a vnitřní pravidla v `docs/kancelar/`.
+
+### K12 Stránka „pokrytí českého práva“ — P1
+Jónsbók nezveřejňuje, které české soudy indexuje. My přesně: zákony (stav k datu), NS, NSS, ÚS, počty rozhodnutí,
+datum poslední aktualizace — v aplikaci (správce i advokát) a na webu nexusstack.eu.
 
 ## Hotovo
 - 29. 10. 2026 — K1: vzor formátu citace bez čísla (`lib/agents.js`, `prompts.json`, `routes/agent.js`); uložené prompty

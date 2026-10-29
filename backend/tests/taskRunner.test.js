@@ -123,4 +123,22 @@ describe('task-runner — schválené úlohy', () => {
             expect(() => R.sestav({ uloha: 'kb_balicek_test', parametry: { soubor: zly } })).toThrow(/balíček/);
         }
     });
+
+    test('bedrock: jen EU profily z výčtu, samostatný profil AWS, lokální model ověřený', () => {
+        const c = R.sestav({ uloha: 'bedrock_check', parametry: { volat: true } });
+        expect(c.args).toEqual(['backend/scripts/bedrock-check.js', '--volat']);
+        expect(c.env).toMatchObject({ AWS_PROFILE: 'lexislocal-bedrock', BEDROCK_REGION: 'eu-central-1', BEDROCK_MODEL_ID: 'eu.anthropic.claude-sonnet-4-6' });
+        for (const zly of ['us.anthropic.claude-sonnet-5-5', 'global.anthropic.claude-sonnet-5-5', 'eu.anthropic.claude-sonnet-5-5; rm -rf /']) {
+            expect(() => R.sestav({ uloha: 'bedrock_check', parametry: { model: zly } })).toThrow(/nepovolená hodnota/);
+        }
+        const s = R.sestav({ uloha: 'bedrock_srovnani', parametry: { model: 'eu.anthropic.claude-haiku-5-5', rag: true, jen: 'resersnik' } });
+        expect(s.args).toEqual(['backend/scripts/model_bench.js', '--models', 'qwen2.5:7b,bedrock:eu.anthropic.claude-haiku-5-5', '--no-pull',
+            '--out', 'bench-results', '--rag', '--only', 'resersnik']);
+        for (const zly of ['qwen2.5:7b,bedrock:us.x', 'a b', '../x', 'qwen;ls']) {
+            expect(() => R.sestav({ uloha: 'bedrock_srovnani', parametry: { lokalni: zly } })).toThrow(/nepovolený lokální model/);
+        }
+        const t = R.sestav({ uloha: 'bedrock_pilot_test', parametry: { latence: 5, bezCe: true } });
+        expect(t.args).toEqual(['backend/scripts/aws-pilot-test.js', '--latence', '5', '--bez-ce']);
+        expect(() => R.sestav({ uloha: 'bedrock_pilot_test', parametry: { latence: 99 } })).toThrow(/rozsah/);
+    });
 });

@@ -42,6 +42,18 @@
       }
     },
     {
+      "id": "resersnik-smluvni-pokuta-moderace",
+      "agent": "resersnik",
+      "prompt": "Klient chce po dodavateli smluvní pokutu, dodavatel tvrdí, že je nepřiměřeně vysoká. Podle čeho soud posuzuje přiměřenost smluvní pokuty a může ji snížit? Odpověz stručně s odkazem na paragrafy.",
+      "reference": "Nepřiměřeně vysokou smluvní pokutu může soud na návrh dlužníka snížit (moderace) s přihlédnutím k hodnotě a významu zajišťované povinnosti, nejvýše do výše škody vzniklé do doby rozhodnutí (§ 2051 OZ). § 2248 OZ (zvýšení nájemného) sem nepatří.",
+      "_pozn": "J1 ze zátěžového dne 27.–28. 10. 2026: qwen 7B uváděl § 2248 místo § 2051 OZ.",
+      "checks": {
+        "mustInclude": [["2051"], ["sníž", "moderac"], ["návrh"]],
+        "mustNotInclude": ["§\\s*2248"],
+        "czech": true
+      }
+    },
+    {
       "id": "spisovatel-predzalobni-vyzva",
       "agent": "spisovatel",
       "prompt": "Napiš předžalobní výzvu k úhradě. Věřitel: Stavby Novák s.r.o. Dlužník: neuveden (doplní advokát). Dluh 125 000 Kč z faktury č. 2026/041 za stavební práce, splatné 15. 8. 2026, dosud neuhrazeno. Lhůta k úhradě 7 dnů.",
