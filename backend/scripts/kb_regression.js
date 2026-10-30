@@ -16,6 +16,9 @@
  *  3) JUDIKATURA — náhodný vzorek rozhodnutí NS/ÚS/NSS (pevný seed): dotaz z jejich
  *     klíčových slov / populárního názvu → najde se rozhodnutí v top 5? (Orientační:
  *     dotaz vychází z hlavičky, která je v textu — měří hlavně, že se nic neztratilo.)
+ *  4) VARIANTY K17 (jako agent v produkci, tj. s rerankerem, je-li zapnutý): dnešní přeřazení × přeřazení
+ *     zákonů a judikatury zvlášť × navíc slovník hovorových pojmů a zvýhodnění zmíněného zákona — na zlaté
+ *     sadě i na odložené sadě training/embed/holdout_queries.json (slovník podle ní laděn nebyl).
  *  + doba načtení báze, paměť, latence dotazu (p50/p95).
  *
  * Použití (z kořene projektu):
@@ -40,7 +43,8 @@ if (_tmpCache) process.env.EMBED_CACHE_FILE = _tmpCache;
 const rag = require('../lib/rag');
 
 function parseArgs(argv) {
-    const a = { scope: '_kb_resersnik', sample: 20, poolCompare: 15, limit: 0, gold: path.join(ROOT, 'training', 'embed', 'gold_queries.json') };
+    const a = { scope: '_kb_resersnik', sample: 20, poolCompare: 15, limit: 0, gold: path.join(ROOT, 'training', 'embed', 'gold_queries.json'),
+        holdout: path.join(ROOT, 'training', 'embed', 'holdout_queries.json'), varianty: true };
     for (let i = 2; i < argv.length; i++) {
         const k = argv[i], next = () => argv[++i];
         if (k === '--scope') a.scope = next();
@@ -48,6 +52,8 @@ function parseArgs(argv) {
         else if (k === '--pool-compare') a.poolCompare = parseInt(next(), 10) || 0;
         else if (k === '--limit') a.limit = parseInt(next(), 10) || 0;
         else if (k === '--gold') a.gold = next();
+        else if (k === '--holdout') a.holdout = next();
+        else if (k === '--bez-variant') a.varianty = false;
         else if (k === '--help' || k === '-h') a.help = true;
         else { console.error(`Neznámý argument: ${k}`); a.help = true; }
     }
@@ -201,6 +207,37 @@ async function main() {
     console.log(`   paragraf vypadl z top ${KA} kvůli judikatuře: ${out.zakony.plnaBaze.vytlacenoJudikaturou}×`);
     for (const d of out.zakony.vytlacene.slice(0, 8)) console.log(`     – „${d.q}" → ${d.rel[0]} (bez judikatury #${d.rankJenZakony}, s ní ${d.rankPlna ? '#' + d.rankPlna : 'mimo top 5'}; top 3: ${d.top3Plna.join(', ')})`);
 
+    // --- 1b) Varianty K17 (jako agent v produkci: rerank) ---
+    if (a.varianty) {
+        let holdout = [];
+        try { holdout = (JSON.parse(fs.readFileSync(a.holdout, 'utf8')).queries || []).filter(g => g.rel.some(r => docs.has(r))); } catch (e) { /* bez odložené sady */ }
+        const VAR = [
+            ['produkce (dnes)', { rerankSplit: false, queryTerms: false }],
+            ['+ přeřazení zvlášť', { rerankSplit: true, queryTerms: false }],
+            ['+ zvlášť + slovník', { rerankSplit: true, queryTerms: true }],
+        ];
+        out.varianty = { rerank: require('../lib/rerank_service').rerankEnabled(), sady: {} };
+        for (const [sada, qs] of [['zlatá', cases], ['zlatá – klient', cases.filter(g => g.styl === 'klient')], ['odložená', holdout]]) {
+            if (!qs.length) continue;
+            out.varianty.sady[sada] = {};
+            for (const [nm, o] of VAR) {
+                const st = { h1: 0, hk: 0, mrr: 0, lat: [] };
+                for (const g of qs) {
+                    const [r, t] = await timed(() => rag.searchSimilar(g.q, KA, F, Object.assign({ dedupeKb: true, rerank: true }, o)));
+                    const rk = rankOf(r, g.rel);
+                    if (rk === 1) st.h1++;
+                    if (rk && rk <= KA) st.hk++;
+                    if (rk) st.mrr += 1 / rk;
+                    st.lat.push(t);
+                }
+                const m = qs.length;
+                out.varianty.sady[sada][nm] = { dotazu: m, hit1: st.h1 / m, hitK: st.hk / m, mrr: st.mrr / m, latP50: quantile(st.lat, 0.5), latP95: quantile(st.lat, 0.95) };
+                const v = out.varianty.sady[sada][nm];
+                console.log(`   ${sada.padEnd(15)} ${nm.padEnd(20)} hit@1 ${pct(v.hit1).padStart(7)} | hit@${KA} ${pct(v.hitK).padStart(7)} | MRR ${v.mrr.toFixed(3)} | ${Math.round(v.latP50)}/${Math.round(v.latP95)} ms`);
+            }
+        }
+    }
+
     // --- 2) Pool hybridu vs. plný výpočet ---
     if (a.poolCompare && String(process.env.RAG_HYBRID || '') !== '0' && process.env.RAG_HYBRID) {
         const m = Math.min(a.poolCompare, cases.length);
@@ -263,6 +300,8 @@ async function main() {
         '', `Paragraf vypadl z top 3 kvůli judikatuře: **${z.plnaBaze.vytlacenoJudikaturou}×**`, '',
         ...z.vytlacene.map(d => `- „${d.q}" → ${d.rel.join(', ')} (bez judikatury #${d.rankJenZakony}, s ní ${d.rankPlna ? '#' + d.rankPlna : 'mimo top 5'}); top 3: ${d.top3Plna.join(', ')}`),
         '',
+        out.varianty ? `## Varianty K17 (jako agent${out.varianty.rerank ? ', s rerankerem' : ', BEZ rerankeru'}, ${KA} pasáží)\n\n| Sada | Varianta | hit@1 | hit@${KA} (agent) | MRR | hledání p50/p95 |\n|---|---|---|---|---|---|\n` +
+            Object.entries(out.varianty.sady).map(([sada, vs]) => Object.entries(vs).map(([nm, v]) => `| ${sada} (${v.dotazu}) | ${nm} | ${pct(v.hit1)} | ${pct(v.hitK)} | ${v.mrr.toFixed(3)} | ${Math.round(v.latP50)} / ${Math.round(v.latP95)} ms |`).join('\n')).join('\n') + '\n' : '',
         out.pool ? `## Pool hybridu\n\nShoda top 3 s plným výpočtem ${pct(out.pool.shodaTop3)}, hit@3 ${pct(out.pool.hit3Pool)} (pool) vs. ${pct(out.pool.hit3Plny)} (plný), ${Math.round(out.pool.msPool)} ms vs. ${Math.round(out.pool.msPlny)} ms na dotaz.\n` : '',
         out.judikatura ? '## Judikatura (vzorek)\n\n' + Object.entries(out.judikatura).map(([k, v]) => `- ${k}: hit@5 ${pct(v.hit5)} (${v.testovano} rozhodnutí), p50 ${Math.round(v.latP50)} ms`).join('\n') + '\n' : '',
     ].join('\n');

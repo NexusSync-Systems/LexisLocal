@@ -286,6 +286,9 @@ if [ "$RERANK_OK" = "1" ]; then
 fi
 
 [ -n "${KB_SAVE_DEBOUNCE:-}" ] && echo "RAG_KB_SAVE_DEBOUNCE_MS=$KB_SAVE_DEBOUNCE" >> /opt/LexisLocal/.env
+# K17: přeřazení zákonů a judikatury zvlášť, slovník hovorových pojmů (lib/query_terms.js) — zapíná bootstrap profilu.
+[ -n "${RAG_RERANK_SPLIT:-}" ] && echo "RAG_RERANK_SPLIT=$RAG_RERANK_SPLIT" >> /opt/LexisLocal/.env
+[ -n "${RAG_QUERY_TERMS:-}" ] && echo "RAG_QUERY_TERMS=$RAG_QUERY_TERMS" >> /opt/LexisLocal/.env
 if [ "${OFFICE_CLOUD:-0}" = "1" ]; then
   # Claude přes Bedrock v EU (jen syntetická data). Přístup z role instance (lexis-bench-ec2 musí mít politiku
   # z scripts/aws/bedrock-eu-kancelar.yaml); lokální Ollama zůstává pro spisy bez souhlasu a pro embeddingy.

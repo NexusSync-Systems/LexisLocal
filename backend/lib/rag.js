@@ -24,6 +24,7 @@ const ollama = require('./ai_provider');
 const { WATCH_DIR, dataPath } = require('./config'); // jeden zdroj pravdy, viz lib/config.js
 const secureCrypto = require('./secure_crypto'); // AES-GCM + zpětné čtení CBC (jeden zdroj)
 const rerankService = require('./rerank_service');
+const queryTerms = require('./query_terms');
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
 
 // #5: hybridní retrieval (sémantika + lexikální shoda). OPT-IN (RAG_HYBRID=1),
@@ -106,6 +107,38 @@ function mixKbResults(sorted, limit, share) {
     for (const r of laws) { if (chosen.size >= limit) break; chosen.add(r); } // málo ostatních → doplnit zákony
     const picked = sorted.filter(r => chosen.has(r));
     return picked.concat(sorted.filter(r => !chosen.has(r)));
+}
+
+function _rerankSplit(opts) {
+    if (opts && typeof opts.rerankSplit === 'boolean') return opts.rerankSplit;
+    // Výchozí vypnuto, dokud serverový běh (judikatura-plus, K17) nepotvrdí zlepšení.
+    return ['1', 'true', 'yes', 'on'].includes(String(process.env.RAG_RERANK_SPLIT || '').trim().toLowerCase());
+}
+function _rerankKJud() {
+    const n = parseInt(process.env.RAG_RERANK_K_JUD, 10);
+    return Number.isFinite(n) && n >= 2 && n <= 50 ? n : 10;
+}
+function _isKbLaw(r) { return typeof r.scope === 'string' && r.scope.indexOf(KB_PREFIX) === 0 && !isJudikaturaChunk(r); }
+/**
+ * Přeřadí zvlášť zákony (top RAG_RERANK_K) a ostatní (judikatura, spisy; top RAG_RERANK_K_JUD) a složí výsledek:
+ * zákony ceil(limit·share) míst, zbytek ostatní (chybí-li jeden druh, doplní se druhým).
+ * Pořadí: klientské spisy, zákony, judikatura (fakta → předpis → výklad). Chyba reranku = původní pořadí v rámci druhu.
+ */
+async function _rerankSplitMix(query, ranked, limit, share) {
+    const laws = ranked.filter(_isKbLaw);
+    const others = ranked.filter(r => !_isKbLaw(r));
+    const [rl, ro] = await Promise.all([
+        laws.length > 1 ? rerankService.rerankResults(query, laws) : laws,
+        others.length > 1 ? rerankService.rerankResults(query, others, { k: _rerankKJud() }) : others
+    ]);
+    const lawSlots = Math.min(rl.length, Math.max(limit - ro.length, Math.ceil(limit * share)));
+    const pickL = rl.slice(0, lawSlots);
+    const pickO = ro.slice(0, Math.max(0, limit - pickL.length));
+    const client = pickO.filter(r => !(typeof r.scope === 'string' && r.scope.indexOf(KB_PREFIX) === 0));
+    const jud = pickO.filter(r => !client.includes(r));
+    const picked = client.concat(pickL, jud);
+    const used = new Set(picked);
+    return picked.concat(rl.filter(r => !used.has(r)), ro.filter(r => !used.has(r)));
 }
 
 function _rrfEnabled() {
@@ -1226,6 +1259,15 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
         _t0 = t;
     };
 
+    // K17: dotaz běžnou řečí → doplnit právní pojmy, výslovně zmíněný zákon → zvýhodnit jeho §§ (lib/query_terms.js).
+    // Jen pro znalostní bázi agenta (dedupeKb); RAG_QUERY_TERMS=1 nebo opts.queryTerms.
+    let _lawPrefixes = null;
+    if (opts && opts.dedupeKb && queryTerms.zapnuto(opts)) {
+        const ex = queryTerms.rozsir(query);
+        query = ex.text;
+        if (ex.zakony.length) _lawPrefixes = ex.zakony;
+    }
+
     // Fallback je OPT-IN: přísné volání (bez opts) při výpadku modelu vyhodí chybu
     // (fail-closed) — kritické pro conflicts.js, kde „nemožnost prověřit" ≠ „bez
     // konfliktu". Obecné vyhledávání zapne { lexicalFallback:true } a degraduje.
@@ -1377,6 +1419,13 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     _mark('skore');
     if (rrf && results.length) _applyRrf(results, _rrfK());
 
+    if (_lawPrefixes) {
+        const b = queryTerms.lawBoost();
+        for (const r of results) {
+            if (typeof r.scope === 'string' && r.scope.indexOf(KB_PREFIX) === 0 && !isJudikaturaChunk(r)
+                && _lawPrefixes.some(pf => String(r.fileName || '').startsWith(pf + ' '))) r.score += b;
+        }
+    }
     results.sort((a, b) => b.score - a.score);
     // dedupeKb: z téhož souboru ZNALOSTNÍ BÁZE (např. „§ 204“) max. 1 úsek — dlouhý
     // paragraf jinak zabere víc míst v top-k a vytlačí další relevantní ustanovení.
@@ -1386,11 +1435,20 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     // Volitelný reranker (lib/rerank_service.js): jen když o něj volající požádá (opts.rerank)
     // A je zapnutý v env (RAG_RERANK=1; služba RAG_RERANK_URL, jinak ONNX v procesu). Mění POŘADÍ top-K, ne `score` —
     // prahy (RAG_MIN_SCORE, 0.70 v conflicts) tak drží význam. Chyba/timeout → původní pořadí.
+    const share = opts && opts.dedupeKb && opts.kbMix !== false ? _lawShare(opts) : 0;
     if (opts && opts.rerank && !embeddingFailed && rerankService.rerankEnabled()) {
+        if (share > 0 && _rerankSplit(opts)) {
+            // K17 (měření 30. 10. 2026): reranker viděl jen top 20 společného pořadí — u plné báze skoro
+            // samá judikatura, takže správný § se do přeřazení často nedostal (hit@3 agenta 87,9 % vs. 92,7 %
+            // při hledání jen v zákonech). Proto se přeřazují zákony a ostatní ZVLÁŠŤ a skládají v poměru.
+            ranked = await _rerankSplitMix(query, ranked, limit, share);
+            _mark('dedup+mix');
+            return ranked.slice(0, limit);
+        }
         ranked = await rerankService.rerankResults(query, ranked);
     }
     // Agent (dedupeKb) dostane zákony i judikaturu v daném poměru — viz mixKbResults.
-    if (opts && opts.dedupeKb && opts.kbMix !== false) ranked = mixKbResults(ranked, limit, _lawShare(opts));
+    if (share > 0) ranked = mixKbResults(ranked, limit, share);
     _mark('dedup+mix');
     return ranked.slice(0, limit);
 }
@@ -1463,5 +1521,6 @@ module.exports = {
     warmKnowledgeBases,
     isJudikaturaChunk,
     mixKbResults,
+    _rerankSplitMix,
     _resetPartitionCache
 };

@@ -1,0 +1,160 @@
+{
+ "popis": "Odložená sada (K17, 30. 10. 2026): laické dotazy mimo zlatou sadu; slovník lib/query_terms.js podle ní NEladěn. Paragrafy ověřeny proti textu v backend/eval/kb/zakony.tar.gz.",
+ "queries": [
+  {
+   "q": "Koupil jsem ojeté auto a prodejce mi zamlčel, že bylo bourané. Co s tím můžu dělat?",
+   "rel": [
+    "OZ 89-2012 § 2099.txt",
+    "OZ 89-2012 § 2106.txt",
+    "OZ 89-2012 § 2107.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Firma mi zaplatila fakturu o dva měsíce později, můžu chtít něco navíc?",
+   "rel": [
+    "OZ 89-2012 § 1970.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Odstěhoval jsem se z pronájmu a majitel tvrdí, že mu musím vymalovat a opravit odřenou podlahu.",
+   "rel": [
+    "OZ 89-2012 § 2293.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Zažaloval jsem dlužníka u soudu v jiném městě, než kde bydlí. Vadí to?",
+   "rel": [
+    "OSŘ 99-1963 § 0105.txt",
+    "OSŘ 99-1963 § 0084.txt",
+    "OSŘ 99-1963 § 0085.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Jak se v s.r.o. rozděluje zisk mezi společníky?",
+   "rel": [
+    "ZOK 90-2012 § 0161.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Jsem menšinový společník a jednatel mi odmítá ukázat účetnictví firmy.",
+   "rel": [
+    "ZOK 90-2012 § 0155.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Chci ze své s.r.o. odejít jako společník, jak na to?",
+   "rel": [
+    "ZOK 90-2012 § 0202.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Kolik peněz potřebuju na založení s.r.o.?",
+   "rel": [
+    "ZOK 90-2012 § 0142.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Musím dlužníkovi před podáním žaloby poslat nějakou výzvu?",
+   "rel": [
+    "OSŘ 99-1963 § 0142a.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "V rozsudku mi soud napsal špatně datum narození, dá se to opravit?",
+   "rel": [
+    "OSŘ 99-1963 § 0164.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Svědek opakovaně nechodí k soudu, může ho soud nějak potrestat?",
+   "rel": [
+    "OSŘ 99-1963 § 0053.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Nemluvím dobře česky, budu mít u soudu tlumočníka?",
+   "rel": [
+    "OSŘ 99-1963 § 0018.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Koupil jsem v bazaru kolo a ukázalo se, že bylo kradené. Je moje?",
+   "rel": [
+    "OZ 89-2012 § 1109.txt",
+    "OZ 89-2012 § 1110.txt",
+    "OZ 89-2012 § 1111.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Našel jsem na ulici peněženku s penězi, můžu si je nechat?",
+   "rel": [
+    "OZ 89-2012 § 1051.txt",
+    "OZ 89-2012 § 1052.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Omylem jsem poslal peníze na špatný účet, jak je dostanu zpátky?",
+   "rel": [
+    "OZ 89-2012 § 2991.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Podepsal jsem smlouvu jen proto, že mi vyhrožovali. Platí?",
+   "rel": [
+    "OZ 89-2012 § 0587.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Je platná smlouva, která je v rozporu se zákonem?",
+   "rel": [
+    "OZ 89-2012 § 0580.txt",
+    "OZ 89-2012 § 0588.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Obchodní zástupce podepsal za nás smlouvu nad rámec toho, co směl. Jsme vázáni?",
+   "rel": [
+    "OZ 89-2012 § 0440.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Poslal jsem e-mailem nabídku a nenapsal, do kdy platí. Jak dlouho ji druhá strana může přijmout?",
+   "rel": [
+    "OZ 89-2012 § 1735.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Majitel bytu mi zakazuje mít kočku, i když nikoho neruší. Smí to?",
+   "rel": [
+    "OZ 89-2012 § 2258.txt"
+   ],
+   "styl": "klient"
+  },
+  {
+   "q": "Chci si v nájemním bytě předělat koupelnu, potřebuju souhlas majitele?",
+   "rel": [
+    "OZ 89-2012 § 2263.txt"
+   ],
+   "styl": "klient"
+  }
+ ]
+}

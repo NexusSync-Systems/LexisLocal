@@ -8,6 +8,10 @@ export PROFILE=judikatura
 #   reranker bge-reranker-v2-m3 a 5 pasáží pro agenta. Paměť a rychlost → pamet.log, server_suite.
 export RERANK_JUD=1
 export RAG_AGENT_K_JUD=5
+# K17 krok 2 (30. 10. odpoledne): přeřazení zákonů a judikatury zvlášť + slovník hovorových pojmů a zvýhodnění
+#   zmíněného zákona; kb_regression měří i jednotlivé varianty na zlaté a odložené sadě.
+export RAG_RERANK_SPLIT=1
+export RAG_QUERY_TERMS=1
 export EMBED_MODEL_S3=s3://lexislocal-bench-results-485237569555/_models/lexis-bge-m3-ft/2026-10-09_1451_embed_train/
 export KB_ARCHIVE_S3=s3://lexislocal-bench-results-485237569555/_cache/kb-1.2.0.tar.gz
 exec > >(tee -a /var/log/lexis-bootstrap.log) 2>&1
