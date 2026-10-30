@@ -116,7 +116,7 @@ Sledování složky spisu bere PDF, DOCX, TXT, HTML a obrázky. Doplnit .doc, .r
 ### K16 Vlastní vzory kanceláře (.docx) — P2
 Advokát nahraje svůj vzor (.docx), Spisovatel doplní údaje ze spisu a zachová formát; nevyplněné → [Doplnit: …].
 
-### K17 Lepší vyhledávání v pilotu — P0/P1
+### K17 Lepší vyhledávání v pilotu — P0/P1 (krok 1 a 3 ✅ 30. 10.)
 Pilot na Mac mini dnes: původní bge-m3, bez rerankeru, 4 pasáže. Laboratoř (`training/embed/README.md`), správný §
 na 1. místě (zlatá sada): bge-m3 66 % → doladěný mix-0.3 71 % → + reranker 77 %; v top 5 pasážích ~95 %.
 1. **Serverový běh `judikatura-plus`** (pilot + mix-0.3 + reranker bge + K=5) proti `2026-10-26_1023_remote_judikatura`:
@@ -130,6 +130,9 @@ na 1. místě (zlatá sada): bge-m3 66 % → doladěný mix-0.3 71 % → + reran
 utáhne; pak výchozí v pilotu.
 
 ## Hotovo
+- 30. 10. 2026 — K17: přeřazení zákonů a judikatury zvlášť + slovník hovorových pojmů jako výchozí; správný § mezi pasážemi
+  agenta 88,7 → 91,9 %, na 1. místě 50,8 → 75,0 %, odložená sada 43 → 86 % (`training/embed/README.md`). Další: rozbor zbylých
+  dotazů, rychlost na Mac mini (5 pasáží zpomaluje odpovědi), ověření slovníku na dotazech z pilotu.
 - 30. 10. 2026 — režim „jen cloud“ (`docs/REZIM_JEN_CLOUD.md`): Claude přes Bedrock bez Ollamy, vyhledávací model bge-m3
   v aplikaci (`lib/local_embed.js`), odepření/výpadek bez náhradní odpovědi, pošta jen pravidla, profil `kancelar-jen-cloud`
   (čeká na serverový běh a `embed_compat`).

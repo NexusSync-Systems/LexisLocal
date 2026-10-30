@@ -25,12 +25,14 @@ describe('query_terms', () => {
         expect(qt.rozsir('Jak dlouhá je promlčecí lhůta?').zakony).toEqual([]);
     });
 
-    test('zapnutí: env nebo opts, opts má přednost', () => {
+    test('zapnutí: výchozí zapnuto, env 0 vypne, opts má přednost', () => {
         const old = process.env.RAG_QUERY_TERMS;
         delete process.env.RAG_QUERY_TERMS;
-        expect(qt.zapnuto()).toBe(false);
-        process.env.RAG_QUERY_TERMS = '1';
         expect(qt.zapnuto()).toBe(true);
+        process.env.RAG_QUERY_TERMS = '0';
+        expect(qt.zapnuto()).toBe(false);
+        expect(qt.zapnuto({ queryTerms: true })).toBe(true);
+        process.env.RAG_QUERY_TERMS = '1';
         expect(qt.zapnuto({ queryTerms: false })).toBe(false);
         if (old === undefined) delete process.env.RAG_QUERY_TERMS; else process.env.RAG_QUERY_TERMS = old;
     });

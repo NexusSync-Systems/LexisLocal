@@ -228,3 +228,30 @@ Po úpravě promptu spisovatele (částky z podkladů doslovně) a normalizaci �
 
 → `RAG_AGENT_K` výchozí 5, když je zapnutý reranker (`lib/rag.js agentRagK`); bez rerankeru zůstává 3
 (měření 1. 10. 2026 bez rerankeru: k=5 horší). Ladění vyhledávání a citací tímto uzavřeno.
+
+## K17: přeřazení zvlášť a slovník hovorových pojmů (30. 10. 2026)
+
+Serverové běhy `2026-10-30_0911_remote_judikatura` (mix-0.3 + reranker bge + K=5) a `2026-10-30_1601_remote_judikatura`
+(totéž + varianty). Plná báze (23 zákonů + judikatura NS/ÚS/NSS, ~297 tis. kousků), měřeno **jako agent** (s rerankerem,
+5 pasáží: 4 zákony + 1 rozhodnutí). `kb_regression.js`, sekce „Varianty K17“.
+
+| Sada | Varianta | správný § na 1. místě | správný § mezi pasážemi | MRR |
+|---|---|---|---|---|
+| zlatá (124) | před K17 | 50,8 % | 88,7 % | 0,661 |
+| | přeřazení zákonů a judikatury zvlášť | 71,8 % | 91,9 % | 0,804 |
+| | + slovník a zvýhodnění zmíněného zákona | **75,0 %** | **91,9 %** | **0,826** |
+| zlatá – klient (68) | před K17 | 41,2 % | 83,8 % | 0,583 |
+| | + zvlášť + slovník | **69,1 %** | 88,2 % | 0,779 |
+| odložená (21, `holdout_queries.json`) | před K17 | 4,8 % | 42,9 % | 0,222 |
+| | + zvlášť | 23,8 % | 57,1 % | 0,373 |
+| | + zvlášť + slovník | **38,1 %** | **85,7 %** | **0,567** |
+
+- Příčina: reranker přeřazoval jen top 20 společného pořadí, u plné báze skoro samou judikaturu → správný § se do
+  přeřazení nedostal. Teď se přeřazují zákony (20) a ostatní (10) zvlášť (`lib/rag.js`, `_rerankSplitMix`).
+- Slovník (`lib/query_terms.js`) je obecný, ne podle chyb zlaté sady; odložená sada je ale malá a sestavená týmž
+  autorem krátce po slovníku → ověřit na skutečných dotazech z pilotu.
+- Hledání jako dřív ~2 s/dotaz. Strop modelu: jen zákony 91,1 % → další zisk jen rozborem zbylých dotazů
+  (`kb_regression` vypisuje nenalezené § s pořadím v top 50) a lepším vyhledáváním.
+- **Od 30. 10. 2026 výchozí:** `RAG_RERANK_SPLIT` i `RAG_QUERY_TERMS` zapnuté (vypnutí `=0`).
+- Pozor na rychlost odpovědí (ne hledání): s 5 pasážemi po 2000 znaků je rešeršník na T4 p50 22 s / p95 82 s
+  (26. 10. při 4 pasážích bez rerankeru 13 s / 22 s), 1 timeout Ollamy (C25). Na Mac mini změřit před pilotem.

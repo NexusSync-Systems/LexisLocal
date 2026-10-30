@@ -9,7 +9,8 @@
  *    toho zákona (prefix názvu souboru báze, např. „ZOK 90-2012“).
  *
  * Slovník je obecný (typické laické situace), NE podle chyb ze zlaté sady; ověřuje se na zvláštní
- * sadě training/embed/holdout_queries.json. Zapnutí: RAG_QUERY_TERMS=1 (výchozí vypnuto do změření),
+ * sadě training/embed/holdout_queries.json. Výchozí ZAPNUTO od 30. 10. 2026 (měření K17: správný § na 1. místě
+ * zlatá 71,8 → 75,0 %, odložená sada mezi pasážemi 57 → 86 %); vypnutí RAG_QUERY_TERMS=0,
  * opts.queryTerms přepíše env. Váha zvýhodnění RAG_LAW_BOOST (výchozí 0.03 k hybridnímu skóre).
  */
 
@@ -84,7 +85,7 @@ function _obsahuje(n, pojem) {
 
 function zapnuto(opts) {
     if (opts && typeof opts.queryTerms === 'boolean') return opts.queryTerms;
-    return ['1', 'true', 'yes', 'on'].includes(String(process.env.RAG_QUERY_TERMS || '').toLowerCase());
+    return !['0', 'false', 'no', 'off'].includes(String(process.env.RAG_QUERY_TERMS || '').trim().toLowerCase());
 }
 
 function lawBoost() {

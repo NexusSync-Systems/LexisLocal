@@ -111,8 +111,9 @@ function mixKbResults(sorted, limit, share) {
 
 function _rerankSplit(opts) {
     if (opts && typeof opts.rerankSplit === 'boolean') return opts.rerankSplit;
-    // Výchozí vypnuto, dokud serverový běh (judikatura-plus, K17) nepotvrdí zlepšení.
-    return ['1', 'true', 'yes', 'on'].includes(String(process.env.RAG_RERANK_SPLIT || '').trim().toLowerCase());
+    // Výchozí ZAPNUTO od 30. 10. 2026 — serverový běh K17 (plná báze, s rerankerem, 5 pasáží): správný § mezi
+    // pasážemi agenta 88,7 → 91,9 %, na 1. místě 50,8 → 71,8 %, bez zpomalení. Vypnutí: RAG_RERANK_SPLIT=0.
+    return !['0', 'false', 'no', 'off'].includes(String(process.env.RAG_RERANK_SPLIT || '').trim().toLowerCase());
 }
 function _rerankKJud() {
     const n = parseInt(process.env.RAG_RERANK_K_JUD, 10);
@@ -1260,7 +1261,7 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     };
 
     // K17: dotaz běžnou řečí → doplnit právní pojmy, výslovně zmíněný zákon → zvýhodnit jeho §§ (lib/query_terms.js).
-    // Jen pro znalostní bázi agenta (dedupeKb); RAG_QUERY_TERMS=1 nebo opts.queryTerms.
+    // Jen pro znalostní bázi agenta (dedupeKb); výchozí zapnuto, RAG_QUERY_TERMS=0 nebo opts.queryTerms:false vypne.
     let _lawPrefixes = null;
     if (opts && opts.dedupeKb && queryTerms.zapnuto(opts)) {
         const ex = queryTerms.rozsir(query);
