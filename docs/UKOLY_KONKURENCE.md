@@ -116,6 +116,19 @@ Sledování složky spisu bere PDF, DOCX, TXT, HTML a obrázky. Doplnit .doc, .r
 ### K16 Vlastní vzory kanceláře (.docx) — P2
 Advokát nahraje svůj vzor (.docx), Spisovatel doplní údaje ze spisu a zachová formát; nevyplněné → [Doplnit: …].
 
+### K17 Lepší vyhledávání v pilotu — P0/P1
+Pilot na Mac mini dnes: původní bge-m3, bez rerankeru, 4 pasáže. Laboratoř (`training/embed/README.md`), správný §
+na 1. místě (zlatá sada): bge-m3 66 % → doladěný mix-0.3 71 % → + reranker 77 %; v top 5 pasážích ~95 %.
+1. **Serverový běh `judikatura-plus`** (pilot + mix-0.3 + reranker bge + K=5) proti `2026-10-26_1023_remote_judikatura`:
+   server_suite, neověřené citace, rychlost odpovědí, paměť (`pamet.log`). Pozn.: vektory báze se poprvé přepočítají (~2,5 h).
+2. Podle výsledku: nový balíček báze s vektory mix-0.3; mix-0.3 do ONNX pro režim jen cloud (`lib/local_embed.js`);
+   reranker na Mac mini (MPS: bge ~1,2 s, mmarco ~0,17 s), v režimu jen cloud mmarco int8 na CPU (~1,1 s).
+3. **Slovník hovorových pojmů** („vyhodit z bytu“ → výpověď z nájmu…) pro dotazy běžnou řečí (zlatá klient 61–72 %).
+4. **§ → judikatura:** k nalezenému § nabídnout rozhodnutí, která ho citují.
+5. **Skutečné dotazy z pilotu** (se souhlasem kanceláře jen znění otázek, anonymizovaně) → nová zlatá sada.
+**Hotovo, když:** serverový běh bez zhoršení kontrol a citací, rešerše rychlejší nebo do +3 s, Mac mini to paměťově
+utáhne; pak výchozí v pilotu.
+
 ## Hotovo
 - 30. 10. 2026 — režim „jen cloud“ (`docs/REZIM_JEN_CLOUD.md`): Claude přes Bedrock bez Ollamy, vyhledávací model bge-m3
   v aplikaci (`lib/local_embed.js`), odepření/výpadek bez náhradní odpovědi, pošta jen pravidla, profil `kancelar-jen-cloud`
