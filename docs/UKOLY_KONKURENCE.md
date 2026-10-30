@@ -92,6 +92,30 @@ odkazy na DPIA, zpracovatelskou smlouvu a vnitřní pravidla v `docs/kancelar/`.
 Jónsbók nezveřejňuje, které české soudy indexuje. My přesně: zákony (stav k datu), NS, NSS, ÚS, počty rozhodnutí,
 datum poslední aktualizace — v aplikaci (správce i advokát) a na webu nexusstack.eu.
 
+### K13 Doučený lokální model `lexis-qwen:7b` (formát citací, „jen z podkladů“) — P1
+Plán: `docs/PLAN_DOUCENI_MODELU.md`. QLoRA nad qwen2.5:7b na veřejných datech se samoučením přes ověřovač citací,
+GGUF pro Ollamu, šíření s balíčkem. **Hotovo, když:** J1 ≥ 18/20, citace mimo podklady ≤ 2 %, bez zhoršení
+`server_suite` a `kancelar-3h`.
+
+### K14 Časová působnost a novely — P1
+Dnes jedno znění k datu stažení. Doplnit: datum znění u každé pasáže a v odpovědi („podle znění účinného k …“),
+přehled novel paragrafu z e-Sbírky, volitelně znění k datu (dotaz „ke dni skutku“) — e-Sbírka umí znění k datu
+(`fetch-esbirka.js --datum`). **Hotovo, když:** odpověď uvádí znění a u § změněného novelou za poslední 3 roky
+upozorní; test na 10 dotazech s rozhodným datem v minulosti.
+
+### K15 Rozšířit prameny v balíčku báze — P1
+Prováděcí předpisy (nejčastější vyhlášky: advokátní tarif 177/1996, …), rozhodnutí obecných soudů z open dat MSp
+(skript hotový), evropské právo z EUR-Lex (nařízení a směrnice nejčastěji používané v advokacii, judikatura SDEU
+— úřední díla). Výsledek promítnout do K12 („pokrytí českého práva“). **Hotovo, když:** balíček obsahuje všechny
+tři skupiny a rešeršní sada má dotazy na každou.
+
+### K15b Další formáty ve spisovně — P1
+Sledování složky spisu bere PDF, DOCX, TXT, HTML a obrázky. Doplnit .doc, .rtf, .odt a e-maily uložené jako .eml / .msg
+(text + přílohy), aby šly do spisu i bez IMAP.
+
+### K16 Vlastní vzory kanceláře (.docx) — P2
+Advokát nahraje svůj vzor (.docx), Spisovatel doplní údaje ze spisu a zachová formát; nevyplněné → [Doplnit: …].
+
 ## Hotovo
 - 30. 10. 2026 — režim „jen cloud“ (`docs/REZIM_JEN_CLOUD.md`): Claude přes Bedrock bez Ollamy, vyhledávací model bge-m3
   v aplikaci (`lib/local_embed.js`), odepření/výpadek bez náhradní odpovědi, pošta jen pravidla, profil `kancelar-jen-cloud`
