@@ -394,7 +394,19 @@ if [ "$PROFILE" = "kancelar" ]; then
   # Simulace dne v kanceláři. Paměť backendu a GPU každých 5 min do pamet.log (únik paměti za den?).
   mem() { local p; p=$(systemctl show -p MainPID --value lexislocal); { echo "== $(date -Is) $1"; free -m | sed -n 2p; echo "backend RSS MB: $(( $(ps -o rss= -p "$p" 2>/dev/null || echo 0) / 1024 ))"; nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv,noheader 2>/dev/null; } >> "$OUT/pamet.log"; }
   # Jako na Macu kanceláře: bez cache vektorů v paměti (ta slouží jen k rychlému naplnění báze).
-  sed -i '/^EMBED_CACHE_FILE=/d' /opt/LexisLocal/.env; systemctl restart lexislocal
+  sed -i '/^EMBED_CACHE_FILE=/d' /opt/LexisLocal/.env
+  if [ "${OFFICE_JEN_CLOUD:-0}" = "1" ]; then
+    # Režim „jen cloud“ (docs/REZIM_JEN_CLOUD.md): nejdřív shoda vektorů Ollama × model v aplikaci (zároveň se
+    # model stáhne do cache), pak se Ollama zastaví a kancelář jede jen přes Claude (Bedrock EU) + vyhledávání v aplikaci.
+    echo "=== jen cloud: shoda vektorů Ollama × ONNX $(date -Is)"
+    timeout 30m node backend/scripts/embed_compat.js --out "$OUT/embed_compat.md" > "$OUT/embed_compat.log" 2>&1 || echo "!! embed_compat: nekompatibilní nebo chyba (viz embed_compat.log)"
+    cat "$OUT/embed_compat.md" 2>/dev/null
+    systemctl stop ollama; systemctl disable ollama 2>/dev/null || true
+    sed -i -e 's/^AI_EMBED_PROVIDER=ollama$/AI_EMBED_PROVIDER=onnx/' /opt/LexisLocal/.env
+    printf 'LEXIS_JEN_CLOUD=1\n' >> /opt/LexisLocal/.env
+    echo "=== jen cloud: Ollama zastavena ($(systemctl is-active ollama 2>/dev/null)), AI_EMBED_PROVIDER=onnx, LEXIS_JEN_CLOUD=1"
+  fi
+  systemctl restart lexislocal
   for i in $(seq 1 120); do curl -sfk -H "X-API-Token: $TOKEN" https://127.0.0.1/api/status >/dev/null && break; sleep 2; done
   sleep 120; mem "před simulací (studený start + předehřátí)"
   ( while sleep 300; do mem "průběh"; done ) & MEM_PID=$!
@@ -409,7 +421,7 @@ if [ "$PROFILE" = "kancelar" ]; then
   node backend/scripts/office_day.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
     --hours "$OFFICE_HOURS" --restart-cmd "systemctl restart lexislocal" --restart-at 4.5 \
     --intenzita "$OFFICE_INTENZITA" --upload-concurrency "$OFFICE_UPLOAD_CONC" ${OFFICE_DATASET:+--dataset "$OFFICE_DATASET"} \
-    $([ "${OFFICE_CLOUD:-0}" = "1" ] && echo --cloud) --out "$OUT/kancelar" --label server > "$OUT/office_day.log" 2>&1 || echo "!! office_day skončil s chybou (viz office_day.log)"
+    $([ "${OFFICE_CLOUD:-0}" = "1" ] && echo --cloud) $([ "${OFFICE_JEN_CLOUD:-0}" = "1" ] && echo --jen-cloud) --out "$OUT/kancelar" --label server > "$OUT/office_day.log" 2>&1 || echo "!! office_day skončil s chybou (viz office_day.log)"
   grep -E '^(  [✓✗]|Report|Kontroly)' "$OUT/office_day.log" | tail -n 70
   kill "$MEM_PID" 2>/dev/null; mem "po simulaci"
   echo "=== office_day hotovo $(date -Is)"
@@ -423,13 +435,14 @@ if [ "$PROFILE" = "kancelar" ]; then
       cp scratch/aws-test-*.md "$OUT/" 2>/dev/null
       grep -E '^(✅|⚠️|❌)' "$OUT/aws-pilot-test.log" | tail -n 25
       echo "=== cloud: srovnání $CHAT_MODEL × $BEDROCK_MODEL_ID $(date -Is)"
-      timeout 60m node backend/scripts/model_bench.js --models "$CHAT_MODEL,bedrock:$BEDROCK_MODEL_ID" --rag --no-pull --out "$OUT/bench" > "$OUT/model_bench.log" 2>&1 || echo "!! model_bench s chybou"
+      BM="$CHAT_MODEL,bedrock:$BEDROCK_MODEL_ID"; [ "${OFFICE_JEN_CLOUD:-0}" = "1" ] && BM="bedrock:$BEDROCK_MODEL_ID"
+      timeout 60m node backend/scripts/model_bench.js --models "$BM" --rag --no-pull --out "$OUT/bench" > "$OUT/model_bench.log" 2>&1 || echo "!! model_bench s chybou"
       grep -E '^( +[✅🟡❌]|   = |  [0-9]+\.)' "$OUT/model_bench.log" | tail -n 30 )
     upload
     echo "=== cloud: kontrola rozhraní (Chromium) $(date -Is)"
     ( cd /opt/LexisLocal && timeout 15m npm i --no-save --no-audit --no-fund playwright@1.60.0 >/dev/null 2>&1 \
         && timeout 15m npx playwright install --with-deps chromium >/dev/null 2>&1 \
-        && LEXIS_API_TOKEN="$TOKEN" timeout 20m node backend/scripts/ui_cloud_check.js --base https://127.0.0.1 --out "$OUT/ui" ) \
+        && LEXIS_API_TOKEN="$TOKEN" timeout 20m node backend/scripts/ui_cloud_check.js --base https://127.0.0.1 --out "$OUT/ui" $([ "${OFFICE_JEN_CLOUD:-0}" = "1" ] && echo --jen-cloud) ) \
       || echo "!! kontrola rozhraní se nespustila (Playwright/Chromium)"
     cat "$OUT/ui/ui_cloud.md" 2>/dev/null
     upload

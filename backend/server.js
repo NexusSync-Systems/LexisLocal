@@ -322,14 +322,15 @@ if (require.main === module) {
     }
     if (_aiComp.localOnly) {
         console.log('🔒 Lokální režim mlčenlivosti AKTIVNÍ — AI běží jen lokálně (chat: ' + _aiComp.chat + ', embed: ' + _aiComp.embed + '). Klientská data neopouští stroj.');
-    } else if (_aiComp.chat !== 'ollama' || _aiComp.embed !== 'ollama') {
+    } else if (_aiComp.chat !== 'ollama' || !(_aiComp.embed === 'ollama' || _aiComp.embed === 'onnx')) {
         console.warn('⚠️  AI běží přes CLOUD (chat: ' + _aiComp.chat + ', embed: ' + _aiComp.embed + '). Pro advokátní mlčenlivost bez smlouvy o zpracování zapni LEXIS_PILOT_LOCAL_ONLY=1 (vynutí lokální Ollamu).');
     }
 
     // #6: Preflight modelů — hlasitě varuj, když role-model není v Ollamě stažený
     // (jinak agenti tiše spadnou na simulovaný fallback). Best-effort, neblokuje start.
     try {
-        require('./lib/model_preflight').preflightModels().catch(() => {});
+        if (!require('./lib/ai_provider').jenCloud()) require('./lib/model_preflight').preflightModels().catch(() => {});
+        else console.log('☁️  Režim jen cloud: odpovídá Claude přes Bedrock v EU, lokální model (Ollama) se nepoužívá.');
     } catch (e) { console.warn('⚠️ Preflight modelů se nepodařilo spustit:', e.message); }
 
     // IMAP příjem e-mailů (jen při přímém spuštění serveru; nikdy pod testy).

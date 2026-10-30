@@ -65,6 +65,7 @@ function parseArgs(argv) {
         else if (a === '--intenzita') o.intenzita = Math.min(5, Math.max(0.2, parseFloat(n()) || 1)); // násobek tempa práce lidí
         else if (a === '--smoke') o.smoke = true;
         else if (a === '--cloud') o.cloud = true; // server s cloudovým modelem (Bedrock EU): souhlasy klientů, obecné dotazy jako veřejné
+        else if (a === '--jen-cloud') { o.cloud = true; o.jenCloud = true; } // kancelář bez lokálního modelu: co do cloudu nesmí, AI odmítne (403)
         else if (a === '-h' || a === '--help') o.help = true;
     }
     if (o.smoke) { o.hours = o.hours === 8 ? 1 / 3 : o.hours; o.maxOnboarding = o.maxOnboarding || 30; o.maxDen = o.maxDen || 30; o.pollS = Math.min(o.pollS, 20); }
@@ -300,7 +301,7 @@ async function onboarding(M, R) {
     if (O.cloud) {
         let sFail = 0;
         for (const zn of Object.keys(S.spisByZn)) {
-            if (!R.chance(1 / 3)) continue;
+            if (!R.chance(O.jenCloud ? 0.5 : 1 / 3)) continue;
             const s = S.spisByZn[zn];
             const r = await post(s.ownerKey, 'cloud_souhlas', `/api/spisy/${s.id}/cloud/souhlas`, { typ: 'spis', poznamka: 'Simulace: písemný souhlas klienta s cloudovým modelem (EU)' });
             if (ok2(r.status)) S.souhlas[zn] = true; else sFail++;
@@ -449,7 +450,8 @@ function scoreCase(c, resp) {
 const simulated = (r, resp) => /Simulovan/i.test((r.json && r.json.model) || '') || /ZAD[AÁ]N[IÍ] NEBYLO ZPRACOV/i.test(resp);
 
 async function runAgent(user, kind, agent, body, grade) {
-    const r = await post(user, 'agent_' + kind, `/api/agent/${agent}`, Object.assign({}, body, O.model ? { model: O.model } : {}));
+    // Režim jen cloud: odmítnutí kvůli pravidlům cloudu (403 cloud_policy) je očekávané chování, ne chyba.
+    const r = await post(user, 'agent_' + kind, `/api/agent/${agent}`, Object.assign({}, body, O.model ? { model: O.model } : {}), O.jenCloud ? { expect: [200, 201, 403] } : undefined);
     const resp = (r.json && r.json.response) || '';
     const g = grade ? grade(resp, r) : { pass: ok2(r.status) && resp.length > 80, score: resp.length > 80 ? 1 : 0 };
     const run = Object.assign({ id: body._caseId || `OD-${kind}-${agentRuns.length + 1}`, attempt: 1, at: clock(), user, role: U[user].role, kind, agent,
@@ -459,6 +461,10 @@ async function runAgent(user, kind, agent, body, grade) {
     // Dotaz přerušený plánovaným restartem v poledne (běh 29. 10.: 2× „socket hang up“) není chyba modelu —
     // do kvality AI se nepočítá, v souhrnu je zvlášť.
     if (r.restart && !ok2(r.status)) run.restart = true;
+    if (O.jenCloud && r.status === 403) {
+        run.odmitnuto = (r.json && r.json.code) || 'neznamy';
+        run.odmitnutoText = r.json && r.json.error;
+    }
     // Kde se dotaz zpracoval (K7b): cloud / lokálně, důvod odepření, odhad ceny.
     const cp = r.json && r.json.cloudPolicy;
     run.cloud = !!(r.json && r.json.modelUsed && r.json.modelUsed.cloud);
@@ -893,8 +899,9 @@ async function endOfDay(M) {
     const kor = agentRuns.filter(a => a.kind === 'korespondence');
     if (kor.length) {
         const korDr = S.drafts.filter(d => d.korespondence);
-        check('K12b', 'Podatelna připravila korespondenci přes Spisovatele (ke kontrole), advokáti ji schvalují', kor.every(a => a.pass) && korDr.every(d => !d.approveError),
-            { severity: 'medium', detail: `${kor.filter(a => a.pass).length}/${kor.length} konceptů, schváleno ${korDr.filter(d => d.status === 'schvaleno').length}, s právním obsahem ${kor.filter(a => a.pravniObsah).length}` });
+        const korOk = kor.filter(a => !a.odmitnuto);
+        check('K12b', 'Podatelna připravila korespondenci přes Spisovatele (ke kontrole), advokáti ji schvalují', korOk.every(a => a.pass) && korDr.every(d => !d.approveError),
+            { severity: 'medium', detail: `${korOk.filter(a => a.pass).length}/${korOk.length} konceptů${kor.length - korOk.length ? ` (+${kor.length - korOk.length} odmítnuto pravidly cloudu)` : ''}, schváleno ${korDr.filter(d => d.status === 'schvaleno').length}, s právním obsahem ${kor.filter(a => a.pravniObsah).length}` });
     }
     if (S.anon && S.anon.length) check('K13', 'Anonymizace odstraní telefon klienta', S.anon.every(a => a.ok), { severity: 'medium', detail: `${S.anon.filter(a => a.ok).length}/${S.anon.length}` });
     // audit
@@ -938,6 +945,24 @@ async function endOfDay(M) {
         const evidDotazu = (evid.poModelech || evid.modely || []).reduce ? (evid.poModelech || evid.modely || []).reduce((a, x) => a + (x.dotazu || 0), 0) : null;
         check('K21g', 'Každý dotaz v cloudu je v auditu a v evidenci spotřeby', auditOdeslano >= vCloudu && (evidDotazu == null || evidDotazu >= vCloudu),
             { severity: 'high', detail: `odpovědí z cloudu ${vCloudu}; audit „Dotaz odeslán do cloudu“ ${auditOdeslano}; evidence spotřeby ${evidDotazu == null ? '?' : evidDotazu} dotazů, odhad ${evid.celkem != null ? evid.celkem + ' USD' : '?'}` });
+        if (O.jenCloud) {
+            // K23: kancelář bez lokálního modelu — každá odpověď AI je z cloudu, nic není „simulované“,
+            // odmítnutí mají srozumitelný důvod; příjem pošty jede jen podle pravidel (K1 kontroly výše).
+            const ai200 = done.filter(r => !r.bezModelu);
+            check('K23a', 'Režim jen cloud: každá odpověď AI je z cloudového modelu (žádný lokální záskok)', ai200.every(r => r.cloud),
+                { severity: 'critical', detail: `${ai200.filter(r => r.cloud).length}/${ai200.length} z cloudu` });
+            check('K23b', 'Režim jen cloud: žádná simulovaná odpověď', !agentRuns.some(r => r.simulated),
+                { severity: 'critical', detail: `${agentRuns.filter(r => r.simulated).length} simulovaných` });
+            const odm = agentRuns.filter(r => r.odmitnuto);
+            const kody = {}; odm.forEach(r => { kody[r.odmitnuto] = (kody[r.odmitnuto] || 0) + 1; });
+            check('K23c', 'Režim jen cloud: odmítnutí jen podle pravidel a se srozumitelným důvodem', odm.every(r => r.odmitnuto === 'cloud_policy' && /souhlas|stupe|neznám|spis|rozpo|veřejn/i.test(r.odmitnutoText || '')),
+                { severity: 'high', detail: `odmítnuto ${odm.length} (${Object.entries(kody).map(([k, n]) => `${k} ×${n}`).join(', ') || '—'}); z toho u spisů se souhlasem ${odm.filter(r => r.spisZn && S.souhlas[r.spisZn] === true && !S.odvolano[r.spisZn]).length}` });
+            const rd = await get('admin', 'readiness', '/api/readiness');
+            const aiChk = rd.json && (rd.json.checks || []).find(c => c.id === 'ollama');
+            const emb = rd.json && (rd.json.checks || []).find(c => c.id === 'embedding');
+            check('K23d', 'Režim jen cloud: připravenost hlásí Claude přes Bedrock a vyhledávací model v aplikaci', !!(aiChk && aiChk.status === 'ok' && /Bedrock/.test(aiChk.label) && emb && emb.status === 'ok'),
+                { severity: 'high', detail: `${aiChk ? aiChk.label + ': ' + aiChk.status : '—'}; ${emb ? emb.label + ': ' + emb.status : '—'}` });
+        }
         check('K21c', 'Spisy se souhlasem klienta mohou do cloudu (informativně)', true,
             { severity: 'low', detail: `${sou.filter(r => r.cloud).length}/${sou.length} v cloudu (ostatní odepřeno kvůli podkladům z jiných spisů); celkem v cloudu ${done.filter(r => r.cloud).length}/${done.length}, odhad ${usd.toFixed(2)} USD` });
     }
@@ -1002,11 +1027,11 @@ function writeReport(meta) {
             prijem: l.filter(o => /^prijem/.test(o.action)).length });
     }
     const byKind = {};
-    agentRuns.forEach(r => { const k = r.kind; byKind[k] = byKind[k] || { n: 0, pass: 0, ms: [], sim: 0, restart: 0 }; if (r.restart) { byKind[k].restart++; return; } byKind[k].n++; if (r.pass) byKind[k].pass++; if (r.simulated) byKind[k].sim++; byKind[k].ms.push(r.ms); });
+    agentRuns.forEach(r => { const k = r.kind; byKind[k] = byKind[k] || { n: 0, pass: 0, ms: [], sim: 0, restart: 0, odmitnuto: 0 }; if (r.restart) { byKind[k].restart++; return; } if (r.odmitnuto) { byKind[k].odmitnuto++; return; } byKind[k].n++; if (r.pass) byKind[k].pass++; if (r.simulated) byKind[k].sim++; byKind[k].ms.push(r.ms); });
     const failed = checks.filter(c => !c.ok);
     const SEV = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
     failed.sort((a, b) => SEV[a.severity] - SEV[b.severity]);
-    const json = { meta, checks, hours, actions: actRows, agentKinds: Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, { n: v.n, pass: v.pass, simulated: v.sim, restart: v.restart, p50: pctl(v.ms, 50), p95: pctl(v.ms, 95) }])),
+    const json = { meta, checks, hours, actions: actRows, agentKinds: Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, { n: v.n, pass: v.pass, simulated: v.sim, restart: v.restart, odmitnuto: v.odmitnuto, p50: pctl(v.ms, 50), p95: pctl(v.ms, 95) }])),
         nove: S.nove, drafts: S.drafts, docErrors: S.docErrors || [], aclProbes: S.aclProbes || [], telemetry, agentRuns, ops };
     fs.writeFileSync(base + '.json', JSON.stringify(json, null, 1));
 
@@ -1025,7 +1050,7 @@ function writeReport(meta) {
     L.push('', '## Den po hodinách', '', '| Hodina | Požadavků | Chyb | Přijato písemností | Odpovědí AI | AI p50 | AI p95 |', '|---|---|---|---|---|---|---|');
     hours.forEach(h => L.push(`| ${h.hodina} | ${h.pozadavku} | ${h.chyb} | ${h.prijem} | ${h.agentu} | ${fmtS(h.agentP50)} | ${fmtS(h.agentP95)} |`));
     L.push('', '## Asistenti AI', '', '| Úloha | Počet | Prošlo kontrolou | p50 | p95 |', '|---|---|---|---|---|');
-    Object.entries(json.agentKinds).forEach(([k, v]) => L.push(`| ${k} | ${v.n} | ${v.pass} (${Math.round(v.pass / Math.max(1, v.n) * 100)} %)${v.simulated ? ` · simulováno ${v.simulated}` : ''}${v.restart ? ` · přerušeno restartem ${v.restart}` : ''} | ${fmtS(v.p50)} | ${fmtS(v.p95)} |`));
+    Object.entries(json.agentKinds).forEach(([k, v]) => L.push(`| ${k} | ${v.n} | ${v.pass} (${Math.round(v.pass / Math.max(1, v.n) * 100)} %)${v.simulated ? ` · simulováno ${v.simulated}` : ''}${v.restart ? ` · přerušeno restartem ${v.restart}` : ''}${v.odmitnuto ? ` · odmítnuto (pravidla cloudu) ${v.odmitnuto}` : ''} | ${fmtS(v.p50)} | ${fmtS(v.p95)} |`));
     {
         const cr = agentRuns.filter(r => r.citations);
         const sum = k => cr.reduce((n, r) => n + (r.citations[k] || 0), 0);

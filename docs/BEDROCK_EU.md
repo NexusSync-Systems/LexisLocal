@@ -192,6 +192,10 @@ smlouvě s AWS (`docs/kancelar/`). Pokud ho kancelář nepřijme, zůstává Lex
 Zdroje (10/2026): AWS Bedrock — Data protection, Data retention, Abuse detection; AWS blog „Cross-region
 inference for EU data processing“.
 
+## Kancelář bez lokálního modelu
+
+Režim „jen cloud“ (bez Ollamy, vyhledávání v aplikaci, spisy bez souhlasu bez AI): `docs/REZIM_JEN_CLOUD.md`.
+
 ## Vypnutí
 
 `AI_CHAT_PROVIDER=ollama` (nebo `LEXIS_PILOT_LOCAL_ONLY=1`) a restart. V AWS deaktivovat přístupový klíč.

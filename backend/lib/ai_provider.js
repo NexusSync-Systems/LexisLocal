@@ -41,6 +41,12 @@ function _embedProvider() { return String(process.env.AI_EMBED_PROVIDER || proce
 // klientská data (vč. RAG chunků) mimo stroj → porušení advokátní mlčenlivosti.
 function _truthy(v) { const t = String(v == null ? '' : v).trim().toLowerCase(); return t !== '' && t !== '0' && t !== 'false' && t !== 'no' && t !== 'off'; }
 function _localOnly() { return _truthy(process.env.LEXIS_PILOT_LOCAL_ONLY) || _truthy(process.env.AI_LOCAL_ONLY); }
+// Režim „jen cloud“ (LEXIS_JEN_CLOUD=1, docs/REZIM_JEN_CLOUD.md): kancelář nemá lokální jazykový model (Ollamu).
+// Odpovídá jen Claude přes Bedrock v EU; co do cloudu nesmí (spis bez souhlasu, stupeň A, text neznámého
+// původu, vyčerpaný rozpočet), AI nezpracuje vůbec — žádný lokální záskok. Vyhledávání běží v aplikaci (onnx).
+function jenCloud() { return _truthy(process.env.LEXIS_JEN_CLOUD); }
+// Lokální poskytovatelé vektorů: Ollama, nebo model přímo v aplikaci (lib/local_embed.js).
+function _localEmbed(p) { return p === 'ollama' || p === 'onnx'; }
 
 // Stav souladu s lokálním režimem: { localOnly, chat, embed, compliant, violations }.
 function assertLocalCompliance() {
@@ -50,12 +56,12 @@ function assertLocalCompliance() {
     const violations = [];
     if (localOnly) {
         if (chat !== 'ollama') violations.push({ kind: 'chat', provider: chat });
-        if (embed !== 'ollama') violations.push({ kind: 'embed', provider: embed });
+        if (!_localEmbed(embed)) violations.push({ kind: 'embed', provider: embed });
     }
     return { localOnly: localOnly, chat: chat, embed: embed, compliant: violations.length === 0, violations: violations };
 }
 function _guardLocalOnly(kind, provider) {
-    if (_localOnly() && provider !== 'ollama') {
+    if (_localOnly() && !(provider === 'ollama' || (kind === 'embed' && provider === 'onnx'))) {
         const env = kind === 'chat' ? 'AI_CHAT_PROVIDER' : 'AI_EMBED_PROVIDER';
         throw new Error('LEXIS_PILOT_LOCAL_ONLY: ' + kind + ' přes cloud (' + provider + ') je v lokálním režimu zakázán — klientská data nesmí opustit stroj (mlčenlivost). Použij lokální Ollama (' + env + '=ollama).');
     }
@@ -152,6 +158,9 @@ async function chat(params) {
     params = params || {};
     const p = _chatProvider();
     _guardLocalOnly('chat', p);
+    if (jenCloud() && require('./cloud_policy').druhPoskytovatele(p) === 'lokalni') {
+        throw Object.assign(new Error('LEXIS_JEN_CLOUD=1, ale AI_CHAT_PROVIDER je lokální (' + p + ') — v režimu bez lokálního modelu nastavte AI_CHAT_PROVIDER=bedrock.'), { code: 'CONFIG' });
+    }
     const policy = require('./cloud_policy');
     let decision = policy.rozhodni(p);
     if (decision.druh === 'lokalni') {
@@ -169,7 +178,7 @@ async function chat(params) {
             policy.zaznamenej(decision, { provider: p, model: cloudModel, fallback });
             _countRequest('odepreno');
             if (!fallback) {
-                const e = new Error('Cloud AI odepřen: ' + decision.duvody.join(' '));
+                const e = new Error('Cloud AI odepřen: ' + decision.duvody.join(' ') + (jenCloud() ? ' Kancelář nemá lokální model, takže AI tento dotaz nezpracuje.' : ''));
                 e.code = 'CLOUD_POLICY'; e.status = 403; e.decision = decision;
                 throw e;
             }
@@ -192,6 +201,12 @@ async function chat(params) {
             // Jen výpadek Bedrocku za běhu (HTTP chyba AWS, síť, časový limit). Chybné nastavení (region mimo EU,
             // chybějící klíč nebo model) dál vyhodí chybu — to se má opravit, ne tiše obcházet.
             const vypadek = p === 'bedrock' && /^Bedrock \d{3}:|fetch failed|aborted|abort|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|timeout/i.test(String(cloudErr.message || cloudErr.name));
+            if (jenCloud() && vypadek) {
+                const fail = Object.assign({}, decision, { allowed: false, code: 'chyba_cloudu', duvody: ['Cloudový model je nedostupný (' + String(cloudErr.message).slice(0, 160) + ').'] });
+                policy.zaznamenej(fail, { provider: p, model: cloudModel, fallback: false });
+                _countRequest('odepreno');
+                throw Object.assign(new Error('Cloudový model je teď nedostupný a kancelář nemá lokální model — zkuste dotaz za chvíli znovu.'), { code: 'CLOUD_DOWN', status: 503, decision: fail });
+            }
             if (policy.rezimOdepreni() !== 'lokalne' || !vypadek) throw cloudErr;
             const fail = Object.assign({}, decision, { allowed: false, code: 'chyba_cloudu', duvody: ['Cloudový model je nedostupný (' + String(cloudErr.message).slice(0, 160) + ') — odpověděl lokální model.'] });
             policy.zaznamenej(fail, { provider: p, model: cloudModel, fallback: true });
@@ -223,15 +238,17 @@ async function embeddings(params) {
         }
         return _openaiEmbeddings(params.prompt != null ? params.prompt : params.input);
     }
-    if (p === 'anthropic' || p === 'bedrock') throw new Error(p + ' nemá embeddings API pro LexisLocal — vyhledávání zůstává lokální: AI_EMBED_PROVIDER=ollama.');
+    if (p === 'onnx') return require('./local_embed').embeddings(params);
+    if (p === 'anthropic' || p === 'bedrock') throw new Error(p + ' nemá embeddings API pro LexisLocal — vyhledávání zůstává lokální: AI_EMBED_PROVIDER=ollama nebo onnx (model v aplikaci).');
     return ollama.embeddings(params);
 }
-function providerInfo() { const c = assertLocalCompliance(); return { chat: c.chat, embed: c.embed, localOnly: c.localOnly, compliant: c.compliant }; }
+function providerInfo() { const c = assertLocalCompliance(); return { chat: c.chat, embed: c.embed, localOnly: c.localOnly, compliant: c.compliant, jenCloud: jenCloud() }; }
 
 module.exports = {
     chat: chat,
     embeddings: embeddings,
     providerInfo: providerInfo,
+    jenCloud: jenCloud,
     assertLocalCompliance: assertLocalCompliance,
     // Průchod pro správu modelů (jen Ollama je má) — kdyby to někdo volal přes ai_provider.
     list: typeof ollama.list === 'function' ? ollama.list.bind(ollama) : undefined,

@@ -57,7 +57,7 @@ function cloudModelLabel(provider) {
 }
 router.get('/cloud-stav', (req, res) => {
     const st = require('../lib/cloud_policy').stavKancelare();
-    res.json({ aktivni: !!st.cloudAktivni, provider: st.provider, model: st.cloudAktivni ? cloudModelLabel(st.provider) : null, rezimOdepreni: st.rezimOdepreni });
+    res.json({ aktivni: !!st.cloudAktivni, provider: st.provider, model: st.cloudAktivni ? cloudModelLabel(st.provider) : null, rezimOdepreni: st.rezimOdepreni, jenCloud: !!st.jenCloud });
 });
 
 router.post('/:agentId', async (req, res) => {
@@ -668,6 +668,13 @@ router.post('/:agentId', async (req, res) => {
      } catch (err) {
         if (err && err.code === 'CLOUD_POLICY') {
             return res.status(403).json({ error: err.message, code: 'cloud_policy', cloudPolicy: err.decision || null });
+        }
+        if (err && (err.code === 'CLOUD_DOWN' || err.code === 'CONFIG')) {
+            return res.status(err.status || 500).json({ error: err.message, code: err.code === 'CLOUD_DOWN' ? 'cloud_nedostupny' : 'konfigurace', cloudPolicy: err.decision || null });
+        }
+        // Režim bez lokálního modelu: žádná „simulovaná“ odpověď — chybu ukážeme, jak je.
+        if (require('../lib/ai_provider').jenCloud()) {
+            return res.status(502).json({ error: 'AI teď nemůže odpovědět: ' + String(err && err.message || err).slice(0, 300), code: 'ai_chyba' });
         }
         if (isModelMissingError(err)) {
             return res.status(400).json({ error: `Model „${selectedModel}“ není na serveru nainstalován. Zvolte jiný model nebo ho stáhněte v Nastavení.` });

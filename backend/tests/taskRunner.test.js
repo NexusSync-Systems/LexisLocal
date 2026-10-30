@@ -139,6 +139,7 @@ describe('task-runner — schválené úlohy', () => {
             expect(() => R.sestav({ uloha: 'bedrock_srovnani', parametry: { lokalni: zly } })).toThrow(/nepovolený lokální model/);
         }
         expect(R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'kancelar-bedrock', typ: 'g4dn.xlarge' } }).args).toContain('file://scripts/aws/bootstrap-kancelar-bedrock.sh');
+        expect(R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'kancelar-jen-cloud', typ: 'g4dn.xlarge' } }).args).toContain('file://scripts/aws/bootstrap-kancelar-jen-cloud.sh');
         const t = R.sestav({ uloha: 'bedrock_pilot_test', parametry: { latence: 5, bezCe: true } });
         expect(t.args).toEqual(['backend/scripts/aws-pilot-test.js', '--latence', '5', '--bez-ce']);
         expect(() => R.sestav({ uloha: 'bedrock_pilot_test', parametry: { latence: 99 } })).toThrow(/rozsah/);

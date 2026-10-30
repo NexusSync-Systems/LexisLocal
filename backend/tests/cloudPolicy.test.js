@@ -23,7 +23,7 @@ const ai = require('../lib/ai_provider');
 
 const ENV = ['AI_PROVIDER', 'AI_CHAT_PROVIDER', 'AI_EMBED_PROVIDER', 'LEXIS_PILOT_LOCAL_ONLY', 'AI_LOCAL_ONLY', 'BEDROCK_REGION', 'BEDROCK_MODEL_ID',
     'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'OPENAI_BASE_URL', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY',
-    'LEXIS_POVOLIT_PRIME_API', 'LEXIS_CLOUD_ODEPRENI', 'LEXIS_CLOUD_BEZ_KONTEXTU', 'LEXIS_CLOUD_FALLBACK_MODEL'];
+    'LEXIS_POVOLIT_PRIME_API', 'LEXIS_CLOUD_ODEPRENI', 'LEXIS_CLOUD_BEZ_KONTEXTU', 'LEXIS_CLOUD_FALLBACK_MODEL', 'LEXIS_JEN_CLOUD'];
 const saved = {};
 const ADVOKAT = { userId: 'u1', name: 'JUDr. Test', kind: 'user', scopes: ['read', 'write', 'approve'] };
 const KONCIPIENT = { userId: 'u2', name: 'Mgr. Koncipient', kind: 'user', scopes: ['read', 'write'] };
@@ -166,6 +166,41 @@ describe('vynucení v ai_provider.chat', () => {
         expect(r.message.content).toBe('LOKALNE');
         expect(r.lexisCloud).toMatchObject({ cloud: false, odepreno: true, code: 'chyba_cloudu' });
         expect(r.lexisCloud.duvody[0]).toMatch(/nedostupný/);
+    });
+    describe('režim jen cloud (LEXIS_JEN_CLOUD=1, bez Ollamy)', () => {
+        test('odepřený dotaz → chyba CLOUD_POLICY, lokální model se nevolá', async () => {
+            bedrockEnv(); bedrockFetch(); process.env.LEXIS_JEN_CLOUD = '1';
+            await expect(ask({}, () => P.noteSpis(sB.id))).rejects.toMatchObject({ code: 'CLOUD_POLICY' });
+            await expect(ask({}, () => P.noteSpis(sA.id))).rejects.toThrow(/nemá lokální model/);
+            expect(ollamaMock.chat).not.toHaveBeenCalled();
+            expect(global.fetch).not.toHaveBeenCalled();
+            expect(P.stavKancelare()).toMatchObject({ jenCloud: true, rezimOdepreni: 'chyba' });
+        });
+        test('povolený dotaz → Claude', async () => {
+            bedrockEnv(); bedrockFetch(); process.env.LEXIS_JEN_CLOUD = '1';
+            const r = await ask({ dataClass: 'verejne' });
+            expect(r.message.content).toBe('CLOUD');
+            expect(ollamaMock.chat).not.toHaveBeenCalled();
+        });
+        test('výpadek Bedrocku → chyba CLOUD_DOWN (503), žádný lokální záskok', async () => {
+            bedrockEnv(); process.env.LEXIS_JEN_CLOUD = '1';
+            global.fetch = jest.fn(async () => ({ ok: false, status: 503, text: async () => 'ServiceUnavailable' }));
+            await expect(ask({ dataClass: 'verejne' })).rejects.toMatchObject({ code: 'CLOUD_DOWN', status: 503 });
+            expect(ollamaMock.chat).not.toHaveBeenCalled();
+        });
+        test('lokální chat v režimu jen cloud = chyba nastavení', async () => {
+            process.env.LEXIS_JEN_CLOUD = '1'; process.env.AI_CHAT_PROVIDER = 'ollama';
+            await expect(ask({ dataClass: 'verejne' })).rejects.toMatchObject({ code: 'CONFIG' });
+        });
+        test('příjem pošty: AI vytěžení se v režimu jen cloud přeskočí', async () => {
+            bedrockEnv(); bedrockFetch(); process.env.LEXIS_JEN_CLOUD = '1';
+            expect(await require('../lib/extraction').runAIExtractor('Rozsudek ve věci 12 C 2/2026, lhůta 15 dnů.')).toBeNull();
+            expect(global.fetch).not.toHaveBeenCalled();
+        });
+        test('vyhledávání: AI_EMBED_PROVIDER=onnx je lokální (i s LEXIS_PILOT_LOCAL_ONLY)', () => {
+            process.env.AI_EMBED_PROVIDER = 'onnx'; process.env.LEXIS_PILOT_LOCAL_ONLY = '1';
+            expect(ai.assertLocalCompliance()).toMatchObject({ compliant: true, embed: 'onnx' });
+        });
     });
     test('LEXIS_CLOUD_ODEPRENI=chyba → chyba CLOUD_POLICY místo lokálního modelu', async () => {
         bedrockEnv(); bedrockFetch(); process.env.LEXIS_CLOUD_ODEPRENI = 'chyba';

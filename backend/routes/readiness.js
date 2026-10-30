@@ -25,15 +25,27 @@ router.get('/', async (req, res) => {
     const checks = [];
     const add = (id, label, status, detail, fix) => checks.push({ id, label, status, detail, fix: fix || null });
 
-    // 1) Ollama služba + seznam stažených modelů
+    // 1) Ollama služba + seznam stažených modelů (v režimu „jen cloud“ místo ní Claude přes Bedrock EU)
+    const jenCloud = ai.jenCloud();
     let models = [], ollamaUp = false;
-    try {
-        const r = await ollama.list();
-        models = (r && r.models) || [];
-        ollamaUp = true;
-    } catch (e) { ollamaUp = false; }
+    if (!jenCloud) {
+        try {
+            const r = await ollama.list();
+            models = (r && r.models) || [];
+            ollamaUp = true;
+        } catch (e) { ollamaUp = false; }
+    }
 
-    if (ollamaUp) {
+    if (jenCloud) {
+        let ok = false, det = '';
+        try {
+            const B = require('../lib/bedrock');
+            const c = await B.credentialsAsync();
+            ok = true; det = `Claude přes Bedrock v EU (${B.modelId()}, ${B.region()}), přístup ${c.role ? 'z role serveru' : 'klíčem'}; lokální model se nepoužívá`;
+        } catch (e) { det = e.message; }
+        add('ollama', 'AI služba (Claude přes Bedrock EU)', ok ? 'ok' : 'fail', ok ? det : 'nenastaveno — ' + det,
+            ok ? null : 'Nastavte BEDROCK_REGION, BEDROCK_MODEL_ID a přístup k AWS (docs/REZIM_JEN_CLOUD.md).');
+    } else if (ollamaUp) {
         add('ollama', 'AI služba (Ollama)', 'ok', `běží — ${models.length} modelů staženo`);
     } else {
         add('ollama', 'AI služba (Ollama)', 'fail', 'neběží — asistenti nebudou odpovídat',
@@ -53,9 +65,10 @@ router.get('/', async (req, res) => {
     let embOk = false;
     try { const v = await rag.getEmbedding('test'); embOk = Array.isArray(v) && v.length > 0; }
     catch (e) { embOk = false; }
-    add('embedding', `Embedding model (${EMBEDDING_MODEL})`, embOk ? 'ok' : 'warn',
+    const onnx = String(ai.providerInfo().embed) === 'onnx';
+    add('embedding', onnx ? `Vyhledávací model v aplikaci (${require('../lib/local_embed').MODEL_ID})` : `Embedding model (${EMBEDDING_MODEL})`, embOk ? 'ok' : 'warn',
         embOk ? 'dosažitelný — sémantické hledání funguje' : 'nedosažitelný — vyhledávání jede jen podle klíčových slov',
-        embOk ? null : `Stáhni model a restartuj: ollama pull ${EMBEDDING_MODEL}`);
+        embOk ? null : (onnx ? 'Zkontrolujte EMBED_ONNX_DIR (stažený model) nebo připojení při prvním spuštění.' : `Stáhni model a restartuj: ollama pull ${EMBEDDING_MODEL}`));
 
     // 4) Judikatura (oborově dělený RAG)
     let filledObory = 0, oborChunks = 0;
@@ -80,7 +93,7 @@ router.get('/', async (req, res) => {
     // 6) Mlčenlivost (local-only pojistka)
     try {
         const c = ai.assertLocalCompliance();
-        const cloud = c.chat !== 'ollama' || c.embed !== 'ollama';
+        const cloud = c.chat !== 'ollama' || !(c.embed === 'ollama' || c.embed === 'onnx');
         if (c.localOnly) {
             add('mlcenlivost', 'Mlčenlivost (local-only)', c.compliant ? 'ok' : 'fail',
                 c.compliant ? 'zapnuto a v souladu — data neopouští server LexisLocal (žádná cloudová AI)' : 'zapnuto, ale AI míří do cloudu',

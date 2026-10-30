@@ -93,6 +93,9 @@ Jónsbók nezveřejňuje, které české soudy indexuje. My přesně: zákony (s
 datum poslední aktualizace — v aplikaci (správce i advokát) a na webu nexusstack.eu.
 
 ## Hotovo
+- 30. 10. 2026 — režim „jen cloud“ (`docs/REZIM_JEN_CLOUD.md`): Claude přes Bedrock bez Ollamy, vyhledávací model bge-m3
+  v aplikaci (`lib/local_embed.js`), odepření/výpadek bez náhradní odpovědi, pošta jen pravidla, profil `kancelar-jen-cloud`
+  (čeká na serverový běh a `embed_compat`).
 - 30. 10. 2026 — K7 ověřeno na serveru (`kancelar-bedrock`, Claude Sonnet 4.6 přes Bedrock EU z role instance): 54/55 kontrol,
   K21a/d/e/f/g bez porušení (nic bez souhlasu, nic ze spisu stupně A, nic po odvolání souhlasu, strop rozpočtu drží,
   30 dotazů v cloudu = 30 v auditu = 30 v evidenci, 1,00 USD za den); obecné rešerše 19/19, J1 2/2. Srovnání na GPU:

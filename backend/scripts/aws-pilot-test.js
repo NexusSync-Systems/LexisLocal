@@ -32,6 +32,7 @@ process.env.WATCH_DIR = path.join(TMP, 'data'); process.env.LEXIS_DATA_DIR = pat
 fs.mkdirSync(process.env.WATCH_DIR, { recursive: true });
 process.env.AI_CHAT_PROVIDER = 'bedrock';
 delete process.env.LEXIS_PILOT_LOCAL_ONLY; delete process.env.AI_LOCAL_ONLY;
+delete process.env.LEXIS_JEN_CLOUD; // test pravidel spisu (D) počítá s lokálním záskokem — režim jen cloud ho záměrně nemá
 process.env.LEXIS_CLOUD_ODEPRENI = 'lokalne';
 
 // Lokální model se v testu nevolá doopravdy — stačí vědět, že dotaz skončil lokálně.

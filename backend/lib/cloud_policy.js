@@ -179,7 +179,7 @@ function stavKancelare() {
     let info = { chat: 'ollama', localOnly: false };
     try { info = require('./ai_provider').providerInfo(); } catch (e) { /* bez poskytovatele = lokálně */ }
     const druh = druhPoskytovatele(info.chat);
-    return { provider: info.chat, druh, jenLokalne: !!info.localOnly, cloudAktivni: !info.localOnly && druh !== 'lokalni', rezimOdepreni: rezimOdepreni() };
+    return { provider: info.chat, druh, jenLokalne: !!info.localOnly, cloudAktivni: !info.localOnly && druh !== 'lokalni', rezimOdepreni: rezimOdepreni(), jenCloud: !!info.jenCloud };
 }
 
 // ---------------------------------------------------------------------------
@@ -348,7 +348,12 @@ function shrnuti() {
     return { cloud: !!d.allowed, druh: d.druh, code: d.code, provider: d.provider, duvody: d.duvody || [], spisy: d.spisy || [], naklady: c.naklady || null };
 }
 
-function rezimOdepreni() { return String(process.env.LEXIS_CLOUD_ODEPRENI || 'lokalne').toLowerCase() === 'chyba' ? 'chyba' : 'lokalne'; }
+// Režim „jen cloud“ (LEXIS_JEN_CLOUD=1): není lokální model, odepřený dotaz vždy skončí chybou.
+function rezimOdepreni() {
+    const t = String(process.env.LEXIS_JEN_CLOUD || '').trim().toLowerCase();
+    if (t && t !== '0' && t !== 'false' && t !== 'no' && t !== 'off') return 'chyba';
+    return String(process.env.LEXIS_CLOUD_ODEPRENI || 'lokalne').toLowerCase() === 'chyba' ? 'chyba' : 'lokalne';
+}
 
 module.exports = {
     STUPNE, VYCHOZI_STUPEN, TYPY_SOUHLASU, CloudPolicyError,

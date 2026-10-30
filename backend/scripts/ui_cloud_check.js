@@ -13,12 +13,13 @@ const fs = require('fs');
 const path = require('path');
 
 function args(argv) {
-    const o = { base: 'https://127.0.0.1', out: path.join(process.cwd(), 'ui-cloud'), token: process.env.LEXIS_API_TOKEN || '', timeoutS: 300 };
+    const o = { base: 'https://127.0.0.1', out: path.join(process.cwd(), 'ui-cloud'), token: process.env.LEXIS_API_TOKEN || '', timeoutS: 300, jenCloud: false };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i], n = () => argv[++i];
         if (a === '--base') o.base = String(n()).replace(/\/+$/, '');
         else if (a === '--out') o.out = n();
         else if (a === '--timeout') o.timeoutS = parseInt(n(), 10) || 300;
+        else if (a === '--jen-cloud') o.jenCloud = true;
     }
     return o;
 }
@@ -61,20 +62,33 @@ async function main() {
         await page.screenshot({ path: path.join(O.out, 'ui-1-asistent.png') });
 
         const ask = async (text, cloud) => {
-            const before = await page.locator('#chat-output .chat-message.agent .subtext').count();
+            // Počítá se každá nová zpráva asistenta — i chybová (ta nemá řádek s modelem; v režimu jen cloud = odmítnutí).
+            const msgs = page.locator('#chat-output .chat-message.agent .message-content');
+            const before = await msgs.count();
             if (vidi) { const cb = page.locator('#chat-cloud-verejne'); if ((await cb.isChecked()) !== cloud) await cb.click(); }
             await page.fill('#chat-textarea', text);
             await page.click('#btn-chat-send');
             const t0 = Date.now();
-            await page.waitForFunction(n => document.querySelectorAll('#chat-output .chat-message.agent .subtext').length > n, before, { timeout: O.timeoutS * 1000 });
-            const badge = (await page.locator('#chat-output .chat-message.agent .subtext').last().innerText()).trim();
-            return { badge, s: ((Date.now() - t0) / 1000).toFixed(1) };
+            await page.waitForFunction(n => document.querySelectorAll('#chat-output .chat-message.agent .message-content').length > n, before, { timeout: O.timeoutS * 1000 });
+            const last = msgs.last();
+            const sub = last.locator('.subtext');
+            const badge = (await sub.count()) ? (await sub.innerText()).trim() : '';
+            const txt = (await last.innerText()).replace(/\s+/g, ' ').trim().slice(0, 200);
+            return { badge, text: txt, s: ((Date.now() - t0) / 1000).toFixed(1) };
         };
         const a1 = await ask('Podle čeho soud posuzuje přiměřenost smluvní pokuty a může ji snížit? Uveď paragraf.', true).catch(e => ({ badge: 'chyba: ' + e.message, s: '—' }));
         check('U3', 'Obecný dotaz s volbou → odpověď cloudového modelu, pod ní „☁️ Claude …“', /☁️\s*Claude/.test(a1.badge), `${a1.badge} (${a1.s} s)`);
         await page.screenshot({ path: path.join(O.out, 'ui-2-cloud.png') });
-        const a2 = await ask('Jaká je obecná promlčecí lhůta podle občanského zákoníku?', false).catch(e => ({ badge: 'chyba: ' + e.message, s: '—' }));
-        check('U4', 'Dotaz bez volby → lokální model, pod ní „💻 Lokální model“', /💻\s*Lokální model/.test(a2.badge), `${a2.badge} (${a2.s} s)`);
+        const a2 = await ask('Jaká je obecná promlčecí lhůta podle občanského zákoníku?', false).catch(e => ({ badge: 'chyba: ' + e.message, text: '', s: '—' }));
+        if (O.jenCloud) {
+            // Bez lokálního modelu: dotaz bez spisu a bez volby AI nezpracuje — srozumitelné odmítnutí, žádný náhradní model.
+            check('U4', 'Jen cloud: dotaz bez volby → odmítnuto s vysvětlením, žádný lokální model',
+                !a2.badge && /cloud|souhlas|veřejn|odep|nelze/i.test(a2.text) && !/Lokální model|lokálním serverem/i.test(a2.text), `${a2.text} (${a2.s} s)`);
+            const opts = await page.locator('#chat-model-select option').allInnerTexts().catch(() => []);
+            check('U5', 'Jen cloud: ve výběru modelu jen cloudový model', opts.length === 1 && /jen cloud/.test(opts[0]), opts.join(' / '));
+        } else {
+            check('U4', 'Dotaz bez volby → lokální model, pod ní „💻 Lokální model“', /💻\s*Lokální model/.test(a2.badge), `${a2.badge} (${a2.s} s)`);
+        }
         await page.screenshot({ path: path.join(O.out, 'ui-3-lokalne.png') });
     } catch (e) {
         check('U9', 'Průchod rozhraním bez chyby', false, e.message.slice(0, 300));

@@ -599,7 +599,9 @@ async function main() {
     const prompts = loadSystemPrompts();
     const models = opts.models || suite.models || DEFAULT_MODELS;
 
-    const needOllama = models.some(m => !isBedrock(m)) || opts.judge || opts.rag;
+    // Vyhledávání podkladů (--rag) potřebuje Ollamu jen, když počítá vektory ona (AI_EMBED_PROVIDER=onnx = model v aplikaci).
+    const embedOllama = String(process.env.AI_EMBED_PROVIDER || process.env.AI_PROVIDER || 'ollama').toLowerCase() === 'ollama';
+    const needOllama = models.some(m => !isBedrock(m)) || opts.judge || (opts.rag && embedOllama);
     if (needOllama) {
         try { await ollama(opts.host, '/api/tags', null, 10); } catch (e) {
             throw new Error(`Ollama na ${opts.host} neodpovídá (${e.message}). Spusť ji: \`ollama serve\``);

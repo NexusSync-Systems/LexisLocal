@@ -32,6 +32,7 @@ Profily (`"profil"` v úloze):
 | `kancelar` | 5 lidí, 150 spisů, 250 + 150 dokumentů | 8 h | ~10 h |
 | `kancelar-3h` | totéž | zhuštěný do 3 h | ~4,5 h |
 | `kancelar-bedrock` | **komplexní test cloudu**: 5 lidí jako `kancelar-3h`, server s **Claude přes Bedrock EU** (role instance, Sonnet 4.6). Souhlas klienta u ~1/3 spisů, 5 spisů stupně A, obecné rešerše jako veřejné; ve 13:00 klienti odvolají část souhlasů, 15:00–15:30 tvrdý strop rozpočtu. K21a–g: nic bez souhlasu / ze stupně A / po odvolání / přes strop, audit a evidence spotřeby. Po dni: pilotní test proti AWS z role instance, srovnání qwen × Claude na GPU, kontrola rozhraní v Chromiu (`ui_cloud_check.js`) | zhuštěný do 3 h | ~6 h (+ řádově jednotky USD za Claude) |
+| `kancelar-jen-cloud` | **kancelář bez lokálního modelu** (`docs/REZIM_JEN_CLOUD.md`): jako `kancelar-bedrock`, ale nejdřív shoda vektorů Ollama × model v aplikaci (`embed_compat.md`), pak se Ollama zastaví (`AI_EMBED_PROVIDER=onnx`, `LEXIS_JEN_CLOUD=1`). Souhlas u ~1/2 spisů. K23a–d: odpovědi jen z cloudu, žádné simulované, odmítnutí jen podle pravidel s důvodem, připravenost; rozhraní U4/U5 | zhuštěný do 3 h | ~6 h (+ jednotky USD za Claude) |
 | `kancelar-velka` | **zátěžový den**: 6 advokátů, 2 koncipienti, 2 asistentky, 300 spisů, 400 + 350 dokumentů, tempo práce ×1,5 (`--intenzita 1.5`) | 8 h | ~11 h |
 
 Simulace ověřuje i dashboard: název a logo kanceláře (Z12), že každý účet vidí sebe (K19) a připojení

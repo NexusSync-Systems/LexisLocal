@@ -130,6 +130,14 @@ Object.assign(LexisLocalApp.prototype, {
             item.style.display = st && st.aktivni ? '' : 'none';
             const lbl = document.getElementById('chat-cloud-model');
             if (lbl && st && st.model) lbl.textContent = `${st.model.nazev}${st.model.eu ? ' (EU)' : ''}`;
+            // Režim „jen cloud“: lokální model není → ve výběru jen cloudový model, obecný dotaz předvolený
+            // (dotaz bez spisu a bez volby by AI nezpracovala).
+            if (st && st.jenCloud && st.model) {
+                const sel = document.getElementById('chat-model-select');
+                if (sel) sel.innerHTML = `<option value="${escapeHtml(st.model.id || 'cloud')}">☁️ ${escapeHtml(st.model.nazev)} (jen cloud)</option>`;
+                const cb = document.getElementById('chat-cloud-verejne');
+                if (cb && !cb.dataset.init) { cb.checked = true; cb.dataset.init = '1'; }
+            }
         } catch (e) { item.style.display = 'none'; }
     },
 
@@ -473,7 +481,7 @@ Object.assign(LexisLocalApp.prototype, {
                 <div class="chat-message agent">
                     <div class="message-avatar">⚠️</div>
                     <div class="message-content">
-                        <p style="color:var(--accent-red);">Chyba spojení s lokálním serverem: ${escapeHtml(e.message)}</p>
+                        <p style="color:var(--accent-red);">${this.cloudStav && this.cloudStav.jenCloud ? '' : 'Chyba spojení s lokálním serverem: '}${escapeHtml(e.message)}</p>
                     </div>
                 </div>
             `;

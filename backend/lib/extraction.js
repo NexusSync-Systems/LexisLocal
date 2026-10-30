@@ -212,6 +212,9 @@ function pickProceduralDeadline(text) {
 
 // Ollama AI extraktor strukturovaných metadat z českého právního textu.
 async function runAIExtractor(text) {
+    // Režim „jen cloud“: příjem pošty bez AI, jen pravidla (sp. zn., lhůty, data doručení) — dokument
+    // bez spisu a souhlasu klienta do cloudu nesmí a lokální model kancelář nemá.
+    try { if (require('./ai_provider').jenCloud()) return null; } catch (e) { /* bez poskytovatele */ }
     // Build a highly optimized, single-shot structured JSON prompt
     const prompt = `Zanalyzuj následující český právní text a vytáhni z něj klíčová strukturovaná metadata.
 Reaguj VÝHRADNĚ validním JSON objektem s těmito poli:
