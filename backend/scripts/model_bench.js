@@ -82,7 +82,7 @@ const DEFAULT_MODELS = [
 function parseArgs(argv) {
     const out = {
         models: null, cases: null, out: null, judge: null, only: null,
-        cpu: false, pull: true, numCtx: 8192, timeoutS: 900, maxTokens: 1500,
+        cpu: false, pull: true, numCtx: 8192, timeoutS: 900, maxTokens: 1500, maxTokensCloud: 4096,
         rag: false, kbDir: null, ragK: require('../lib/rag').agentRagK(), ragMin: Number(process.env.RAG_MIN_SCORE || 0.5),
         host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'
     };
@@ -103,6 +103,9 @@ function parseArgs(argv) {
         else if (a === '--num-ctx') out.numCtx = parseInt(next(), 10) || 8192;
         else if (a === '--timeout') out.timeoutS = parseInt(next(), 10) || 900;
         else if (a === '--max-tokens') out.maxTokens = parseInt(next(), 10) || 1500;
+        // Cloudový model píše delší dokumenty (spisovatel) — 1500 tokenů je utínalo (srovnání 29. 10. 2026).
+        // U lokálních modelů zůstává 1500 jako pojistka proti zacyklení.
+        else if (a === '--max-tokens-cloud') out.maxTokensCloud = parseInt(next(), 10) || 4096;
         else if (a === '--host') out.host = next();
         else if (a === '--help' || a === '-h') out.help = true;
     }
@@ -119,7 +122,7 @@ async function bedrockGenerate(model, system, prompt, opts) {
     const B = require('../lib/bedrock');
     const prev = { id: process.env.BEDROCK_MODEL_ID, max: process.env.BEDROCK_MAX_TOKENS, to: process.env.BEDROCK_TIMEOUT_MS };
     process.env.BEDROCK_MODEL_ID = model.replace(/^bedrock:/, '');
-    process.env.BEDROCK_MAX_TOKENS = String(opts.maxTokens);
+    process.env.BEDROCK_MAX_TOKENS = String(opts.maxTokensCloud || opts.maxTokens);
     process.env.BEDROCK_TIMEOUT_MS = String(opts.timeoutS * 1000);
     try {
         const msgs = (system ? [{ role: 'system', content: system }] : []).concat([{ role: 'user', content: prompt }]);
@@ -145,7 +148,7 @@ async function benchBedrock(model, cases, prompts, opts) {
         const wallS = (Date.now() - started) / 1000;
         const answer = r ? r.response.trim() : '';
         const checks = error ? [{ name: 'odpověď', pass: false, detail: error }] : runChecks(tc, answer);
-        if (r && r.truncated) checks.push({ name: 'dokončená odpověď', pass: false, detail: `utnuto na ${opts.maxTokens} tokenech` });
+        if (r && r.truncated) checks.push({ name: 'dokončená odpověď', pass: false, detail: `utnuto na ${opts.maxTokensCloud || opts.maxTokens} tokenech` });
         const passed = checks.filter(c => c.pass).length;
         results.push({ id: tc.id, agent: tc.agent, ragSources: ctx ? ctx.sources : undefined, truncated: !!(r && r.truncated), wallS,
             genTokS: r && wallS ? r.outputTokens / wallS : null, ttftS: null, tokens: r ? r.outputTokens : 0,

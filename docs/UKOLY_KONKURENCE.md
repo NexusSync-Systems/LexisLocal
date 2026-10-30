@@ -52,7 +52,7 @@ Z `docs/SROVNANI_JONSBOK.md` krátká verze pro kancelář (1 strana, bez intern
 Do dotazníku pilotu: „Chybí vám práce přímo ve Wordu / Outlooku?“, „Jak často opravujete citace?“, „Kdy byste
 zapnuli cloudový model?“. Výsledek rozhodne o pořadí K8–K10.
 
-### K7 Silnější model pro rešerše — **P0, rozpracováno 29. 10.**
+### K7 Silnější model pro rešerše — **P0, ✅ ověřeno 29.–30. 10.**
 Pravidla pro cloud už jsou hotová (`lib/cloud_policy.js`: stupně citlivosti spisu A–D, souhlas klienta, dotaz bez spisu
 jen jako „D – veřejné“), napojení na Bedrock EU taky (`lib/bedrock.js`) — chybí ověření naostro a cesta v rozhraní.
 - **K7a Živý test Bedrocku:** správce v AWS povolí modely Claude (eu-central-1), nasadí `scripts/aws/bedrock-eu-kancelar.yaml`,
@@ -93,6 +93,13 @@ Jónsbók nezveřejňuje, které české soudy indexuje. My přesně: zákony (s
 datum poslední aktualizace — v aplikaci (správce i advokát) a na webu nexusstack.eu.
 
 ## Hotovo
+- 30. 10. 2026 — K7 ověřeno na serveru (`kancelar-bedrock`, Claude Sonnet 4.6 přes Bedrock EU z role instance): 54/55 kontrol,
+  K21a/d/e/f/g bez porušení (nic bez souhlasu, nic ze spisu stupně A, nic po odvolání souhlasu, strop rozpočtu drží,
+  30 dotazů v cloudu = 30 v auditu = 30 v evidenci, 1,00 USD za den); obecné rešerše 19/19, J1 2/2. Srovnání na GPU:
+  Claude 95 % / 9,5 s, qwen 7B 85 % / 13,4 s. Rozhraní v Chromiu: volba „☁️ Obecný dotaz“ a štítek modelu fungují.
+  Opravy testů: K21b nepočítá odpovědi bez volání modelu, párování v kontrole rozhraní přes kontext prohlížeče,
+  cloudový model ve srovnání s limitem 4096 tokenů.
+- 30. 10. 2026 — výpadek Bedrocku za běhu → odpoví lokální model s důvodem (dřív „simulovaná“ odpověď).
 - 29. 10. 2026 — K1: vzor formátu citace bez čísla (`lib/agents.js`, `prompts.json`, `routes/agent.js`); uložené prompty
   kanceláře (`.agents.json`) se opraví při načtení (`PROMPT_MIGRATIONS`), vlastní úpravy zůstanou.
 - 29. 10. 2026 — K2: příznak `outsideContext` u ověřeného § mimo podklady, řádek „Mimo podklady: …“ pod odpovědí,

@@ -37,15 +37,15 @@ async function main() {
     let chromium;
     try { ({ chromium } = require('playwright')); } catch (e) { check('U0', 'Playwright k dispozici', false, e.message); save(); return; }
 
-    // párovací kód (správce si připojí „zařízení“ = tento prohlížeč)
+    const browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {});
+    // Testovací server má certifikát podepsaný sám sebou — výjimka platí jen pro tento prohlížeč testu.
+    const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1400, height: 900 }, locale: 'cs-CZ' });
+    // Párovací kód přes požadavek téhož kontextu (dřív Node fetch → odmítl certifikát → „kód nevznikl“, běh 29. 10.).
     let code = null;
     try {
-        const r = await fetch(O.base + '/api/pair/new', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': O.token }, body: JSON.stringify({ deviceLabel: 'Kontrola rozhraní (simulace)' }) });
+        const r = await ctx.request.post(O.base + '/api/pair/new', { headers: { 'X-API-Token': O.token }, data: { deviceLabel: 'Kontrola rozhraní (simulace)' } });
         const j = await r.json(); code = j.code || null;
-    } catch (e) { /* níže kontrola */ }
-
-    const browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {});
-    const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1400, height: 900 }, locale: 'cs-CZ' });
+    } catch (e) { /* níže kontrola U1 */ }
     const page = await ctx.newPage();
     try {
         await page.goto(O.base + '/?pair=' + encodeURIComponent(code || 'x'), { waitUntil: 'domcontentloaded' });

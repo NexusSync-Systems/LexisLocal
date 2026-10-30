@@ -464,6 +464,8 @@ async function runAgent(user, kind, agent, body, grade) {
     run.cloud = !!(r.json && r.json.modelUsed && r.json.modelUsed.cloud);
     run.t0 = Date.now() - r.ms; run.t1 = Date.now();
     run.verejne = body.dataClass === 'verejne';
+    // Odpověď bez volání modelu (např. kontrola vymyšlené sp. zn. „99 Cdo 9999/2031“) nemá rozhodnutí o cloudu.
+    if (ok2(r.status) && r.json && r.json.cloudPolicy == null) run.bezModelu = true;
     if (cp && !cp.cloud && cp.code) run.cloudOdepreno = cp.code;
     if (cp && cp.naklady && typeof cp.naklady.odhadUsd === 'number') run.cloudUsd = cp.naklady.odhadUsd;
     delete run._caseId;
@@ -912,9 +914,9 @@ async function endOfDay(M) {
         const poruseni = done.filter(r => r.cloud && !smi(r));
         check('K21a', 'Do cloudu nic bez souhlasu klienta, nic ze spisu stupně A ani po odvolání souhlasu, nic neznámého původu', poruseni.length === 0,
             { severity: 'critical', detail: `${poruseni.length} porušení z ${done.length}${poruseni.length ? ': ' + poruseni.slice(0, 5).map(r => `${r.kind} ${r.spisZn || ''}`).join(', ') : ''}` });
-        const ver = done.filter(r => r.verejne);
+        const ver = done.filter(r => r.verejne && !r.bezModelu);
         check('K21b', 'Obecné dotazy (bez klientských dat) odpověděl cloudový model', !ver.length || ver.filter(r => r.cloud).length / ver.length >= 0.8,
-            { severity: 'medium', detail: `${ver.filter(r => r.cloud).length}/${ver.length} v cloudu; odepřeno: ${[...new Set(ver.filter(r => !r.cloud).map(r => r.cloudOdepreno).filter(Boolean))].join(', ') || '—'}` });
+            { severity: 'medium', detail: `${ver.filter(r => r.cloud).length}/${ver.length} v cloudu (${done.filter(r => r.verejne && r.bezModelu).length} odpovědí bez modelu nepočítáno); odepřeno: ${[...new Set(ver.filter(r => !r.cloud).map(r => r.cloudOdepreno).filter(Boolean))].join(', ') || '—'}` });
         const sou = done.filter(r => r.spisZn && S.souhlas[r.spisZn]);
         const usd = done.reduce((a, r) => a + (r.cloudUsd || 0), 0);
         const vA = done.filter(r => r.spisZn && S.stupenA[r.spisZn]);
