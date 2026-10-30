@@ -63,13 +63,15 @@ async function main() {
 
         const ask = async (text, cloud) => {
             // Počítá se každá nová zpráva asistenta — i chybová (ta nemá řádek s modelem; v režimu jen cloud = odmítnutí).
-            const msgs = page.locator('#chat-output .chat-message.agent .message-content');
+            // Bez indikátoru „Píšu odpověď…“ (také .chat-message.agent, id typing-…) — jinak se počítal hned (běh 30. 10.: U3/U4 0,0 s).
+            const SEL = '#chat-output .chat-message.agent:not([id^="typing-"]) .message-content';
+            const msgs = page.locator(SEL);
             const before = await msgs.count();
             if (vidi) { const cb = page.locator('#chat-cloud-verejne'); if ((await cb.isChecked()) !== cloud) await cb.click(); }
             await page.fill('#chat-textarea', text);
             await page.click('#btn-chat-send');
             const t0 = Date.now();
-            await page.waitForFunction(n => document.querySelectorAll('#chat-output .chat-message.agent .message-content').length > n, before, { timeout: O.timeoutS * 1000 });
+            await page.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length > n, [SEL, before], { timeout: O.timeoutS * 1000 });
             const last = msgs.last();
             const sub = last.locator('.subtext');
             const badge = (await sub.count()) ? (await sub.innerText()).trim() : '';

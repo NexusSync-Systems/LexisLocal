@@ -77,7 +77,7 @@ async function main() {
     await krok('A1', 'Region jen EU', () => { region = B.region(); return { detail: region }; });
     await krok('A2', 'Model: EU profil', () => { model = B.modelId(); return { detail: model }; });
     await krok('A3', 'Přístup k AWS', async () => { const c = await B.credentialsAsync(); return { detail: c.role ? `role instance „${c.role}“` : `klíč …${String(c.accessKeyId).slice(-4)}${c.sessionToken ? ' (dočasný)' : ''}` }; });
-    await krok('A4', 'Embeddingy lokálně', () => { const e = String(process.env.AI_EMBED_PROVIDER || 'ollama').toLowerCase(); if (e !== 'ollama') throw new Error('AI_EMBED_PROVIDER=' + e); return { detail: 'ollama' }; });
+    await krok('A4', 'Embeddingy lokálně', () => { const e = String(process.env.AI_EMBED_PROVIDER || 'ollama').toLowerCase(); if (e !== 'ollama' && e !== 'onnx') throw new Error('AI_EMBED_PROVIDER=' + e); return { detail: e === 'onnx' ? 'v aplikaci (onnx, režim jen cloud)' : 'ollama' }; });
     if (!region || !model) { zapis('—', 'Další kroky přeskočeny', 'chyba', 'opravte nastavení A'); return; }
 
     await krok('B', 'Cílové regiony EU profilu', async () => {
