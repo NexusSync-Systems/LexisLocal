@@ -221,7 +221,7 @@ async function main() {
             if (!qs.length) continue;
             out.varianty.sady[sada] = {};
             for (const [nm, o] of VAR) {
-                const st = { h1: 0, hk: 0, mrr: 0, lat: [] };
+                const st = { h1: 0, hk: 0, mrr: 0, lat: [], miny: [] };
                 for (const g of qs) {
                     const [r, t] = await timed(() => rag.searchSimilar(g.q, KA, F, Object.assign({ dedupeKb: true, rerank: true }, o)));
                     const rk = rankOf(r, g.rel);
@@ -229,9 +229,15 @@ async function main() {
                     if (rk && rk <= KA) st.hk++;
                     if (rk) st.mrr += 1 / rk;
                     st.lat.push(t);
+                    if (!(rk && rk <= KA)) st.miny.push({ q: g.q, styl: g.styl || null, rel: g.rel, dostal: r.slice(0, KA).map(x => x.fileName) });
+                }
+                // Kde správný § skončil v hlubším hledání jen v zákonech (bez rerankeru, top 50): je vůbec dosažitelný?
+                for (const mi of st.miny) {
+                    const deep = await rag.searchSimilar(mi.q, 50, F, Object.assign({ dedupeKb: true, kbMix: false, kbFilter: c => !isJud(c.fileName) }, o, { rerank: false }));
+                    mi.poradiTop50 = rankOf(deep, mi.rel);
                 }
                 const m = qs.length;
-                out.varianty.sady[sada][nm] = { dotazu: m, hit1: st.h1 / m, hitK: st.hk / m, mrr: st.mrr / m, latP50: quantile(st.lat, 0.5), latP95: quantile(st.lat, 0.95) };
+                out.varianty.sady[sada][nm] = { dotazu: m, hit1: st.h1 / m, hitK: st.hk / m, mrr: st.mrr / m, latP50: quantile(st.lat, 0.5), latP95: quantile(st.lat, 0.95), miny: st.miny };
                 const v = out.varianty.sady[sada][nm];
                 console.log(`   ${sada.padEnd(15)} ${nm.padEnd(20)} hit@1 ${pct(v.hit1).padStart(7)} | hit@${KA} ${pct(v.hitK).padStart(7)} | MRR ${v.mrr.toFixed(3)} | ${Math.round(v.latP50)}/${Math.round(v.latP95)} ms`);
             }
@@ -302,6 +308,11 @@ async function main() {
         '',
         out.varianty ? `## Varianty K17 (jako agent${out.varianty.rerank ? ', s rerankerem' : ', BEZ rerankeru'}, ${KA} pasáží)\n\n| Sada | Varianta | hit@1 | hit@${KA} (agent) | MRR | hledání p50/p95 |\n|---|---|---|---|---|---|\n` +
             Object.entries(out.varianty.sady).map(([sada, vs]) => Object.entries(vs).map(([nm, v]) => `| ${sada} (${v.dotazu}) | ${nm} | ${pct(v.hit1)} | ${pct(v.hitK)} | ${v.mrr.toFixed(3)} | ${Math.round(v.latP50)} / ${Math.round(v.latP95)} ms |`).join('\n')).join('\n') + '\n' : '',
+        out.varianty ? '## Nenalezené paragrafy (poslední varianta)\n\n' + Object.entries(out.varianty.sady).map(([sada, vs]) => {
+            const nm = Object.keys(vs).pop(), mi = vs[nm].miny || [];
+            return `### ${sada} — ${nm}: ${mi.length}\n\n` + (mi.length ? '| Dotaz | Správně | Pořadí v zákonech (top 50) | Asistent dostal |\n|---|---|---|---|\n' +
+                mi.map(x => `| ${x.q.replace(/\|/g, '/')} | ${x.rel.join(', ')} | ${x.poradiTop50 || '>50'} | ${x.dostal.join('; ')} |`).join('\n') + '\n' : '');
+        }).join('\n') + '\n' : '',
         out.pool ? `## Pool hybridu\n\nShoda top 3 s plným výpočtem ${pct(out.pool.shodaTop3)}, hit@3 ${pct(out.pool.hit3Pool)} (pool) vs. ${pct(out.pool.hit3Plny)} (plný), ${Math.round(out.pool.msPool)} ms vs. ${Math.round(out.pool.msPlny)} ms na dotaz.\n` : '',
         out.judikatura ? '## Judikatura (vzorek)\n\n' + Object.entries(out.judikatura).map(([k, v]) => `- ${k}: hit@5 ${pct(v.hit5)} (${v.testovano} rozhodnutí), p50 ${Math.round(v.latP50)} ms`).join('\n') + '\n' : '',
     ].join('\n');
