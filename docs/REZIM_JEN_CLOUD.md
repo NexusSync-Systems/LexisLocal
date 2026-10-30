@@ -17,7 +17,18 @@ Odpovědi dává **Claude přes Amazon Bedrock v EU** ve vlastním účtu AWS ka
 Obecné dotazy bez spisu (rešerše) je potřeba označit **„☁️ Obecný dotaz“** (`dataClass: 'verejne'`) — v režimu jen cloud
 je volba v asistentovi předvolená a ve výběru modelu je jen cloudový model.
 
-## Nastavení (`.env`)
+## Přepnutí v aplikaci (správce)
+
+**Manažerský přehled → „🧭 Režim AI kanceláře“**: tři režimy (lokální / hybridní / jen cloud) a u každého kontrola
+připravenosti (Ollama a modely; Bedrock: region v EU, EU profil modelu, přístup k AWS; vyhledávací model v aplikaci).
+- Do cloudového režimu jen s připraveným Bedrockem a s potvrzením správce (zpracovatelská smlouva s AWS, DPIA, informovaní klienti).
+- Návrat na lokální je povolen vždy (i bez běžící Ollamy — s varováním).
+- Změna platí hned, doporučen restart a obnovení stránky; zapisuje se do auditu („Nastavení → Režim AI“).
+- Volba se uloží (`lexislocal.settings.json` → `aiRezim`) a při startu má přednost před `.env`.
+- Zámky: `LEXIS_PILOT_LOCAL_ONLY=1` / `AI_LOCAL_ONLY=1` → jen lokální; `LEXIS_AI_REZIM_ZAMEK=1` → režim určuje jen `.env`.
+- API: `GET/POST /api/settings/ai-rezim` (jen správce, `lib/ai_rezim.js`).
+
+## Nastavení ručně (`.env`)
 
 ```
 LEXIS_JEN_CLOUD=1

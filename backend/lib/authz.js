@@ -19,6 +19,8 @@ const ADMIN_RULES = [
     ['*', '/api/system/rotate-key'],
     ['*', '/api/email/settings'],
     ['POST', '/api/settings'],
+    // Režim AI (co smí do cloudu) a připravenost AWS = vedení kanceláře.
+    ['GET', '/api/settings/ai-rezim'],
     ['POST', '/api/registries/config'],
     ['POST', '/api/models/pull'],
     ['POST', '/api/watcher/toggle'],

@@ -1247,6 +1247,8 @@
                 </section>
 
                 <section class="tab-pane" id="tab-managerial">
+                    <!-- Režim AI kanceláře — jen správce (public/app-ai-rezim.js) -->
+                    <div id="ai-rezim-card" class="glass" style="display:none; padding: 25px; border-radius: 16px; border: 1px solid var(--border-glass); margin-bottom: 25px;"></div>
                     <!-- Náklady na cloudovou AI a čára rozpočtu (public/app-ai-costs.js) -->
                     <div id="ai-costs-card" class="glass" style="padding: 25px; border-radius: 16px; border: 1px solid var(--border-glass); margin-bottom: 25px;">
                         <div style="opacity: 0.6; padding: 10px;">Načítám náklady na AI...</div>
@@ -1455,6 +1457,7 @@
     <script src="app-calendar.js"></script>
     <script src="app-managerial.js"></script>
     <script src="app-ai-costs.js"></script>
+    <script src="app-ai-rezim.js"></script>
     <script src="app-email.js"></script>
     <script src="app-spisova.js"></script>
     <script src="app-drafts.js"></script>

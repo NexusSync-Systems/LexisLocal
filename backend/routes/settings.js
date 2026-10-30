@@ -178,4 +178,20 @@ router.post('/profile', (req, res) => {
     res.json({ success: true, profile: want, hiddenTabs: want === 'pilot' ? PILOT_HIDDEN : [] });
 });
 
+// GET /api/settings/ai-rezim — režim AI kanceláře (lokální / hybridní / jen cloud) + připravenost (jen správce)
+router.get('/ai-rezim', async (req, res) => {
+    try { res.json(await require('../lib/ai_rezim').stav()); }
+    catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/settings/ai-rezim { rezim, potvrzeni } — přepne režim AI (platí hned, doporučen restart); audit
+router.post('/ai-rezim', async (req, res) => {
+    try {
+        const r = await require('../lib/ai_rezim').nastav(req.body || {}, { kdo: req.principal && req.principal.name, logEvent });
+        res.json(r);
+    } catch (err) {
+        res.status(err.status || 500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

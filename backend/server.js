@@ -1,4 +1,6 @@
 require('dotenv').config();
+// Režim AI zvolený správcem v aplikaci má přednost před .env (lib/ai_rezim.js) — dřív, než se cokoli načte.
+if (typeof process.env.JEST_WORKER_ID === 'undefined') require('./lib/ai_rezim').applyPersisted(console.log);
 
 const express = require('express');
 // keep-alive delší než u klientů — jinak ECONNRESET při vytížení (lib/http_timeouts.js)
