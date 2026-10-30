@@ -590,7 +590,7 @@ async function act(ev, M, R) {
             const text = (c.json && (c.json.content || c.json.text)) || '';
             if (!text) return;
             const rizika = (d.expect && d.expect.rizika) || [];
-            await runAgent(u, 'kontrola_smlouvy', 'kontrolor', { prompt: 'Zkontroluj přiloženou smlouvu pro našeho klienta (objednatele). Vypiš rizika a nevyvážená ustanovení s odkazem na článek a zákon.', context: text },
+            await runAgent(u, 'kontrola_smlouvy', 'kontrolor', { prompt: 'Zkontroluj přiloženou smlouvu pro našeho klienta (objednatele). Vypiš rizika a nevyvážená ustanovení s odkazem na článek a zákon.', context: text, contextFileName: S.uploaded[d.file].storedName },
                 resp => { const found = rizika.filter(p => rx(p).test(resp)); return { pass: found.length >= Math.ceil(rizika.length * 0.67), score: rizika.length ? found.length / rizika.length : 1, rizika: `${found.length}/${rizika.length}`, chybi: rizika.filter(p => !found.includes(p)), doc: d.file }; });
             return;
         }
@@ -672,7 +672,7 @@ async function act(ev, M, R) {
             const d = R.pick(cands);
             const c = await get(u, 'dokument_obsah', '/api/inbox/content?fileName=' + encodeURIComponent(S.uploaded[d.file].storedName));
             const text = (c.json && (c.json.content || c.json.text)) || '';
-            await runAgent(u, 'odpoved_klientovi', 'sekretarka', { prompt: 'Navrhni krátkou odpověď klientovi na tento e-mail (k odeslání až po schválení advokátem).', context: text, ragFilters: { caseNumber: d.spisZn } });
+            await runAgent(u, 'odpoved_klientovi', 'sekretarka', { prompt: 'Navrhni krátkou odpověď klientovi na tento e-mail (k odeslání až po schválení advokátem).', context: text, contextFileName: S.uploaded[d.file].storedName, ragFilters: { caseNumber: d.spisZn } });
             return;
         }
         case 'vysvetleni_klientovi': {
@@ -957,6 +957,10 @@ async function endOfDay(M) {
             const kody = {}; odm.forEach(r => { kody[r.odmitnuto] = (kody[r.odmitnuto] || 0) + 1; });
             check('K23c', 'Režim jen cloud: odmítnutí jen podle pravidel a se srozumitelným důvodem', odm.every(r => r.odmitnuto === 'cloud_policy' && /souhlas|stupe|neznám|spis|rozpo|veřejn/i.test(r.odmitnutoText || '')),
                 { severity: 'high', detail: `odmítnuto ${odm.length} (${Object.entries(kody).map(([k, n]) => `${k} ×${n}`).join(', ') || '—'}); z toho u spisů se souhlasem ${odm.filter(r => r.spisZn && S.souhlas[r.spisZn] === true && !S.odvolano[r.spisZn]).length}` });
+            // Spis se souhlasem (ne v okně tvrdého stropu) se nesmí odmítnout — dřív kvůli úsekům z cizích spisů ve vyhledávání (30. 10.: 5×).
+            const odmSouhlas = odm.filter(r => r.spisZn && S.souhlas[r.spisZn] === true && !S.odvolano[r.spisZn] && !/rozpo/i.test(r.odmitnutoText || ''));
+            check('K23e', 'Režim jen cloud: dotaz ke spisu se souhlasem klienta se neodmítne (ani kvůli cizím spisům ve vyhledávání)', odmSouhlas.length === 0,
+                { severity: 'high', detail: odmSouhlas.length ? odmSouhlas.slice(0, 3).map(r => `${r.kind} ${r.spisZn}: ${String(r.odmitnutoText || '').slice(0, 120)}`).join(' | ') : '0 odmítnutí' });
             const rd = await get('admin', 'readiness', '/api/readiness');
             const aiChk = rd.json && (rd.json.checks || []).find(c => c.id === 'ollama');
             const emb = rd.json && (rd.json.checks || []).find(c => c.id === 'embedding');

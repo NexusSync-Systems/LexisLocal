@@ -58,7 +58,11 @@ a top-3 nejbližších textů se shoduje u ≥ 90 % dotazů; jinak skript skonč
 ## Co kancelář ztrácí (říct předem)
 
 - U spisů bez souhlasu klienta (a stupně A) **AI nepracuje vůbec** — spisová služba, lhůtník, podatelna a vyhledávání ano.
-- Kontrola smlouvy mimo spis je dnes vždy odepřena (text bez spisu nemá souhlas) — otevřený úkol.
+- Dokument mimo spis (smlouva, e-mail nezařazený do spisu) AI nezpracuje — nejdřív ho zařadit do spisu se souhlasem.
+  Kontrola smlouvy a odpověď na e-mail ze spisu se souhlasem fungují (spis se pozná podle dokumentu, `contextFileName`).
+- V asistentovi je volba **„Ke spisu“**: dotaz se váže na spis, vyhledává se jen v jeho dokumentech a v bázi zákonů
+  a judikatury; u spisu je hned vidět, jestli ho AI v cloudu smí zpracovat. Úseky z jiných spisů se při zapnutém
+  cloudu do dotazu nedostanou (dřív kvůli nim odmítlo 5 dotazů ke spisům se souhlasem).
 - Bez internetu nebo při výpadku AWS je AI nedostupná.
 - Každý dotaz stojí peníze (rozpočet a tvrdý strop v Manažerském přehledu).
 

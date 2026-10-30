@@ -106,6 +106,7 @@ Object.assign(LexisLocalApp.prototype, {
         const select = document.getElementById('chat-model-select');
         if (!select) return;
         this.loadCloudStav(); // K7b: nabídnout „obecný dotaz“ na cloudovém modelu, jen když je zapnutý
+        this.loadChatSpisy(); // dotaz ke spisu (rešerše ze spisu, v cloudu podle stupně a souhlasu)
 
         let html = '';
         if (this.models.length === 0) {
@@ -139,6 +140,60 @@ Object.assign(LexisLocalApp.prototype, {
                 if (cb && !cb.dataset.init) { cb.checked = true; cb.dataset.init = '1'; }
             }
         } catch (e) { item.style.display = 'none'; }
+    },
+
+    /** Seznam spisů pro „Ke spisu“ (jen spisy, ke kterým má uživatel přístup — filtruje server). */
+    async loadChatSpisy() {
+        const sel = document.getElementById('chat-spis-select');
+        if (!sel) return;
+        try {
+            const res = await fetch(`${this.apiBase}/spisy`, { headers: this.getHeaders() });
+            if (!res.ok) return;
+            const list = ((await res.json()).spisy || []).filter(s => s && s.spisZn && s.stav !== 'uzavreno')
+                .sort((a, b) => String(a.spisZn).localeCompare(String(b.spisZn), 'cs'));
+            const keep = sel.value;
+            sel.innerHTML = '<option value="">— bez spisu —</option>' + list.map(s =>
+                `<option value="${escapeHtml(s.id)}" data-zn="${escapeHtml(s.spisZn)}">${escapeHtml(s.spisZn)}${s.klient ? ' – ' + escapeHtml(s.klient) : (s.nazev ? ' – ' + escapeHtml(s.nazev) : '')}</option>`).join('');
+            if (keep) sel.value = keep;
+            if (!sel.dataset.init) {
+                sel.dataset.init = '1';
+                sel.addEventListener('change', () => this.onChatSpisChange());
+                const cb = document.getElementById('chat-cloud-verejne');
+                if (cb) cb.addEventListener('change', () => { if (cb.checked && sel.value) { sel.value = ''; this.onChatSpisChange(); } });
+            }
+        } catch (e) { /* bez seznamu spisů jen obecné dotazy */ }
+    },
+
+    /** Po výběru spisu: ukázat, kde se dotaz zpracuje; „obecný dotaz“ a spis se vylučují. */
+    async onChatSpisChange() {
+        const sel = document.getElementById('chat-spis-select');
+        const hint = document.getElementById('chat-spis-cloud');
+        const cb = document.getElementById('chat-cloud-verejne');
+        if (!sel || !hint) return;
+        hint.textContent = '';
+        if (!sel.value) return;
+        if (cb) cb.checked = false;
+        if (!(this.cloudStav && this.cloudStav.aktivni)) { hint.textContent = '💻 lokální model'; return; }
+        try {
+            const res = await fetch(`${this.apiBase}/spisy/${encodeURIComponent(sel.value)}/cloud`, { headers: this.getHeaders() });
+            const j = await res.json();
+            const c = j && j.cloud;
+            if (!c) return;
+            hint.textContent = c.cloudPovolen ? `☁️ cloud povolen (stupeň ${c.stupen}${c.platnySouhlas ? ', souhlas klienta' : ''})`
+                : (this.cloudStav.jenCloud ? `⛔ AI u tohoto spisu nepracuje — ${c.vyhodnoceni && c.vyhodnoceni.duvod || 'chybí souhlas klienta'}`
+                    : `💻 jen lokální model (${c.vyhodnoceni && c.vyhodnoceni.duvod || 'bez souhlasu klienta'})`);
+        } catch (e) { /* jen nápověda */ }
+    },
+
+    /** Údaje spisu k dotazu asistenta (nebo {} bez spisu). spisId jen pro Spisovatele (koncept se uloží do spisu;
+     *  server u něj ověří právo zápisu) — ostatním stačí sp. zn. (čtení). */
+    chatSpisBody(agentId) {
+        const sel = document.getElementById('chat-spis-select');
+        if (!sel || !sel.value) return {};
+        const opt = sel.options[sel.selectedIndex];
+        const zn = opt && opt.dataset ? opt.dataset.zn : null;
+        if (!zn) return {};
+        return Object.assign({ caseNumber: zn, ragFilters: { caseNumber: zn } }, agentId === 'spisovatel' ? { spisId: sel.value } : {});
     },
 
     /** Kdo odpověděl a proč (K7b): cloudový model, lokální model, nebo lokální po odepření cloudu. */
@@ -440,8 +495,8 @@ Object.assign(LexisLocalApp.prototype, {
                     prompt: userText,
                     model: modelName,
                     saveDraft: 'auto' // agent píšící dokumenty (Spisovatel) uloží koncept „ke kontrole“
-                }, (document.getElementById('chat-cloud-verejne') || {}).checked && this.cloudStav && this.cloudStav.aktivni
-                    ? { dataClass: 'verejne' } : {}))
+                }, this.chatSpisBody(agentId), (document.getElementById('chat-cloud-verejne') || {}).checked && this.cloudStav && this.cloudStav.aktivni
+                    && !this.chatSpisBody(agentId).caseNumber ? { dataClass: 'verejne' } : {}))
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);

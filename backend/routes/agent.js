@@ -144,7 +144,16 @@ router.post('/:agentId', async (req, res) => {
         if (dd0 && dd0.spisId) { cloudPolicy.noteSpis(dd0.spisId); cloudSpisKnown = true; }
     }
     if (req.body.caseNumber) { cloudPolicy.noteCase(String(req.body.caseNumber)); cloudSpisKnown = true; }
-    if (context && !cloudSpisKnown) cloudPolicy.noteUnknown('kontext dokumentu bez spisu');
+    // Dotaz ke spisu jen přes ragFilters (asistent „Ke spisu“, starší klienti API): spis je tentýž.
+    const ragCase = req.body.ragFilters && req.body.ragFilters.caseNumber;
+    if (ragCase && !req.body.caseNumber) { cloudPolicy.noteCase(String(ragCase)); cloudSpisKnown = true; }
+    // Kontext z dokumentu kanceláře (kontrola smlouvy, odpověď na e-mail): spis podle souboru, jinak neznámý původ.
+    if (context && !cloudSpisKnown && req.body.contextFileName) {
+        let sp = null;
+        try { sp = require('../lib/file_acl').spisForFileName(String(req.body.contextFileName)); } catch (e) { sp = null; }
+        if (sp) { cloudPolicy.noteSpis(sp.id); cloudSpisKnown = true; }
+    }
+    if (context && !cloudSpisKnown) cloudPolicy.noteUnknown(req.body.contextFileName ? 'dokument není zařazený ve spisu' : 'kontext dokumentu bez spisu');
 
     // Choose model (default to llama3 if not specified)
     const selectedModel = model || CHAT_MODEL;
@@ -198,7 +207,11 @@ router.post('/:agentId', async (req, res) => {
                 console.log(`🧠 RAG: Aktivní filtry pro vyhledávání: ${JSON.stringify(resolvedFilters)}`);
             }
             const matches = await searchSimilar(prompt, agentRagK(), resolvedFilters, { dedupeKb: true, rerank: true });
-            const highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
+            let highConfidenceMatches = matches.filter(m => m.score >= RAG_MIN_SCORE);
+            // Cloud zapnutý: jen znalostní báze a úseky ze spisů, ke kterým se dotaz váže (jinak by cizí spis odepřel celý dotaz).
+            const omez = cloudPolicy.omezRagNaSpisy(highConfidenceMatches);
+            if (omez.vyrazeno) console.log(`☁️ RAG: vyřazeno ${omez.vyrazeno} úseků z jiných spisů (pravidla cloudu)`);
+            highConfidenceMatches = omez.matches;
             require('../lib/file_acl').logChunkReads(highConfidenceMatches, 'Použití spisu agentem');
             cloudPolicy.noteRagMatches(highConfidenceMatches); // klientské úseky → jejich spisy (pravidla cloudu)
             ragSources = highConfidenceMatches.map(m => ({

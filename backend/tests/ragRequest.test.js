@@ -28,6 +28,13 @@ describe('resolveRagFilters', () => {
         expect(r.strict).toBe(true);
     });
 
+    test('caseNumber bez dokumentů v indexu → jen znalostní báze, ne celý archiv spisů', async () => {
+        loadInbox.mockResolvedValue({ files: { f3: { caseNumber: 'jiny', relativePath: 'KlientB/x.txt' } } });
+        const r = await resolveRagFilters({ ragFilters: { caseNumber: '99 C 9/2026' } });
+        expect(r.fileNames).toBeUndefined();
+        expect(r.clientAccess).toBe(false);
+    });
+
     test('prázdné ragFilters → null', async () => {
         expect(await resolveRagFilters({ ragFilters: {} })).toBeNull();
     });

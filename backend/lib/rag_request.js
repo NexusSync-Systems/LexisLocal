@@ -42,6 +42,10 @@ async function resolveRagFilters(reqBody) {
     const filters = {};
     if (fileNames.length > 0) {
         filters.fileNames = fileNames;
+    } else if (ragFilters.caseNumber && !ragFilters.directory) {
+        // Spis bez dokumentů v indexu: dřív se pak hledalo ve VŠECH spisech (dotaz ke spisu dostal cizí úseky).
+        // Teď jen znalostní báze (zákony, judikatura, vzory agenta).
+        filters.clientAccess = false;
     }
     if (ragFilters.directory) {
         filters.directory = ragFilters.directory;

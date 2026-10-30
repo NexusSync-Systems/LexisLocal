@@ -256,3 +256,34 @@ describe('podklady pro kartu spisu (UI)', () => {
         delete global.escapeHtml;
     });
 });
+
+describe('vyhledávání jen ze spisů dotazu (cloud zapnutý)', () => {
+    const kb = { fileName: 'OZ 89-2012 § 2048.txt', scope: '_kb_resersnik' };
+    const vlastni = { fileName: 'smlouva_b.pdf', scope: null };       // spis 12 C 2/2026
+    const cizi = { fileName: 'nezarazeny.pdf', scope: null };          // bez spisu
+    test('dotaz ke spisu: zůstane báze a úseky toho spisu, cizí vypadnou', () => {
+        bedrockEnv();
+        const r = P.scope({}, () => { P.noteSpis(sB.id); return P.omezRagNaSpisy([kb, vlastni, cizi]); });
+        expect(r.matches).toEqual([kb, vlastni]);
+        expect(r.vyrazeno).toBe(1);
+    });
+    test('obecný dotaz bez spisu: klientské úseky žádné', () => {
+        bedrockEnv();
+        const r = P.scope({ dataClass: 'verejne' }, () => P.omezRagNaSpisy([kb, vlastni, cizi]));
+        expect(r.matches).toEqual([kb]);
+    });
+    test('jen lokální model: beze změny', () => {
+        const r = P.scope({}, () => P.omezRagNaSpisy([kb, vlastni, cizi]));
+        expect(r.matches).toHaveLength(3);
+    });
+    test('dotaz ke spisu se souhlasem s vyřazeným cizím úsekem projde do cloudu', async () => {
+        bedrockEnv(); bedrockFetch();
+        P.udelSouhlas(sB.id, { typ: 'spis', principal: ADVOKAT, poznamka: 'písemně' });
+        const out = await P.scope({}, async () => {
+            P.noteSpis(sB.id);
+            P.noteRagMatches(P.omezRagNaSpisy([kb, vlastni, cizi]).matches);
+            return ai.chat({ model: 'llama-lokal', messages: [{ role: 'user', content: 'Dotaz' }] });
+        });
+        expect(out.message.content).toBe('CLOUD');
+    });
+});

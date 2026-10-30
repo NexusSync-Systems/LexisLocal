@@ -223,6 +223,31 @@ function noteFile(fileName) {
     try { spis = require('./file_acl').spisForFileName(fileName); } catch (e) { spis = null; }
     if (spis) noteSpis(spis.id); else noteUnknown(`dokument mimo spis: ${String(fileName).slice(0, 80)}`);
 }
+/** Spisy, ke kterým se aktuální dotaz výslovně váže (ohlášené route před hledáním), nebo null mimo požadavek. */
+function spisyPozadavku() {
+    const c = _ctx(false);
+    return c ? new Set(c.spisIds) : null;
+}
+/**
+ * Při zapnutém cloudu nechá z výsledků RAG jen to, co dotaz smí použít: znalostní bázi a úseky ze spisů,
+ * ke kterým se dotaz váže. Úseky z JINÝCH spisů (vyhledávání je přimíchalo podle podobnosti) by jinak
+ * odepřely celý dotaz (simulace 30. 10.: 5 odepřených dotazů ke spisům se souhlasem); obecný dotaz klientské
+ * úseky nedostane vůbec. Vrací { matches, vyrazeno }. Bez cloudu / mimo požadavek beze změny.
+ */
+function omezRagNaSpisy(matches) {
+    const list = Array.isArray(matches) ? matches : [];
+    const spisy = spisyPozadavku();
+    if (!spisy || !stavKancelare().cloudAktivni) return { matches: list, vyrazeno: 0 };
+    const acl = require('./file_acl');
+    const keep = list.filter(m => {
+        if (!m) return false;
+        if (typeof m.scope === 'string' && m.scope.indexOf('_kb_') === 0) return true;
+        let s = null;
+        try { s = acl.spisForFileName(m.fileName); } catch (e) { s = null; }
+        return !!(s && spisy.has(String(s.id)));
+    });
+    return { matches: keep, vyrazeno: list.length - keep.length };
+}
 /** Výsledky RAG: znalostní báze (scope _kb_*) je veřejná, klientské úseky se přiřadí ke spisu. */
 function noteRagMatches(matches) {
     (matches || []).forEach(m => {
@@ -359,6 +384,6 @@ module.exports = {
     STUPNE, VYCHOZI_STUPEN, TYPY_SOUHLASU, CloudPolicyError,
     stupenSpisu, platnySouhlas, vyhodnotSpis, stavSpisu,
     setStupen, udelSouhlas, odvolejSouhlas,
-    declare, noteSpis, noteCase, noteFile, noteUnknown, noteRagMatches, scope, pridejNaklady,
+    declare, noteSpis, noteCase, noteFile, noteUnknown, noteRagMatches, spisyPozadavku, omezRagNaSpisy, scope, pridejNaklady,
     isLocalUrl, druhPoskytovatele, rozhodni, zaznamenej, shrnuti, rezimOdepreni, opravneni, stavKancelare
 };
