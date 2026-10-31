@@ -12,6 +12,8 @@ export RAG_AGENT_K_JUD=5
 #   zmíněného zákona; kb_regression měří i jednotlivé varianty na zlaté a odložené sadě.
 export RAG_RERANK_SPLIT=1
 export RAG_QUERY_TERMS=1
+# Odpovědi lokálního qwen 7B kolísají mezi běhy (30. 10.: 176/177 a 174/177 při stejném nastavení) → víc opakování.
+export SUITE_REPEAT=4
 export EMBED_MODEL_S3=s3://lexislocal-bench-results-485237569555/_models/lexis-bge-m3-ft/2026-10-09_1451_embed_train/
 export KB_ARCHIVE_S3=s3://lexislocal-bench-results-485237569555/_cache/kb-1.2.0.tar.gz
 exec > >(tee -a /var/log/lexis-bootstrap.log) 2>&1

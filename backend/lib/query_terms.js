@@ -18,7 +18,13 @@
 const SLOVNIK = [
     [/\bpujc(il|ila|ili|ilo|it|im|ka|ku|ky)\b.*\b(penize|korun|kc|tisic)|\bnevraci\b.*\b(penize|dluh)/, 'zápůjčka, smlouva o zápůjčce, vrácení zápůjčky'],
     [/\bpujc(il|ila|ili|it)\b.*\b(auto|vec|kolo|telefon|mobil|naradi)/, 'výpůjčka, smlouva o výpůjčce'],
-    [/\bnezaplatil|\bneplati\b|\bdluzi\b|\bpozde zaplatil|\bpo splatnosti/, 'prodlení dlužníka, úrok z prodlení'],
+    [/\bnezaplatil|\bneplati\b|\bdluzi\b|\bpozde zaplatil|\bpo splatnosti|\bzaplatil\w*\b.{0,40}\bpozd(e|eji)\b|\bpozd(e|eji)\b.{0,20}\bzaplatil/, 'prodlení dlužníka, úrok z prodlení'],
+    // Rozbor K17 (30. 10. 2026): typické laické situace, ve kterých chyběl právní pojem a model § nenašel.
+    [/\bztrat\w*\b|\bnedodal|\bpozde dodal|\bnesplnil\w* smlouv|\bporusil\w* smlouv/, 'porušení smluvní povinnosti, náhrada škody'],
+    [/\bodecist|\bodecteni|\bvzajemn\w* (dluh|pohledav)|\bdluzi mi\b.{0,30}\bdluzim\b|\bdluzi\b.{0,30}\bja dluzim/, 'započtení vzájemných pohledávek'],
+    [/\bnepravd|\bpomluv|\blze o mne|\bdobre jmeno|\bkazi (mi )?povest/, 'ochrana osobnosti, právo na čest a pověst'],
+    [/\bnaklad\w* (na advokat\w*|rizeni|soudu|sporu)|\bzaplati (mi )?(protistrana|druha strana|zalovan\w*)/, 'náhrada nákladů řízení'],
+    [/\bnez soud rozhodne|\bpred rozhodnutim soudu|\bdo rozhodnuti soudu|\bpred koncem sporu|\bzatimn\w* zakaz/, 'předběžné opatření'],
     [/\bvyhodit z bytu|\bvystehovat|\bvypovedet (najem|byt)|\bmajitel\w* bytu|\bpronajimatel|\bnajemn|\bpodnaj|\bv pronajmu|\bz pronajmu/, 'nájem bytu, práva a povinnosti nájemce a pronajímatele'],
     [/\bkauc/, 'jistota u nájmu'],
     [/\bdostal(a)? vypoved|\bvyhodili z prace|\bpropust|\bzamestnavatel|\bv praci\b|\bz prace\b/, 'pracovní poměr, zákoník práce, výpověď z pracovního poměru'],
@@ -26,7 +32,7 @@ const SLOVNIK = [
     [/\bpod cenou|\bzlomek (jeji |jeho )?ceny|\bneumern/, 'neúměrné zkrácení'],
     [/\bvyhrozoval|\bnatlak|\bdonutil/, 'bezprávná výhrůžka, neplatnost právního jednání'],
     [/\bomylem (jsem )?(poslal|zaplatil|prevedl)|\bdvakrat zaplatil|\bspatny ucet/, 'bezdůvodné obohacení, vydání plnění'],
-    [/\bnasel (jsem )?|\bnalezen|\bztracen/, 'nález, ztracená věc, nálezné'],
+    [/\bnasel (jsem )?(\w+ ){0,3}(penezenk|telefon|mobil|klic|penize|doklad|kabelk|batoh|psa|kocku)|\bnalezen\w* vec|\bztracen\w* vec|\bnalezne/, 'nález, ztracená věc, nálezné'],
     [/\bkraden|\bod zlodeje|\bneopravnen/, 'nabytí vlastnického práva od neoprávněného, dobrá víra'],
     [/\bsoused/, 'sousedská práva, imise, vlastnické právo'],
     [/\bzdedit|\bdedictv|\bzavet|\bpozustal|\bzemrel|\bumrel/, 'dědění, dědické právo, pozůstalost'],
@@ -54,6 +60,9 @@ const SLOVNIK = [
 // Výslovně zmíněný zákon → prefix souborů báze (formát fetch-esbirka / split-zakon: „ZOK 90-2012 § 0132.txt“).
 const ZAKONY = [
     [/obcansk\w* soudn\w* rad|\bo\. ?s\. ?r\.|\bosr\b/, 'OSŘ 99-1963'],
+    // Civilní soudní řízení bez zmínky o správním, trestním či daňovém řízení → o. s. ř. (rozbor K17: obnova řízení,
+    // litispendence, místní příslušnost, podjatost se našly v SŘS / SŘ / DŘ).
+    [/^(?!.*\b(spravn\w*|trestn\w*|dan\w*|dane|prestup\w*|obvinen\w*|stihan\w*|urad\w*|financni\w*)\b).*\b(zalob\w*|rozsud\w*|soudce|soudci|k soudu|u soudu|soudni\w* rizeni|odvolan\w*|dovolan\w*|predvolan\w*|platebni\w* rozkaz\w*|podjat\w*|obnov\w* rizeni|litispend\w*|zahajen\w* rizeni|vyhral\w* (\w+ )?spor\w*|soudim\w*|soudi(me|te)?)\b/, 'OSŘ 99-1963'],
     [/obcansk\w* zakonik|\bnoz\b|\boz\b/, 'OZ 89-2012'],
     [/obchodnich korporac|\bzok\b|\bs\. ?r\. ?o\.?|\bsro\b|akciov\w* spolecnost|\ba\. ?s\.|\bjednatel|\bvaln\w* hromad|\bspolecnik/, 'ZOK 90-2012'],
     [/zakonik\w* prace|\bzamestnava|\bzamestnan|pracovn\w* pomer/, 'ZP 262-2006'],

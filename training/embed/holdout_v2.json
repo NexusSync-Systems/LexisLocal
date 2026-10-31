@@ -1,0 +1,254 @@
+{
+ "popis": "Nezávislá testovací sada 30 laických dotazů pro vyhledávání v OZ (89/2012), OSŘ (99/1963) a ZOK (90/2012); relevantní paragrafy ověřeny čtením textu, bez paragrafů z pouzite_paragrafy.txt.",
+ "queries": [
+  {
+   "q": "Soused má otevřený pozemek a jeho pes mi pořád leze na zahradu. Může ho soud donutit, aby si to oplotil?",
+   "rel": [
+    "OZ 89-2012 § 1027.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Soud může na návrh souseda uložit vlastníkovi povinnost pozemek oplotit."
+  },
+  {
+   "q": "Potřebuju opravit fasádu domu, který stojí až na hranici, a jde to jen ze sousedovy zahrady. Musí mě tam soused pustit?",
+   "rel": [
+    "OZ 89-2012 § 1021.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Povinnost umožnit sousedovi vstup na pozemek nezbytný k údržbě, s náhradou škody."
+  },
+  {
+   "q": "Koupil jsem louku, ke které nevede žádná cesta, dá se tam dostat jen přes cizí pole. Můžu po majiteli chtít, aby mě tam pouštěl?",
+   "rel": [
+    "OZ 89-2012 § 1029.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Nezbytná cesta přes sousední pozemek za náhradu."
+  },
+  {
+   "q": "Táta umřel a nechal po sobě hlavně dluhy. Jak a do kdy můžu dědictví odmítnout?",
+   "rel": [
+    "OZ 89-2012 § 1485.txt",
+    "OZ 89-2012 § 1487.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Právo dědictví odmítnout (§ 1485) a forma a měsíční lhůta (§ 1487)."
+  },
+  {
+   "q": "Manžel zemřel, děti jsme neměli a žijí ještě jeho rodiče. Kdo po něm dědí a kolik dostanu já?",
+   "rel": [
+    "OZ 89-2012 § 1636.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Druhá třída dědiců – manžel a rodiče, manžel nejméně polovinu."
+  },
+  {
+   "q": "Když zdědím byt po babičce, která měla půjčky, musím je splatit celé, i kdyby byly vyšší než hodnota bytu?",
+   "rel": [
+    "OZ 89-2012 § 1704.txt",
+    "OZ 89-2012 § 1706.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Rozsah odpovědnosti za dluhy zůstavitele bez výhrady soupisu a s ní."
+  },
+  {
+   "q": "Před lety jsem dal synovi peníze na byt a teď nemám ani na jídlo. Můžu po něm chtít dar zpátky?",
+   "rel": [
+    "OZ 89-2012 § 2068.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Odvolání daru pro nouzi dárce."
+  },
+  {
+   "q": "Půjčil jsem kamarádovi sto tisíc. Můžu si říct o úroky, i když je to mezi kamarády?",
+   "rel": [
+    "OZ 89-2012 § 2392.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Při peněžité zápůjčce lze ujednat úroky."
+  },
+  {
+   "q": "Z hotelového pokoje mi někdo ukradl notebook. Musí mi hotel škodu zaplatit?",
+   "rel": [
+    "OZ 89-2012 § 2946.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Odpovědnost ubytovatele za škodu na vnesené věci."
+  },
+  {
+   "q": "Kamarádka dala na Facebook moji fotku z večírku bez mého dovolení. Smí to udělat?",
+   "rel": [
+    "OZ 89-2012 § 0084.txt",
+    "OZ 89-2012 § 0085.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Zachycení a rozšiřování podoby člověka jen s jeho svolením."
+  },
+  {
+   "q": "Soused si dal na dům kameru, která točí přímo na naši zahradu a do oken. Je to v pořádku?",
+   "rel": [
+    "OZ 89-2012 § 0086.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Ochrana soukromí – zákaz sledování a pořizování záznamů soukromého života bez svolení."
+  },
+  {
+   "q": "Rozvádíme se a oba chceme mít děti stejně často. Jak soud rozhoduje o tom, u koho budou děti po rozvodu?",
+   "rel": [
+    "OZ 89-2012 § 0906.txt",
+    "OZ 89-2012 § 0907.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Úprava péče o dítě při rozvodu, společná/střídavá péče a rozsah péče."
+  },
+  {
+   "q": "Žena se mnou kvůli dětem dlouho nepracovala a po rozvodu se nemá z čeho živit. Musím ji jako bývalý manžel podporovat?",
+   "rel": [
+    "OZ 89-2012 § 0760.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Výživné rozvedeného manžela."
+  },
+  {
+   "q": "Chci dát výpověď z nájmu bytu. Stačí to říct majiteli a od kdy se počítá výpovědní lhůta?",
+   "rel": [
+    "OZ 89-2012 § 2286.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Písemná forma výpovědi nájmu a začátek běhu výpovědní doby."
+  },
+  {
+   "q": "Dvanáctiletý syn si bez mého vědomí koupil za kapesné drahou hru. Platí taková koupě?",
+   "rel": [
+    "OZ 89-2012 § 0031.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Způsobilost nezletilého k právním jednáním přiměřeným jeho věku."
+  },
+  {
+   "q": "Řemeslník mi dal rozpočet na koupelnu, a teď po dokončení chce víc, protože to prý bylo pracnější. Musím doplatit?",
+   "rel": [
+    "OZ 89-2012 § 2620.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Cena díla podle pevné částky či rozpočtu – nelze žádat změnu kvůli vyšším nákladům."
+  },
+  {
+   "q": "Manžel si bez mého vědomí půjčil peníze a nesplácí. Můžou exekutoři vzít i věci, které máme společné?",
+   "rel": [
+    "OZ 89-2012 § 0731.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Věřitel dluhu jednoho manžela se může uspokojit i ze společného jmění."
+  },
+  {
+   "q": "Matka je v důchodu a nevystačí s penězi. Mám jako dospělé dítě povinnost jí přispívat?",
+   "rel": [
+    "OZ 89-2012 § 0915.txt",
+    "OZ 89-2012 § 0910.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Vzájemná vyživovací povinnost předků a potomků; dítě zajistí rodičům slušnou výživu."
+  },
+  {
+   "q": "Zažaloval jsem dlužníka a on mi to mezitím zaplatil. Můžu žalobu stáhnout a kdo pak zaplatí náklady soudu?",
+   "rel": [
+    "OSŘ 99-1963 § 0096.txt",
+    "OSŘ 99-1963 § 0146.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Zpětvzetí návrhu a zastavení řízení; náklady při zastavení zaviněném chováním žalovaného."
+  },
+  {
+   "q": "Přišlo mi předvolání k soudu jako svědek v cizím sporu. Musím tam jít a můžu odmítnout vypovídat?",
+   "rel": [
+    "OSŘ 99-1963 § 0126.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Povinnost svědka dostavit se a vypovídat, odepření výpovědi."
+  },
+  {
+   "q": "Bývalý partner chce prodat auto, o které se soudíme. Dá se mu to ještě před koncem sporu nějak zakázat?",
+   "rel": [
+    "OSŘ 99-1963 § 0076.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Předběžné opatření – zákaz nakládat s věcmi."
+  },
+  {
+   "q": "Mám exekuci na plat. Kolik mi z výplaty můžou strhnout a kolik mi musí zůstat?",
+   "rel": [
+    "OSŘ 99-1963 § 0278.txt",
+    "OSŘ 99-1963 § 0279.txt",
+    "OSŘ 99-1963 § 0277.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Nezabavitelná částka, srážení třetin a výpočet čisté mzdy."
+  },
+  {
+   "q": "Co mi při výkonu rozhodnutí nesmí soud zabavit z bytu – oblečení, lednici, postel?",
+   "rel": [
+    "OSŘ 99-1963 § 0322.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Věci vyloučené z výkonu rozhodnutí prodejem movitých věcí."
+  },
+  {
+   "q": "Chci, aby soud jen potvrdil, že pozemek patří mně, ničeho dalšího se nedomáhám. Jde to?",
+   "rel": [
+    "OSŘ 99-1963 § 0080.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Určovací žaloba při naléhavém právním zájmu."
+  },
+  {
+   "q": "Spor jsem vyhrál, ale soud mi nepřiznal náhradu nákladů na advokáta. Může to tak udělat?",
+   "rel": [
+    "OSŘ 99-1963 § 0150.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Nepřiznání náhrady nákladů z důvodů hodných zvláštního zřetele."
+  },
+  {
+   "q": "Chci prodat svůj podíl ve firmě s ručením omezeným kamarádovi. Stačí obyčejná smlouva?",
+   "rel": [
+    "ZOK 90-2012 § 0209.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Smlouva o převodu podílu – písemná forma s úředně ověřenými podpisy, účinnost doručením."
+  },
+  {
+   "q": "Jednatel naší firmy jí způsobil škodu a ostatní s tím nic nedělají. Můžu ho jako společník zažalovat sám?",
+   "rel": [
+    "ZOK 90-2012 § 0157.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Společnická žaloba proti jednateli za společnost."
+  },
+  {
+   "q": "Po tátovi jsem zdědil podíl v jeho eseróčku, ale nechci tam být. Jak se toho zbavit?",
+   "rel": [
+    "ZOK 90-2012 § 0211.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Zrušení účasti dědice soudem do 3 měsíců od skončení dědického řízení."
+  },
+  {
+   "q": "Jeden ze společníků dlouhodobě neplní, co má, i když jsme ho upozorňovali. Můžeme ho z firmy vyhodit?",
+   "rel": [
+    "ZOK 90-2012 § 0204.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Vyloučení společníka soudem po výzvě a upozornění."
+  },
+  {
+   "q": "Musíme se se společníky kvůli každému rozhodnutí sejít, nebo můžeme hlasovat na dálku, třeba e-mailem?",
+   "rel": [
+    "ZOK 90-2012 § 0175.txt",
+    "ZOK 90-2012 § 0167.txt"
+   ],
+   "styl": "klient",
+   "zduvodneni": "Rozhodování per rollam a hlasování s využitím technických prostředků."
+  }
+ ]
+}

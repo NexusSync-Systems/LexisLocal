@@ -25,6 +25,22 @@ describe('query_terms', () => {
         expect(qt.rozsir('Jak dlouhá je promlčecí lhůta?').zakony).toEqual([]);
     });
 
+    test('rozbor K17: laické situace dostanou pojem, falešné shody ne', () => {
+        expect(qt.rozsir('Firma mi dluží a já dlužím jí, můžeme si to odečíst?').pojmy).toContain('započtení vzájemných pohledávek');
+        expect(qt.rozsir('Šíří o mně nepravdy na internetu').pojmy).toContain('ochrana osobnosti');
+        expect(qt.rozsir('Chci zakázat prodej auta, než soud rozhodne').pojmy).toContain('předběžné opatření');
+        expect(qt.rozsir('Zaplatili mi o měsíc později, než měli').pojmy).toContain('úrok z prodlení');
+        expect(qt.rozsir('Po rozsudku jsem našel nový důkaz').pojmy).not.toContain('nález');
+    });
+
+    test('civilní procesní dotaz → o. s. ř.; hmotné právo, správní a trestní věci ne', () => {
+        expect(qt.rozsir('Lze obnovit řízení po pravomocném rozsudku?').zakony).toContain('OSŘ 99-1963');
+        expect(qt.rozsir('Soudce je příbuzný protistrany').zakony).toContain('OSŘ 99-1963');
+        expect(qt.rozsir('Může soud snížit smluvní pokutu?').zakony).not.toContain('OSŘ 99-1963');
+        expect(qt.rozsir('Lhůta pro podání správní žaloby').zakony).not.toContain('OSŘ 99-1963');
+        expect(qt.rozsir('Odvolání proti rozsudku v trestní věci').zakony).not.toContain('OSŘ 99-1963');
+    });
+
     test('zapnutí: výchozí zapnuto, env 0 vypne, opts má přednost', () => {
         const old = process.env.RAG_QUERY_TERMS;
         delete process.env.RAG_QUERY_TERMS;

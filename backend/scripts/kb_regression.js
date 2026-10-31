@@ -44,7 +44,8 @@ const rag = require('../lib/rag');
 
 function parseArgs(argv) {
     const a = { scope: '_kb_resersnik', sample: 20, poolCompare: 15, limit: 0, gold: path.join(ROOT, 'training', 'embed', 'gold_queries.json'),
-        holdout: path.join(ROOT, 'training', 'embed', 'holdout_queries.json'), varianty: true };
+        holdout: path.join(ROOT, 'training', 'embed', 'holdout_queries.json'),
+        holdout2: path.join(ROOT, 'training', 'embed', 'holdout_v2.json'), varianty: true };
     for (let i = 2; i < argv.length; i++) {
         const k = argv[i], next = () => argv[++i];
         if (k === '--scope') a.scope = next();
@@ -209,15 +210,17 @@ async function main() {
 
     // --- 1b) Varianty K17 (jako agent v produkci: rerank) ---
     if (a.varianty) {
-        let holdout = [];
-        try { holdout = (JSON.parse(fs.readFileSync(a.holdout, 'utf8')).queries || []).filter(g => g.rel.some(r => docs.has(r))); } catch (e) { /* bez odložené sady */ }
+        const nacti = f => { try { return (JSON.parse(fs.readFileSync(f, 'utf8')).queries || []).filter(g => g.rel.some(r => docs.has(r))); } catch (e) { return []; } };
+        const holdout = nacti(a.holdout);
+        // Odložená 2 (30. 10. 2026): sestavil ji samostatný agent bez znalosti slovníku a ostatních sad — nezávislé měřítko.
+        const holdout2 = nacti(a.holdout2);
         const VAR = [
             ['produkce (dnes)', { rerankSplit: false, queryTerms: false }],
             ['+ přeřazení zvlášť', { rerankSplit: true, queryTerms: false }],
             ['+ zvlášť + slovník', { rerankSplit: true, queryTerms: true }],
         ];
         out.varianty = { rerank: require('../lib/rerank_service').rerankEnabled(), sady: {} };
-        for (const [sada, qs] of [['zlatá', cases], ['zlatá – klient', cases.filter(g => g.styl === 'klient')], ['odložená', holdout]]) {
+        for (const [sada, qs] of [['zlatá', cases], ['zlatá – klient', cases.filter(g => g.styl === 'klient')], ['odložená', holdout], ['odložená 2 (nezávislá)', holdout2]]) {
             if (!qs.length) continue;
             out.varianty.sady[sada] = {};
             for (const [nm, o] of VAR) {
