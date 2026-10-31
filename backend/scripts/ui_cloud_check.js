@@ -85,7 +85,7 @@ async function main() {
         if (O.jenCloud) {
             // Bez lokálního modelu: dotaz bez spisu a bez volby AI nezpracuje — srozumitelné odmítnutí, žádný náhradní model.
             check('U4', 'Jen cloud: dotaz bez volby → odmítnuto s vysvětlením, žádný lokální model',
-                !a2.badge && /cloud|souhlas|veřejn|odep|nelze/i.test(a2.text) && !/Lokální model|lokálním serverem/i.test(a2.text), `${a2.text} (${a2.s} s)`);
+                !a2.badge && /cloud|souhlas|veřejn|odep|nelze/i.test(a2.text) && !/💻|lokálním serverem/i.test(a2.text) /* odmítnutí samo říká „Kancelář nemá lokální model“ — to je v pořádku */, `${a2.text} (${a2.s} s)`);
             const opts = await page.locator('#chat-model-select option').allInnerTexts().catch(() => []);
             check('U5', 'Jen cloud: ve výběru modelu jen cloudový model', opts.length === 1 && /jen cloud/.test(opts[0]), opts.join(' / '));
         } else {

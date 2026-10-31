@@ -473,6 +473,8 @@ async function runAgent(user, kind, agent, body, grade) {
     // Odpověď bez volání modelu (např. kontrola vymyšlené sp. zn. „99 Cdo 9999/2031“) nemá rozhodnutí o cloudu.
     if (ok2(r.status) && r.json && r.json.cloudPolicy == null) run.bezModelu = true;
     if (cp && !cp.cloud && cp.code) run.cloudOdepreno = cp.code;
+    // Spisy, které podle serveru do dotazu přispěly (rozhodnutí pravidel cloudu) — K21a je ověřuje proti souhlasům simulace.
+    if (cp && Array.isArray(cp.spisy)) run.cloudSpisy = cp.spisy.map(x => x && x.spisZn).filter(Boolean);
     if (cp && cp.naklady && typeof cp.naklady.odhadUsd === 'number') run.cloudUsd = cp.naklady.odhadUsd;
     delete run._caseId;
     agentRuns.push(run);
@@ -591,7 +593,7 @@ async function act(ev, M, R) {
             if (!text) return;
             const rizika = (d.expect && d.expect.rizika) || [];
             await runAgent(u, 'kontrola_smlouvy', 'kontrolor', { prompt: 'Zkontroluj přiloženou smlouvu pro našeho klienta (objednatele). Vypiš rizika a nevyvážená ustanovení s odkazem na článek a zákon.', context: text, contextFileName: S.uploaded[d.file].storedName },
-                resp => { const found = rizika.filter(p => rx(p).test(resp)); return { pass: found.length >= Math.ceil(rizika.length * 0.67), score: rizika.length ? found.length / rizika.length : 1, rizika: `${found.length}/${rizika.length}`, chybi: rizika.filter(p => !found.includes(p)), doc: d.file }; });
+                resp => { const found = rizika.filter(p => rx(p).test(resp)); return { pass: found.length >= Math.ceil(rizika.length * 0.67), score: rizika.length ? found.length / rizika.length : 1, rizika: `${found.length}/${rizika.length}`, chybi: rizika.filter(p => !found.includes(p)), doc: d.file, spisZn: d.spisZn || null }; }); // spis podle dokumentu (K21a: dřív bez něj falešná „porušení“)
             return;
         }
         case 'koncept': {
@@ -672,7 +674,8 @@ async function act(ev, M, R) {
             const d = R.pick(cands);
             const c = await get(u, 'dokument_obsah', '/api/inbox/content?fileName=' + encodeURIComponent(S.uploaded[d.file].storedName));
             const text = (c.json && (c.json.content || c.json.text)) || '';
-            await runAgent(u, 'odpoved_klientovi', 'sekretarka', { prompt: 'Navrhni krátkou odpověď klientovi na tento e-mail (k odeslání až po schválení advokátem).', context: text, contextFileName: S.uploaded[d.file].storedName, ragFilters: { caseNumber: d.spisZn } });
+            await runAgent(u, 'odpoved_klientovi', 'sekretarka', { prompt: 'Navrhni krátkou odpověď klientovi na tento e-mail (k odeslání až po schválení advokátem).', context: text, contextFileName: S.uploaded[d.file].storedName, ragFilters: { caseNumber: d.spisZn } },
+                (resp, rr) => ({ pass: ok2(rr.status) && resp.length > 80, score: resp.length > 80 ? 1 : 0, spisZn: d.spisZn, doc: d.file }));
             return;
         }
         case 'vysvetleni_klientovi': {
@@ -916,11 +919,16 @@ async function endOfDay(M) {
         // K21: do cloudu jen veřejné dotazy a spisy se souhlasem klienta — nic jiného (mlčenlivost).
         const done = agentRuns.filter(r => ok2(r.status));
         // smí do cloudu: veřejný dotaz, nebo spis se souhlasem, který není stupně A a nebyl před dotazem odvolán
-        const smi = r => r.verejne || (r.spisZn && S.souhlas[r.spisZn] === true && !S.stupenA[r.spisZn]
-            && !(S.odvolano[r.spisZn] && S.odvolano[r.spisZn] <= r.t0));
+        const smiZn = (zn, r) => S.souhlas[zn] === true && !S.stupenA[zn] && !(S.odvolano[zn] && S.odvolano[zn] <= r.t0);
+        // Spisy podle serveru (cloudPolicy.spisy) mají přednost — tak se pozná i spis určený podle dokumentu (kontrola smlouvy).
+        const smi = r => {
+            const zn = r.cloudSpisy && r.cloudSpisy.length ? r.cloudSpisy : (r.spisZn ? [r.spisZn] : []);
+            if (!zn.length) return !!r.verejne;
+            return zn.every(z => smiZn(z, r));
+        };
         const poruseni = done.filter(r => r.cloud && !smi(r));
         check('K21a', 'Do cloudu nic bez souhlasu klienta, nic ze spisu stupně A ani po odvolání souhlasu, nic neznámého původu', poruseni.length === 0,
-            { severity: 'critical', detail: `${poruseni.length} porušení z ${done.length}${poruseni.length ? ': ' + poruseni.slice(0, 5).map(r => `${r.kind} ${r.spisZn || ''}`).join(', ') : ''}` });
+            { severity: 'critical', detail: `${poruseni.length} porušení z ${done.length}${poruseni.length ? ': ' + poruseni.slice(0, 5).map(r => `${r.kind} ${(r.cloudSpisy && r.cloudSpisy.join("+")) || r.spisZn || ''}`).join(', ') : ''}` });
         const ver = done.filter(r => r.verejne && !r.bezModelu);
         check('K21b', 'Obecné dotazy (bez klientských dat) odpověděl cloudový model', !ver.length || ver.filter(r => r.cloud).length / ver.length >= 0.8,
             { severity: 'medium', detail: `${ver.filter(r => r.cloud).length}/${ver.length} v cloudu (${done.filter(r => r.verejne && r.bezModelu).length} odpovědí bez modelu nepočítáno); odepřeno: ${[...new Set(ver.filter(r => !r.cloud).map(r => r.cloudOdepreno).filter(Boolean))].join(', ') || '—'}` });
