@@ -427,7 +427,9 @@ if [ "$PROFILE" = "kancelar" ]; then
       OFFICE_DATASET=/opt/ds-gen.tar.gz
       echo "=== dataset: $(tail -n 1 "$OUT/dataset_gen.log") ($(du -h /opt/ds-gen.tar.gz | cut -f1))"
     else
-      echo "!! generování datasetu selhalo (viz dataset_gen.log) — pokračuji s ${OFFICE_DATASET:-výchozí sadou}"
+      # Bez velké sady by noční test běžel 10 h s malou kanceláří (31. 10. 2026) — zbytečné náklady. Simulaci přeskočit.
+      echo "!! generování datasetu selhalo (viz dataset_gen.log) — simulace se NESPUSTÍ, instance se po nahrání výsledků vypne"
+      SKIP_OFFICE=1
     fi
   fi
   SIM_LIMIT=$(( OFFICE_HOURS * 60 + ${OFFICE_EXTRA_MIN:-0} + 60 ))
@@ -435,7 +437,7 @@ if [ "$PROFILE" = "kancelar" ]; then
   shutdown -h +"$SIM_LIMIT" "LexisLocal remote test: časový limit (od začátku simulace)"
   echo "=== časový limit přenastaven: vypnutí nejpozději za $SIM_LIMIT min (od začátku simulace)"
   echo "=== office_day start $(date -Is) (den $OFFICE_HOURS h)"
-  node backend/scripts/office_day.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
+  [ "${SKIP_OFFICE:-0}" = "1" ] || node backend/scripts/office_day.js --base https://127.0.0.1 --token "$TOKEN" --insecure --model "$CHAT_MODEL" \
     --hours "$OFFICE_HOURS" --restart-cmd "systemctl restart lexislocal" --restart-at 4.5 \
     --intenzita "$OFFICE_INTENZITA" --upload-concurrency "$OFFICE_UPLOAD_CONC" ${OFFICE_DATASET:+--dataset "$OFFICE_DATASET"} \
     $([ "${OFFICE_CLOUD:-0}" = "1" ] && echo --cloud) $([ "${OFFICE_JEN_CLOUD:-0}" = "1" ] && echo --jen-cloud) --out "$OUT/kancelar" --label server > "$OUT/office_day.log" 2>&1 || echo "!! office_day skončil s chybou (viz office_day.log)"

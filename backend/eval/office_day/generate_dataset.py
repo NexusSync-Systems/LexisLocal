@@ -346,7 +346,20 @@ def main():
     ap.add_argument('--velka', action='store_true', help='větší kancelář (10 lidí) pro zátěžový den')
     ap.add_argument('--noc', action='store_true', help='kancelář 20 lidí pro noční zátěžový test (s --spisy 1000 --onboarding 3000 --den 1000)')
     a = ap.parse_args()
-    global KANCELAR, ADVOKATI
+    global KANCELAR, ADVOKATI, JMENA_M, JMENA_Z, PRIJMENI, FIRMY_A, FIRMY_B
+    if a.noc:
+        # 1000 spisů = ~2000 stran; původní zásoba (~900 různých jmen) nestačí na nové věci bez střetu
+        # (31. 10. 2026: RuntimeError „málo jmen pro nové strany“). Rozšíření jen pro --noc, ostatní sady se nemění.
+        JMENA_M = JMENA_M + ['Karel', 'Josef', 'Miroslav', 'Zdeněk', 'Roman', 'Marek', 'Daniel', 'Adam', 'Matěj', 'Vít', 'Igor', 'Libor', 'Robert', 'Šimon', 'Dominik']
+        JMENA_Z = JMENA_Z + ['Klára', 'Michaela', 'Simona', 'Lenka', 'Pavla', 'Martina', 'Gabriela', 'Dana', 'Renata', 'Šárka', 'Adéla', 'Kristýna', 'Nikola', 'Eliška', 'Ilona']
+        PRIJMENI = PRIJMENI + [('Bartoš', 'Bartošová'), ('Vlček', 'Vlčková'), ('Polák', 'Poláková'), ('Kopecký', 'Kopecká'), ('Konečný', 'Konečná'),
+            ('Malý', 'Malá'), ('Holub', 'Holubová'), ('Štěpánek', 'Štěpánková'), ('Kadlec', 'Kadlecová'), ('Holý', 'Holá'),
+            ('Šimek', 'Šimková'), ('Musil', 'Musilová'), ('Krejčí', 'Krejčí'), ('Toman', 'Tomanová'), ('Moravec', 'Moravcová'),
+            ('Kříž', 'Křížová'), ('Říha', 'Říhová'), ('Bureš', 'Burešová'), ('Hrubý', 'Hrubá'), ('Mach', 'Machová'),
+            ('Blažek', 'Blažková'), ('Matoušek', 'Matoušková'), ('Šťastný', 'Šťastná'), ('Ševčík', 'Ševčíková'), ('Havlíček', 'Havlíčková')]
+        FIRMY_A = FIRMY_A + ['Zenit', 'Astra', 'Boreas', 'Cygnus', 'Draco', 'Etna', 'Fénix', 'Gemini', 'Helios', 'Juno', 'Kosmos', 'Luna',
+            'Meteor', 'Nimbus', 'Omega', 'Pegas', 'Quasar', 'Rigel', 'Sigma', 'Titan']
+        FIRMY_B = FIRMY_B + ['Doprava', 'Strojírny', 'Textil', 'Nábytek', 'Elektro', 'Potraviny', 'Zahrady', 'Okna', 'Tisk', 'Agro', 'Klima', 'Kovo']
     if a.velka or a.noc:
         KANCELAR = KANCELAR_NOC if a.noc else KANCELAR_VELKA
         ADVOKATI = [u for u in KANCELAR['uzivatele'] if u['role'] == 'advokat']
