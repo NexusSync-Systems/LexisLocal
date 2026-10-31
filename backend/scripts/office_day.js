@@ -1038,6 +1038,21 @@ function writeReport(meta) {
         hours.push({ hodina: `${h}:00`, pozadavku: l.length, chyb: l.filter(o => !o.ok && !o.restart).length, agentu: ag.length, agentP50: pctl(ag, 50), agentP95: pctl(ag, 95),
             prijem: l.filter(o => /^prijem/.test(o.action)).length });
     }
+    // K30 (noční zátěž): výkon v čase — chybovost a odezva agentů v posledních hodinách dne proti prvním (únik paměti,
+    // narůstající fronta, zpomalení s rostoucím archivem). Jen hodiny s aspoň 5 dotazy agentů.
+    {
+        const hrs = hours.filter(h => h.agentu >= 5);
+        if (hrs.length >= 4) {
+            const ctvrt = Math.max(1, Math.floor(hrs.length / 4));
+            const prvni = hrs.slice(0, ctvrt), posledni = hrs.slice(-ctvrt);
+            const p95 = arr => Math.max(...arr.map(h => h.agentP95 || 0));
+            const chyb = arr => arr.reduce((a, h) => a + h.chyb, 0) / Math.max(1, arr.reduce((a, h) => a + h.pozadavku, 0));
+            const a0 = p95(prvni), a1 = p95(posledni), c0 = chyb(prvni), c1 = chyb(posledni);
+            check('K30', 'Výkon v čase: na konci dne odezva agentů nejvýš 2× horší a chybovost nejvýš o 2 body vyšší než na začátku',
+                a1 <= 2 * Math.max(a0, 1) && c1 <= c0 + 0.02,
+                { severity: 'medium', detail: `p95 agentů ${fmtS(a0)} → ${fmtS(a1)}; chybovost ${(c0 * 100).toFixed(1)} % → ${(c1 * 100).toFixed(1)} % (${prvni.map(h => h.hodina).join(',')} × ${posledni.map(h => h.hodina).join(',')})` });
+        }
+    }
     const byKind = {};
     agentRuns.forEach(r => { const k = r.kind; byKind[k] = byKind[k] || { n: 0, pass: 0, ms: [], sim: 0, restart: 0, odmitnuto: 0 }; if (r.restart) { byKind[k].restart++; return; } if (r.odmitnuto) { byKind[k].odmitnuto++; return; } byKind[k].n++; if (r.pass) byKind[k].pass++; if (r.simulated) byKind[k].sim++; byKind[k].ms.push(r.ms); });
     const failed = checks.filter(c => !c.ok);

@@ -416,6 +416,20 @@ if [ "$PROFILE" = "kancelar" ]; then
   # Časový limit od ZAČÁTKU SIMULACE, ne od startu instance (27. 10. 2026): příprava báze trvá různě dlouho
   # a nesmí ukrojit čas ze simulovaného dne. Den + rezerva (OFFICE_EXTRA_MIN, kontroly a záloha) + 60 min.
   # Po doběhnutí se instance vypne sama (STOP_AFTER_TESTS); tohle je jen pojistka proti zaseknutí.
+  # Noční zátěž (bootstrap-kancelar-noc.sh): dataset se vygeneruje až tady (~5 000 dokumentů, ~150 MB — do gitu nepatří).
+  if [ -n "${OFFICE_GEN:-}" ]; then
+    echo "=== generuji dataset: $OFFICE_GEN"
+    apt-get install -y -qq fonts-dejavu-core >/dev/null 2>&1 || true
+    python3 -m pip install -q reportlab python-docx Pillow >/dev/null 2>&1 || python3 -m pip install -q --break-system-packages reportlab python-docx Pillow >/dev/null 2>&1 || true
+    rm -rf /opt/ds-gen
+    if python3 backend/eval/office_day/generate_dataset.py --out /opt/ds-gen $OFFICE_GEN > "$OUT/dataset_gen.log" 2>&1 \
+       && tar czf /opt/ds-gen.tar.gz -C /opt/ds-gen . ; then
+      OFFICE_DATASET=/opt/ds-gen.tar.gz
+      echo "=== dataset: $(tail -n 1 "$OUT/dataset_gen.log") ($(du -h /opt/ds-gen.tar.gz | cut -f1))"
+    else
+      echo "!! generování datasetu selhalo (viz dataset_gen.log) — pokračuji s ${OFFICE_DATASET:-výchozí sadou}"
+    fi
+  fi
   SIM_LIMIT=$(( OFFICE_HOURS * 60 + ${OFFICE_EXTRA_MIN:-0} + 60 ))
   shutdown -c 2>/dev/null || true
   shutdown -h +"$SIM_LIMIT" "LexisLocal remote test: časový limit (od začátku simulace)"

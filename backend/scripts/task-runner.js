@@ -172,8 +172,9 @@ const ULOHY = {
         // kancelar-velka = zátěžový den větší kanceláře (10 lidí, 300 spisů, 350 písemností, tempo ×1,5; ~10,5 h)
         // kancelar-bedrock = 3h den se serverem napojeným na Claude přes Bedrock EU (role instance; K21 hlídá, co smí do cloudu)
         // kancelar-jen-cloud = totéž, ale kancelář bez lokálního modelu (Ollama zastavená, vyhledávání v aplikaci, K23)
+        // kancelar-noc = noční zátěž: 20 lidí, 1000 spisů, ~5000 dokumentů, 10 h, tempo ×3 (~14–16 h instance)
         // judikatura-plus = judikatura + doladěný vyhledávací model, reranker, 5 pasáží (K17; ~6–7 h kvůli přepočtu vektorů)
-        const profil = oneOf(p.profil, ['judikatura', 'kancelar', 'kancelar-3h', 'kancelar-velka', 'kancelar-bedrock', 'kancelar-jen-cloud', 'judikatura-plus'], 'judikatura');
+        const profil = oneOf(p.profil, ['judikatura', 'kancelar', 'kancelar-3h', 'kancelar-velka', 'kancelar-bedrock', 'kancelar-jen-cloud', 'judikatura-plus', 'kancelar-noc'], 'judikatura');
         // Typ instance: jen GPU typy s jednou GPU (26. 10. 2026 g6.xlarge v eu-central-1 bez kapacity ve všech zónách).
         // g5.xlarge = A10G 24 GB (rychlejší), g4dn.xlarge = T4 16 GB (pomalejší) — odezvy nejdou přímo srovnat s g6 (L4).
         const typ = oneOf(p.typ, ['g6.xlarge', 'g5.xlarge', 'g4dn.xlarge'], 'g6.xlarge');

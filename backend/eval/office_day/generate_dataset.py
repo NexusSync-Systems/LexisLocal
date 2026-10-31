@@ -60,6 +60,25 @@ KANCELAR_VELKA = {
     ]
 }
 
+# Noční zátěžový test (--noc): 10 advokátů, 5 koncipientů, 5 asistentek (20 lidí).
+KANCELAR_NOC = {
+    'nazev': 'Advokátní kancelář Malá, Veselý & partneři (SIMULACE – noční zátěž)',
+    'uzivatele': [u for u in KANCELAR_VELKA['uzivatele'] if u['role'] == 'advokat'] + [
+        {'key': 'svoboda', 'name': 'JUDr. Karel Svoboda', 'role': 'advokat'},
+        {'key': 'novotna', 'name': 'Mgr. Eva Novotná', 'role': 'advokat'},
+        {'key': 'cerny', 'name': 'Mgr. Jakub Černý', 'role': 'advokat'},
+        {'key': 'prochazkova', 'name': 'JUDr. Lucie Procházková', 'role': 'advokat'},
+    ] + [u for u in KANCELAR_VELKA['uzivatele'] if u['role'] == 'koncipient'] + [
+        {'key': 'kucera', 'name': 'Mgr. Filip Kučera', 'role': 'koncipient'},
+        {'key': 'vesela', 'name': 'Mgr. Klára Veselá', 'role': 'koncipient'},
+        {'key': 'fiala', 'name': 'Mgr. Adam Fiala', 'role': 'koncipient'},
+    ] + [u for u in KANCELAR_VELKA['uzivatele'] if u['role'] == 'asistent'] + [
+        {'key': 'kolarova', 'name': 'Jitka Kolářová', 'role': 'asistent'},
+        {'key': 'nemcova', 'name': 'Petra Němcová', 'role': 'asistent'},
+        {'key': 'pospisilova', 'name': 'Martina Pospíšilová', 'role': 'asistent'},
+    ]
+}
+
 JMENA_M = ['Jan', 'Petr', 'Pavel', 'Martin', 'Tomáš', 'Jiří', 'Lukáš', 'Jakub', 'David', 'Michal', 'Ondřej', 'Radek', 'Vojtěch', 'Filip', 'Aleš']
 JMENA_Z = ['Eva', 'Jana', 'Lucie', 'Petra', 'Kateřina', 'Markéta', 'Veronika', 'Tereza', 'Hana', 'Zuzana', 'Alena', 'Monika', 'Barbora', 'Iveta']
 PRIJMENI = [('Novák', 'Nováková'), ('Svoboda', 'Svobodová'), ('Dvořák', 'Dvořáková'), ('Černý', 'Černá'), ('Procházka', 'Procházková'),
@@ -325,10 +344,11 @@ def main():
     ap.add_argument('--spisy', type=int, default=150); ap.add_argument('--onboarding', type=int, default=250)
     ap.add_argument('--den', type=int, default=150); ap.add_argument('--nove-spisy', type=int, default=8)
     ap.add_argument('--velka', action='store_true', help='větší kancelář (10 lidí) pro zátěžový den')
+    ap.add_argument('--noc', action='store_true', help='kancelář 20 lidí pro noční zátěžový test (s --spisy 1000 --onboarding 3000 --den 1000)')
     a = ap.parse_args()
     global KANCELAR, ADVOKATI
-    if a.velka:
-        KANCELAR = KANCELAR_VELKA
+    if a.velka or a.noc:
+        KANCELAR = KANCELAR_NOC if a.noc else KANCELAR_VELKA
         ADVOKATI = [u for u in KANCELAR['uzivatele'] if u['role'] == 'advokat']
     g = Gen(a.seed)
     out = a.out
