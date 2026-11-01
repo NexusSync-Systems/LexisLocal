@@ -38,7 +38,8 @@ bash pilot-cloudshell.sh klic --zkratka novak
 
 - `kancelar` založí ze šablony [`bedrock-eu-kancelar.yaml`](../scripts/aws/bedrock-eu-kancelar.yaml) stack
   `lexislocal-pilot-novak`: IAM uživatele, který smí **jen** Claude přes EU profil a rerankery v EU (vše mimo EU
-  výslovně zakázané), a měsíční rozpočet s e-mailem při 80 % a 100 %. **Potvrdit e-mail od AWS** (odběr upozornění).
+  výslovně zakázané), a měsíční rozpočet s e-mailem při 80 % a 100 %. **Náklady účtu tento uživatel nevidí**
+  (`CteniNakladu=ne`) — útratu hlídá dodavatel příkazem `stav`. **Potvrdit e-mail od AWS** (odběr upozornění).
 - `klic` vytvoří přístupový klíč a **jednou** ho zobrazí ve tvaru pro `~/.aws/credentials`. Opsat rovnou na Mac
   advokáta (krok C2), nefotit, neposílat. Po Enteru se obrazovka vymaže.
 - Kdykoli: `bash pilot-cloudshell.sh stav --zkratka novak` — stav stacku, klíče (jen ID a stav), poslední použití,
@@ -68,7 +69,9 @@ Do souboru vložit tři řádky z `klic` (`[lexislocal-pilot]`, `aws_access_key_
 cd ~ && git clone https://github.com/NexusSync-Systems/LexisLocal.git && cd LexisLocal && git checkout release-prep && npm ci
 ```
 
-> Instalace z `.dmg`: kde aplikace čte `.env`, je zatím otevřená otázka — pro pilot instalace ze zdrojů (výše).
+> Instalace z `.dmg` (od 1. 11. 2026): nastavení patří do `~/Library/Application Support/LexisLocal/.env`
+> (server ho čte, když v pracovní složce `.env` není; v logu po startu „⚙️ Nastavení (.env): …“). Skripty v kroku C5–C6
+> (báze, testy) zatím potřebují zdrojovou složku — pro pilot proto dál instalace ze zdrojů.
 
 **C4. Nastavení** (`.env` v kořeni LexisLocalu):
 
@@ -86,6 +89,8 @@ RAG_RERANK=1
 RAG_RERANK_PROVIDER=bedrock
 BEDROCK_RERANK_MODEL=cohere.rerank-v3-5:0
 BEDROCK_RERANK_RPM=3            # kvóta účtu (Service Quotas); po zvýšení upravit
+RAG_QUERY_TERMS=1
+LEXIS_AWS_BILLING_SYNC=0         # pilotní klíč nevidí náklady účtu (CteniNakladu=ne)
 EOF
 ```
 
@@ -102,7 +107,7 @@ node backend/scripts/kb-balicek.js --instaluj ~/Downloads/lexis-baze-*.tar.gz
 
 ```bash
 node backend/scripts/bedrock-check.js --volat      # nastavení + 1 syntetický dotaz (zlomek centu)
-node backend/scripts/aws-pilot-test.js             # celý test proti AWS, protokol v scratch/aws-test-<datum>.md
+node backend/scripts/aws-pilot-test.js --bez-ce    # celý test proti AWS (bez Cost Exploreru), protokol v scratch/aws-test-<datum>.md
 npm start                                          # server; vyhledávací model se při 1. startu stáhne (~2,2 GB)
 node backend/scripts/readiness.js                  # v druhém okně Terminálu
 ```

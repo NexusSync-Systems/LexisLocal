@@ -295,6 +295,11 @@ if [ "${OFFICE_CLOUD:-0}" = "1" ]; then
   sed -i -e 's/^LEXIS_PILOT_LOCAL_ONLY=1$/LEXIS_PILOT_LOCAL_ONLY=0/' -e 's/^AI_CHAT_PROVIDER=ollama$/AI_CHAT_PROVIDER=bedrock/' /opt/LexisLocal/.env
   printf 'BEDROCK_REGION=eu-central-1\nBEDROCK_MODEL_ID=%s\nBEDROCK_CREDENTIALS=instance\nLEXIS_AWS_BILLING_SYNC=0\n' "${BEDROCK_MODEL_ID:-eu.anthropic.claude-sonnet-4-6}" >> /opt/LexisLocal/.env
   echo "=== cloud: Bedrock EU (${BEDROCK_MODEL_ID:-eu.anthropic.claude-sonnet-4-6}), přístup z role instance"
+  # Pilot jen cloud (1. 11. 2026): přeřazení výsledků přes Bedrock Rerank v EU místo rerankeru na GPU.
+  if [ -n "${BEDROCK_RERANK_MODEL:-}" ]; then
+    printf 'RAG_RERANK=1\nRAG_RERANK_PROVIDER=bedrock\nBEDROCK_RERANK_MODEL=%s\nBEDROCK_RERANK_RPM=%s\n' "$BEDROCK_RERANK_MODEL" "${BEDROCK_RERANK_RPM:-3}" >> /opt/LexisLocal/.env
+    echo "=== přeřazení: Bedrock Rerank $BEDROCK_RERANK_MODEL (limit ${BEDROCK_RERANK_RPM:-3}/min)"
+  fi
 fi
 [ -n "${AGENT_CHUNK_CONCURRENCY:-}" ] && echo "AGENT_CHUNK_CONCURRENCY=$AGENT_CHUNK_CONCURRENCY" >> /opt/LexisLocal/.env
 cat > /etc/systemd/system/lexislocal.service <<UNIT

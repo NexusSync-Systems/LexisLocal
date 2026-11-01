@@ -100,9 +100,10 @@ kancelar)
   curl -fsSL "$SABLONA_URL" -o bedrock-eu-kancelar.yaml
   aws cloudformation deploy --region "$REGION" --stack-name "$STACK" --template-file bedrock-eu-kancelar.yaml \
     --capabilities CAPABILITY_NAMED_IAM --no-fail-on-empty-changeset \
-    --parameter-overrides "NazevUzivatele=$UZIVATEL" "MesicniRozpocetUSD=$ROZPOCET" "EmailUpozorneni=$EMAIL" \
+    --parameter-overrides "NazevUzivatele=$UZIVATEL" "MesicniRozpocetUSD=$ROZPOCET" "EmailUpozorneni=$EMAIL" "CteniNakladu=ne" \
     --tags aplikace=LexisLocal pilot="$ZKRATKA"
-  ok "hotovo — uživatel $UZIVATEL smí jen Claude přes EU profil a rerankery v EU, rozpočet s upozorněním"
+  ok "hotovo — uživatel $UZIVATEL smí jen Claude přes EU profil a rerankery v EU (náklady účtu NEvidí), rozpočet s upozorněním"
+  echo "  Na Macu advokáta v .env: LEXIS_AWS_BILLING_SYNC=0 a test spouštět s --bez-ce (útratu hlídá: bash pilot-cloudshell.sh stav)"
   pozor "AWS pošle na $EMAIL potvrzení odběru upozornění rozpočtu — je potřeba ho potvrdit"
   echo "Další krok: bash pilot-cloudshell.sh klic --zkratka $ZKRATKA"
   ;;

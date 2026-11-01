@@ -1,4 +1,6 @@
-require('dotenv').config();
+// Nastavení: LEXIS_ENV_FILE → .env v pracovní složce → .env v datové složce aplikace (lib/env_load.js)
+const _envSoubory = require('./lib/env_load').nacti();
+if (typeof process.env.JEST_WORKER_ID === 'undefined') console.log(`⚙️ Nastavení (.env): ${_envSoubory.length ? _envSoubory.join(', ') : 'žádný soubor — výchozí hodnoty'}`);
 // Režim AI zvolený správcem v aplikaci má přednost před .env (lib/ai_rezim.js) — dřív, než se cokoli načte.
 if (typeof process.env.JEST_WORKER_ID === 'undefined') require('./lib/ai_rezim').applyPersisted(console.log);
 

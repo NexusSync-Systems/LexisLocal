@@ -19,6 +19,16 @@ Parameters:
     Type: String
     AllowedPattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
     Description: E-mail správce kanceláře pro upozornění na rozpočet.
+  CteniNakladu:
+    Type: String
+    Default: ano
+    AllowedValues: [ano, ne]
+    Description: >
+      Smí LexisLocal číst náklady účtu (Cost Explorer) pro porovnání odhadu s fakturou? „ano“ ve vlastním účtu
+      kanceláře; „ne“ pro pilot v účtu dodavatele (klíč na Macu advokáta by jinak viděl náklady celého účtu).
+
+Conditions:
+  SNaklady: !Equals [!Ref CteniNakladu, ano]
 
 Resources:
   BedrockEuPolitika:
@@ -71,13 +81,17 @@ Resources:
             Condition:
               StringLike:
                 aws:RequestedRegion: 'eu-*'
-          - Sid: CteniNakladuProPorovnani
+          - !If
+            - SNaklady
             # LexisLocal večer porovná svůj odhad nákladů s fakturací AWS (Cost Explorer, jen částky,
             # žádný obsah dotazů). Cost Explorer je globální služba s koncovým bodem us-east-1.
-            Effect: Allow
-            Action:
-              - ce:GetCostAndUsage
-            Resource: '*'
+            # Pilot v účtu dodavatele: CteniNakladu=ne (náklady hlídá dodavatel, pilot-cloudshell.sh stav).
+            - Sid: CteniNakladuProPorovnani
+              Effect: Allow
+              Action:
+                - ce:GetCostAndUsage
+              Resource: '*'
+            - !Ref AWS::NoValue
           - Sid: ZakazMimoEU
             Effect: Deny
             Action: 'bedrock:*'

@@ -12,6 +12,12 @@ export OFFICE_CLOUD=1
 export OFFICE_JEN_CLOUD=1
 export OFFICE_EXTRA_MIN=90   # pilotní test proti AWS, srovnání modelů, kontrola rozhraní
 export BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-4-6
+# Generálka pilotu (1. 11. 2026): přeřazení přes Cohere Rerank 3.5 na Bedrocku (měření pilot-hledani: správný § 96,8 %),
+# slovník hovorových pojmů, limit podle kvóty účtu (3 volání/min — při souběhu 10 lidí se část hledání obejde bez přeřazení).
+export BEDROCK_RERANK_MODEL=cohere.rerank-v3-5:0
+export BEDROCK_RERANK_RPM=3
+export RAG_QUERY_TERMS=1
+export RAG_RERANK_SPLIT=1
 export KB_ARCHIVE_S3=s3://lexislocal-bench-results-485237569555/_cache/kb-1.2.0.tar.gz
 exec > >(tee -a /var/log/lexis-bootstrap.log) 2>&1
 for i in $(seq 1 20); do
