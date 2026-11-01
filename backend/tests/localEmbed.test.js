@@ -36,4 +36,16 @@ describe('local_embed', () => {
             expect(await ai.embeddings({ model: 'bge-m3', prompt: 'x' })).toEqual({ embedding: [1, 0] });
         } finally { if (prev === undefined) delete process.env.AI_EMBED_PROVIDER; else process.env.AI_EMBED_PROVIDER = prev; jest.dontMock('../lib/local_embed'); jest.dontMock('../lib/ollama_client'); }
     });
+    test('předehřátí: model se načte po startu, chyba nespadne, EMBED_ONNX_WARMUP=0 vypne', async () => {
+        const calls = [];
+        const r = await LE.warm({ transformers: fakeTf(calls) });
+        expect(r.ok).toBe(true);
+        expect(calls.filter(c => c.task === 'feature-extraction')).toHaveLength(1);
+        LE._reset();
+        const bad = await LE.warm({ transformers: { env: {}, pipeline: async () => { throw new Error('bez internetu'); } } });
+        expect(bad).toMatchObject({ ok: false, error: 'bez internetu' });
+        LE._reset();
+        process.env.EMBED_ONNX_WARMUP = '0';
+        try { expect(await LE.warm({ transformers: fakeTf([]) })).toEqual({ skipped: true }); } finally { delete process.env.EMBED_ONNX_WARMUP; }
+    });
 });

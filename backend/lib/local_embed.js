@@ -58,6 +58,24 @@ function embeddings(params, opts) {
     return p;
 }
 
+/**
+ * Předehřátí po startu (režim jen cloud): model se načte (napoprvé stáhne ~2,2 GB) hned, ne až
+ * při prvním dotazu advokáta. Vypnutí EMBED_ONNX_WARMUP=0. Nikdy nevyhodí chybu.
+ */
+async function warm(opts) {
+    if (String(process.env.EMBED_ONNX_WARMUP == null ? '1' : process.env.EMBED_ONNX_WARMUP).trim() === '0') return { skipped: true };
+    const t0 = Date.now();
+    try {
+        await embeddings({ prompt: 'předehřátí vyhledávacího modelu' }, opts);
+        const ms = Date.now() - t0;
+        console.log(`🧠 Vyhledávací model v aplikaci připraven (${(ms / 1000).toFixed(1)} s).`);
+        return { ok: true, ms };
+    } catch (e) {
+        console.warn('⚠️ Předehřátí vyhledávacího modelu selhalo:', e.message);
+        return { ok: false, error: e.message };
+    }
+}
+
 function _reset() { _extractor = null; _loading = null; _queue = Promise.resolve(); }
 
-module.exports = { embeddings, MODEL_ID, DTYPE, _reset };
+module.exports = { embeddings, warm, MODEL_ID, DTYPE, _reset };

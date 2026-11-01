@@ -25,4 +25,21 @@ function findCaseNumber(text) {
     return m ? normalize(m[1]) : '';
 }
 
-module.exports = { findCaseNumber, normalize, CASE_CORE: CORE };
+const FULL = new RegExp('^' + CORE + '$');
+
+/**
+ * Výběr sp. zn. mezi pravidly (regex) a AI vytěžením. AI má přednost, jen když vrátí úplnou sp. zn.
+ * (senát, rejstřík, číslo/ročník), která není jen kusem té z pravidel.
+ * Noční test 31. 10. 2026: AI vrátilo „383/2026“ místo „38 P a Nc 383/2026“ → vznikl navíc spis.
+ */
+function preferCaseNumber(ruleCn, aiCn) {
+    const r = normalize(ruleCn), a = normalize(aiCn);
+    if (!a) return r;
+    if (!r) return a;
+    const nw = x => x.replace(/\s+/g, '').toLowerCase();
+    if (!FULL.test(a) && FULL.test(r)) return r;
+    if (nw(r) !== nw(a) && nw(r).includes(nw(a))) return r;
+    return a;
+}
+
+module.exports = { findCaseNumber, normalize, preferCaseNumber, CASE_CORE: CORE };

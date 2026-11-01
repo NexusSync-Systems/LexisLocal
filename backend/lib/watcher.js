@@ -242,7 +242,7 @@ async function _processDocument(filePath, opts = {}) {
     try {
         refinedMetadata = await runAIExtractor(text);
         if (refinedMetadata) {
-            if (refinedMetadata.caseNumber) metadata.caseNumber = refinedMetadata.caseNumber;
+            if (refinedMetadata.caseNumber) metadata.caseNumber = require('./case_number').preferCaseNumber(metadata.caseNumber, refinedMetadata.caseNumber);
             if (refinedMetadata.plaintiff) metadata.plaintiff = refinedMetadata.plaintiff;
             if (refinedMetadata.defendant) metadata.defendant = refinedMetadata.defendant;
             // Procesní lhůta nalezená v textu (odvolání/odpor/vyjádření) má přednost

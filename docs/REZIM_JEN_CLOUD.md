@@ -1,6 +1,6 @@
 # Režim „jen cloud“ — kancelář bez lokálního modelu (bez Ollamy)
 
-_Stav 30. 10. 2026. Pro kancelář, která nechce nebo nemůže provozovat počítač s GPU / Mac mini s lokálním modelem.
+_Stav 1. 11. 2026. Pro kancelář, která nechce nebo nemůže provozovat počítač s GPU / Mac mini s lokálním modelem.
 Odpovědi dává **Claude přes Amazon Bedrock v EU** ve vlastním účtu AWS kanceláře (`docs/BEDROCK_EU.md`)._
 
 ## Co se mění oproti hybridnímu režimu
@@ -47,6 +47,31 @@ Volitelné:
 Kombinace `LEXIS_JEN_CLOUD=1` s lokálním poskytovatelem chatu (`ollama`) je chyba konfigurace (aplikace ji odmítne).
 Kontrola připravenosti ukazuje „AI služba (Claude přes Bedrock EU)“ a „Vyhledávací model v aplikaci“; při startu se
 přeskočí kontrola lokálního modelu.
+
+## Přeřazení výsledků přes Bedrock (volitelné, pilot)
+
+Na Macu bez GPU není lokální reranker. Měření 26. 10. (původní bge-m3, bez rerankeru): správný § mezi pasážemi
+asistenta ~82 % (na 1. místě 34 %), proti 95 % (77 %) se sestavou s rerankerem na GPU. Přeřazení pasáží lze
+nechat na **Amazon Bedrock Rerank v EU**:
+
+```
+RAG_RERANK=1
+RAG_RERANK_PROVIDER=bedrock
+BEDROCK_RERANK_MODEL=cohere.rerank-v3-5:0   # nebo amazon.rerank-v1:0 (vybere měření pilot-hledani)
+BEDROCK_RERANK_USD=0.002                     # odhad ceny jednoho volání (náklady v Manažerském přehledu)
+```
+
+- Do AWS jde **jen dotaz a veřejné pasáže zákonů a judikatury**; úseky ze spisů zůstávají na svém místě a nikam
+  neodcházejí (`lib/rerank_service.js`).
+- Jen když dotaz pustí pravidla cloudu (spis se souhlasem / ☁️ Obecný dotaz), stejně jako odpověď Clauda. Jinak,
+  při chybě nebo vypršení (`RAG_RERANK_TIMEOUT_MS`) zůstane původní pořadí.
+- IAM: `bedrock:Rerank` + `bedrock:InvokeModel` na `cohere.rerank-*` / `amazon.rerank-*` v eu-* (šablona
+  `scripts/aws/bedrock-eu-kancelar.yaml`). Cohere je model třetí strany (AWS Marketplace) — předplatné jednou potvrdit
+  v konzoli Bedrock → Model access.
+- Kontrola: `node backend/scripts/aws-pilot-test.js` kroky R1 (přeřazení funguje) a R2 (u spisu stupně A nic neodejde).
+- Měření: profil `pilot-hledani` (`docs/SIMULACE_KANCELARE.md`), `KB_REG_PILOT=1` v `kb_regression.js`.
+
+Po startu se vyhledávací model v aplikaci načte hned (ne až u prvního dotazu); vypnutí `EMBED_ONNX_WARMUP=0`.
 
 ## Báze zákonů a judikatury
 

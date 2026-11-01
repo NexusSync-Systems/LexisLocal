@@ -104,6 +104,20 @@ describe('přírůstkový zápis partitionů (RAG_SHARD_MAX_CHUNKS=3)', () => {
         expect(tikyBehemNacteni).toBeGreaterThanOrEqual(3); // 3 přestávky (po shardech 1–3)
     });
 
+    test('loadPartitionShared: souběžné dotazy počkají na jedno načtení, každý má vlastní pole (noční test 31. 10.)', async () => {
+        rag.savePartition(SCOPE, { chunks: Array.from({ length: 10 }, (_, i) => mkChunk(400 + i)) });
+        rag._resetPartitionCache();
+        const readSpy = jest.spyOn(fs, 'readFileSync');
+        const [a, b] = await Promise.all([rag.loadPartitionShared(SCOPE), rag.loadPartitionShared(SCOPE)]);
+        const shard0Reads = readSpy.mock.calls.filter(c => /^\.rag_[0-9a-f]+\.json$/.test(path.basename(String(c[0])))).length;
+        readSpy.mockRestore();
+        expect(shard0Reads).toBe(1); // jedno načtení pro oba
+        expect(a.chunks).toHaveLength(10);
+        expect(b.chunks.map(c => c.id)).toEqual(a.chunks.map(c => c.id));
+        a.chunks.push({ id: 'navic' });
+        expect(b.chunks).toHaveLength(10); // úprava jednoho volajícího neovlivní druhého
+    });
+
     test('uložení beze změny nezapíše nic', () => {
         rag.savePartition(SCOPE, { chunks: Array.from({ length: 5 }, (_, i) => mkChunk(i)) });
         writeSpy.mockClear();

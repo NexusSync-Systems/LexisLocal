@@ -688,6 +688,23 @@ async function loadPartitionAsync(directoryName) {
 }
 
 /**
+ * Sdílené asynchronní načtení pro vyhledávání: souběžné dotazy (a předehřátí) na tutéž partition
+ * počkají na jedno načtení a nikdo neblokuje server synchronním čtením velké báze.
+ * Noční test 31. 10. 2026: po restartu v poledne dotaz agenta načetl bázi synchronně
+ * dřív, než ji stihlo předehřátí → 8 dotazů na upozornění 60 s bez odpovědi.
+ * Každý volající dostane vlastní kopii pole chunků (smí ho měnit).
+ */
+const _inflightLoads = new Map();
+function loadPartitionShared(directoryName) {
+    let p = _inflightLoads.get(directoryName);
+    if (!p) {
+        p = loadPartitionAsync(directoryName).finally(() => _inflightLoads.delete(directoryName));
+        _inflightLoads.set(directoryName, p);
+    }
+    return p.then(r => Object.assign({}, r, { chunks: ((r && r.chunks) || []).slice() }));
+}
+
+/**
  * Re-encrypts all partitions when the master key is rotated.
  */
 function reencryptAllPartitions(oldMasterKey, newMasterKey) {
@@ -724,7 +741,7 @@ async function loadIndex() {
     const dirs = getActiveDirectories();
     const allChunks = [];
     for (const dir of dirs) {
-        const part = loadPartition(dir);
+        const part = await loadPartitionShared(dir);
         if (part.chunks) {
             for (const c of part.chunks) allChunks.push(c);
         }
@@ -1203,7 +1220,7 @@ function warmKnowledgeBases(opts = {}) {
             for (const scope of _listKbScopes()) {
                 await new Promise(r => setImmediate(r)); // mezi bázemi pustit čekající požadavky
                 const t0 = Date.now();
-                const n = ((await loadPartitionAsync(scope)).chunks || []).length;
+                const n = ((await loadPartitionShared(scope)).chunks || []).length;
                 out.push({ scope, chunks: n, ms: Date.now() - t0 });
                 if (n) console.log(`🧠 RAG: báze ${scope} připravena (${n} kousků, ${((Date.now() - t0) / 1000).toFixed(1)} s)`);
             }
@@ -1296,11 +1313,11 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
     let chunks = [];
     if (clientAccess) {
         if (filters && filters.directory) {
-            chunks = loadPartition(filters.directory).chunks || [];
+            chunks = (await loadPartitionShared(filters.directory)).chunks || [];
         } else if (filters && Array.isArray(filters.fileNames) && filters.fileNames.length > 0) {
             const dirs = new Set(filters.fileNames.map(f => f.includes('/') ? f.split('/')[0] : 'root'));
             for (const dir of dirs) {
-                chunks.push(...(loadPartition(dir).chunks || []));
+                for (const c of ((await loadPartitionShared(dir)).chunks || [])) chunks.push(c);
             }
         } else {
             const index = await loadIndex();
@@ -1341,7 +1358,7 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
             if (typeof scope === 'string' && scope.indexOf(KB_PREFIX) === 0) {
                 // opts.kbFilter: jen pro měření (např. „jen zákony" vs. plná báze), produkce ho nepoužívá.
                 const keep = opts && typeof opts.kbFilter === 'function' ? opts.kbFilter : null;
-                for (const c of (loadPartition(scope).chunks || [])) if (!keep || keep(c)) chunks.push(c);
+                for (const c of ((await loadPartitionShared(scope)).chunks || [])) if (!keep || keep(c)) chunks.push(c);
             }
         }
     }
@@ -1520,6 +1537,7 @@ module.exports = {
     isVector,
     floatVector,
     warmKnowledgeBases,
+    loadPartitionShared,
     isJudikaturaChunk,
     mixKbResults,
     _rerankSplitMix,

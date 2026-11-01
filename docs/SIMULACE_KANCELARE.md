@@ -35,6 +35,7 @@ Profily (`"profil"` v úloze):
 | `kancelar-jen-cloud` | **kancelář bez lokálního modelu** (`docs/REZIM_JEN_CLOUD.md`): jako `kancelar-bedrock`, ale nejdřív shoda vektorů Ollama × model v aplikaci (`embed_compat.md`), pak se Ollama zastaví (`AI_EMBED_PROVIDER=onnx`, `LEXIS_JEN_CLOUD=1`). Souhlas u ~1/2 spisů. K23a–d: odpovědi jen z cloudu, žádné simulované, odmítnutí jen podle pravidel s důvodem, připravenost; rozhraní U4/U5 | zhuštěný do 3 h | ~6 h (+ jednotky USD za Claude) |
 | `kancelar-velka` | **zátěžový den**: 6 advokátů, 2 koncipienti, 2 asistentky, 300 spisů, 400 + 350 dokumentů, tempo práce ×1,5 (`--intenzita 1.5`) | 8 h | ~11 h |
 | `kancelar-noc` | **noční zátěžový test**: 20 lidí (10 advokátů, 5 koncipientů, 5 asistentek), 1000 spisů, 3000 + 1000 dokumentů, 30 nových věcí; dataset se generuje až na serveru (`generate_dataset.py --noc`), tempo ×3, lokální model, restart v poledne. Navíc K30 výkon v čase (odezva a chybovost konec × začátek dne) a paměť po 5 min | roztažený na 10 h | ~14–16 h (~11 USD) |
+| `pilot-hledani` | **vyhledávání jako na Macu v pilotu jen cloud**: původní bge-m3, bez lokálního rerankeru, 5 pasáží; `kb_regression` (`KB_REG_PILOT=1`) navíc s přeřazením přes Bedrock Rerank v EU (Cohere 3.5, Amazon 1.0) jako veřejné dotazy. Role instance potřebuje `bedrock:Rerank` | jen měření hledání | ~4–5 h (~4 USD EC2 + ~5 USD Rerank) |
 
 Simulace ověřuje i dashboard: název a logo kanceláře (Z12), že každý účet vidí sebe (K19) a připojení
 dalšího zařízení odkazem `/?pair=` s přihlášením vlastním účtem a zrušením zařízení (K20).
@@ -95,3 +96,17 @@ Opraveno 28. 10.:
 - 6× přerušené spojení (ECONNRESET) při vytížení serveru — server držel volné spojení jen 5 s jako klient → keep-alive
   65 s (`lib/http_timeouts.js`, `HTTP_KEEPALIVE_TIMEOUT_MS`); simulace čtení (GET) po přerušení jednou zopakuje a počítá zvlášť (K17b),
 - popisek Z2 podle počtu účtů v sadě, kontrola smlouvy ukládá, které rizikové klauzule chyběly (`chybi` v .json).
+
+Noční zátěžový test 31. 10. 2026 (`kancelar-noc`, g4dn.xlarge / T4, qwen2.5:7b, 20 lidí, 1000 spisů, 4000 dokumentů,
+tempo ×3, 10 h): **53/56 kontrol**, 35 893 požadavků, 1 398 odpovědí AI (všechny 200, žádná simulovaná),
+K30 výkon v čase OK (p95 agentů 8:00 196 s → 16:00 52 s, ráno brzdí dobíhající digitalizace), fronta po 16:30 0,8 min.
+Zavedení 1000 spisů z CSV a 3000 dokumentů 113 min (26,5 dok./min, zařazení 2572/2573), lhůty a data doručení 100 %,
+oprávnění (K7–K10) bez úniku, audit a záznamy AI neporušeny, záloha 2,5 GB ověřena. Paměť backendu 1,2–3,4 GB
+(kolísá, na konci 2,1 GB — bez trvalého růstu). Malý běh téhož dne (dataset-v1, 10 h): 49/49, paměť 1,2–2,2 GB.
+Nálezy:
+- AI vytěžení vrátilo zkrácenou sp. zn. „383/2026“ místo „38 P a Nc 383/2026“ a přepsalo správnou z pravidel →
+  spis navíc (Z11, K6). Opraveno 1. 11.: `case_number.preferCaseNumber()` (AI jen s úplnou sp. zn., která není kusem
+  té z pravidel), `lib/watcher.js`, `lib/paperless.js`, test `caseNumberPrefer.test.js`.
+- 8× timeout (60 s) dotazů na upozornění ~1–2 min po restartu v poledne (API odpovědělo po 4 s). Nejpravděpodobnější příčina: dotaz agenta
+  po restartu načetl velkou bázi synchronně (dřív než předehřátí). Opraveno 1. 11.: vyhledávání čte partitiony asynchronně po shardech a souběžné dotazy sdílejí jedno načtení
+  (`rag.loadPartitionShared`, test `ragLoadShared.test.js`). Ověří příští běh s restartem.

@@ -380,7 +380,8 @@ if [ "$PROFILE" = "judikatura" ]; then
   echo "=== studený start: API po $(( $(date +%s) - T0 )) s" | tee -a "$OUT/pamet.log"
   sleep 120; mem "studený start + předehřátí báze (2 min)"
   echo "=== kb_regression start $(date -Is)"
-  ( cd /opt/LexisLocal && EMBED_CACHE_FILE= NODE_OPTIONS=--max-old-space-size=8192 timeout 90m \
+  KB_REG_TIMEOUT=90m; [ "${KB_REG_PILOT:-0}" = "1" ] && KB_REG_TIMEOUT=180m   # pilot: + varianty s Bedrock Rerank (~3000 volání)
+  ( cd /opt/LexisLocal && EMBED_CACHE_FILE= NODE_OPTIONS=--max-old-space-size=8192 timeout $KB_REG_TIMEOUT \
       node backend/scripts/kb_regression.js --limit 0 --sample 30 --pool-compare 15 ) > "$OUT/kb_regression.log" 2>&1 \
     || echo "!! kb_regression skončil s chybou (viz kb_regression.log)"
   cp /opt/LexisLocal/bench-results/kb_regression_* "$OUT/" 2>/dev/null

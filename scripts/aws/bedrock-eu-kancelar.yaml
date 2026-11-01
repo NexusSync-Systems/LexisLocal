@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   LexisLocal — přístup ke Claude přes Amazon Bedrock JEN v EU (vlastní účet AWS kanceláře).
   Vytvoří IAM uživatele bez klíče (klíč si správce vytvoří v konzoli), politiku jen na volání
-  modelů Anthropic přes EU inference profily a explicitní zákaz Bedrocku mimo eu-* regiony,
+  modelů Anthropic přes EU inference profily (+ reranker výsledků v EU) a explicitní zákaz Bedrocku mimo eu-* regiony,
   plus měsíční rozpočet s upozorněním e-mailem. Spouštějte v regionu eu-central-1.
 
 Parameters:
@@ -36,6 +36,28 @@ Resources:
             Resource:
               - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.anthropic.*'
               - 'arn:aws:bedrock:eu-*::foundation-model/anthropic.*'
+            Condition:
+              StringLike:
+                aws:RequestedRegion: 'eu-*'
+          - Sid: PrerazeniVysledkuVEU
+            # Pilot jen cloud (1. 11. 2026): přeřazení výsledků vyhledávání (Bedrock Rerank) — dotaz a veřejné
+            # pasáže zákonů a judikatury, nikdy úseky ze spisů (lib/rerank_service.js). Rerank potřebuje
+            # bedrock:Rerank i bedrock:InvokeModel na modelu rerankeru. Cohere Rerank je model třetí strany
+            # (AWS Marketplace) — předplatné jednou potvrdí správce účtu v konzoli Bedrock (Model access).
+            Effect: Allow
+            Action:
+              - bedrock:Rerank
+            Resource: '*'
+            Condition:
+              StringLike:
+                aws:RequestedRegion: 'eu-*'
+          - Sid: ModelRerankeruVEU
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+            Resource:
+              - 'arn:aws:bedrock:eu-*::foundation-model/cohere.rerank-*'
+              - 'arn:aws:bedrock:eu-*::foundation-model/amazon.rerank-*'
             Condition:
               StringLike:
                 aws:RequestedRegion: 'eu-*'
@@ -80,6 +102,8 @@ Resources:
             NotResource:
               - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.anthropic.*'
               - 'arn:aws:bedrock:eu-*::foundation-model/anthropic.*'
+              - 'arn:aws:bedrock:eu-*::foundation-model/cohere.rerank-*'
+              - 'arn:aws:bedrock:eu-*::foundation-model/amazon.rerank-*'
 
   LexisLocalUzivatel:
     Type: AWS::IAM::User

@@ -403,6 +403,11 @@ if (require.main === module) {
     }
     // Znalostní báze (zákony + judikatura) do paměti hned po startu, ne až při prvním dotazu.
     require('./lib/rag').warmKnowledgeBases().catch(e => console.warn('⚠️ RAG: předehřátí bází selhalo:', e.message));
+    // Režim jen cloud: vyhledávací model v aplikaci (ONNX) načíst hned, ne až u prvního dotazu.
+    if (String(process.env.AI_EMBED_PROVIDER || '').toLowerCase() === 'onnx') {
+        const t = setTimeout(() => require('./lib/local_embed').warm(), 5000);
+        if (t.unref) t.unref();
+    }
     // Odložené zápisy bází (RAG_KB_SAVE_DEBOUNCE_MS) zapsat i při zastavení služby (systemd → SIGTERM, Ctrl+C).
     for (const sig of ['SIGTERM', 'SIGINT']) {
         process.once(sig, () => { try { require('./lib/rag').flushPendingSaves(); } catch (e) { /* best-effort */ } process.exit(0); });

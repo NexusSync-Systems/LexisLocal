@@ -47,7 +47,7 @@ async function handlePaperlessWebhook(payload) {
         try {
             refined = await runAIExtractor(docText);
             if (refined) {
-                if (refined.caseNumber) metadata.caseNumber = refined.caseNumber;
+                if (refined.caseNumber) metadata.caseNumber = require('./case_number').preferCaseNumber(metadata.caseNumber, refined.caseNumber);
                 if (refined.plaintiff) metadata.plaintiff = refined.plaintiff;
                 if (refined.defendant) metadata.defendant = refined.defendant;
                 if (refined.deadlineDays !== undefined && refined.deadlineDays > 0) {

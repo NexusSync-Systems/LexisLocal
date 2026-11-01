@@ -20,6 +20,7 @@
  *   G  tvrdý strop rozpočtu → po vyčerpání nic neodejde
  *   H  Cost Explorer: přístup, náklady Bedrocku/Claude v měsíci, NÁZVY SLUŽEB (pro filtr AWS Budgets)
  *   I  (volitelně) latence: medián a nejhorší doba odpovědi
+ *   R  přeřazení výsledků přes Bedrock Rerank (veřejné pasáže; spis stupně A → nic neodejde)
  */
 'use strict';
 const path = require('path'), fs = require('fs'), os = require('os');
@@ -123,6 +124,30 @@ async function main() {
         await ask({}, () => P.noteSpis(sB.id));
         if (!sit.slice(n0).some(u => u.includes('bedrock-runtime'))) throw new Error('dotaz neodešel');
         return { detail: 'odesláno, zapsáno do deníku spisu' };
+    });
+
+    const RS = require('../lib/rerank_service');
+    const kbDocs = ['Promlčecí lhůta trvá tři roky.', 'Smluvní pokuta se sjednává písemně.', 'Nájemce platí nájemné měsíčně.']
+        .map((text, i) => ({ fileName: `TEST § ${i}.txt`, scope: '_kb_test', score: 0.8 - i * 0.1, text }));
+    await krok('R1', `Přeřazení výsledků: Bedrock Rerank (${RS.bedrockRerankModel()})`, async () => {
+        const n0 = sit.length, t0 = Date.now();
+        let err = null;
+        const out = await P.scope({ dataClass: 'verejne' }, async () => {
+            try { return await RS.rerankResults('Jak dlouhá je promlčecí lhůta?', kbDocs, { force: true, provider: 'bedrock', weight: 1, timeoutMs: 15000 }); }
+            catch (e) { err = e; return null; }
+        });
+        const calls = sit.slice(n0).filter(u => u.includes('bedrock-agent-runtime')).length;
+        if (err) throw err;
+        if (calls !== 1) throw new Error('volání do Bedrock Rerank neodešlo');
+        if (!out[0].rerankScore && out[0].rerankScore !== 0) return { stav: 'varovani', detail: 'bez skóre — chybí oprávnění bedrock:Rerank / přístup k modelu? (pořadí beze změny)' };
+        return { detail: `${Date.now() - t0} ms, 1. místo „${out[0].text}“ (skóre ${Number(out[0].rerankScore).toFixed(3)})` };
+    });
+    await krok('R2', 'Přeřazení u spisu stupně A → nic neodejde', async () => {
+        const n0 = sit.length;
+        const out = await P.scope({}, async () => { P.noteSpis(sA.id); return RS.rerankResults('dotaz', kbDocs, { force: true, provider: 'bedrock' }); });
+        if (sit.length !== n0) throw new Error('odešlo síťové volání!');
+        if (out !== kbDocs) throw new Error('pořadí se změnilo');
+        return { detail: 'původní pořadí, bez volání AWS' };
     });
 
     await krok('E', 'Zámek v kódu: us./global. profil odmítnut před odesláním', async () => {
