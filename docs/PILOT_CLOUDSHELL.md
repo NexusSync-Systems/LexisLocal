@@ -89,7 +89,7 @@ BEDROCK_RERANK_RPM=3            # kvóta účtu (Service Quotas); po zvýšení 
 EOF
 ```
 
-`BEDROCK_RERANK_MODEL` upřesní měření `pilot-hledani` (Cohere, nebo `amazon.rerank-v1:0`).
+Cohere Rerank 3.5 vybralo měření `pilot-hledani` 1. 11. (správný § mezi pasážemi 96,8 % vs. 90,3 % u Amazon Rerank; viz `REZIM_JEN_CLOUD.md`).
 
 **C5. Báze zákonů a judikatury** — balíček `lexis-baze-<datum>.tar.gz` přinést na disku (~30 min, server neběží):
 

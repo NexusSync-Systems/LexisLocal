@@ -68,6 +68,19 @@ BEDROCK_RERANK_USD=0.002                     # odhad ceny jednoho volání (nák
 - IAM: `bedrock:Rerank` + `bedrock:InvokeModel` na `cohere.rerank-*` / `amazon.rerank-*` v eu-* (šablona
   `scripts/aws/bedrock-eu-kancelar.yaml`). Cohere je model třetí strany (AWS Marketplace) — předplatné jednou potvrdit
   v konzoli Bedrock → Model access.
+- **Měření 1. 11. 2026 večer** (`2026-11-01_1640_remote_judikatura`, původní bge-m3, 5 pasáží, slovník, 1 volání na dotaz,
+  všech 243 volání na model prošlo bez chyb a bez překročení limitu) — správný § mezi pasážemi asistenta / na 1. místě:
+
+  | Sada | bez rerankeru | **Cohere Rerank 3.5** | Amazon Rerank 1.0 | GPU (doladěný model + reranker, 31. 10.) |
+  |---|---|---|---|---|
+  | zlatá (124) | 89,5 / 37,9 % | **96,8 / 78,2 %** | 90,3 / 61,3 % | 95,2 / 76,6 % |
+  | dotazy klientů (68) | 85,3 / 32,4 % | **97,1 / 70,6 %** | 91,2 / 48,5 % | 94,1 / 72,1 % |
+  | odložená (21) | 81,0 / 9,5 % | **85,7 / 52,4 %** | 81,0 / 28,6 % | 95,2 / 47,6 % |
+  | nezávislá odložená (30) | 60,0 / 16,7 % | **66,7 / 43,3 %** | 60,0 / 26,7 % | 63,3 / 43,3 % |
+
+  **Pro pilot `BEDROCK_RERANK_MODEL=cohere.rerank-v3-5:0`** — vyrovná se sestavě s GPU, Amazon Rerank je výrazně horší.
+  Hledání s přeřazením p50 ~1,7–2,0 s (p95 v měření zkresluje čekání na limit). Cena Cohere Rerank 3.5 na Bedrocku
+  0,002 USD za volání (= dotaz) → při ~50 dotazech denně ~2 USD měsíčně.
 - **Kvóta volání:** nový účet má Cohere Rerank 3 volání/min a Amazon Rerank 2/min (Service Quotas, 1. 11. 2026;
   požádáno o zvýšení). LexisLocal dělá 1 volání na dotaz (zákony i judikatura dohromady), výsledky drží 10 min v cache
   a hlídá limit: `BEDROCK_RERANK_RPM` (výchozí 3), čekání na volný slot nejvýš `BEDROCK_RERANK_MAX_WAIT_MS` (výchozí
