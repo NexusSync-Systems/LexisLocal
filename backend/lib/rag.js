@@ -128,10 +128,22 @@ function _isKbLaw(r) { return typeof r.scope === 'string' && r.scope.indexOf(KB_
 async function _rerankSplitMix(query, ranked, limit, share) {
     const laws = ranked.filter(_isKbLaw);
     const others = ranked.filter(r => !_isKbLaw(r));
-    const [rl, ro] = await Promise.all([
-        laws.length > 1 ? rerankService.rerankResults(query, laws) : laws,
-        others.length > 1 ? rerankService.rerankResults(query, others, { k: _rerankKJud() }) : others
-    ]);
+    let rl, ro;
+    if (rerankService.rerankProvider() === 'bedrock') {
+        // Bedrock Rerank (pilot jen cloud): JEDNO volání pro zákony i judikaturu dohromady — kvóta nového účtu
+        // je 3 volání/min (1. 11. 2026). Úseky ze spisů se neposílají a zůstávají na svých místech.
+        const lt = laws.slice(0, rerankService.rerankK()), ot = others.slice(0, _rerankKJud());
+        let m = null;
+        try { m = await rerankService.bedrockScoresMap(query, lt.concat(ot)); }
+        catch (e) { console.warn('⚠️ RAG reranker (Bedrock):', (e && e.message) || e, '— původní pořadí.'); }
+        rl = m ? rerankService.applyScores(lt, m).concat(laws.slice(lt.length)) : laws;
+        ro = m ? rerankService.applyScores(ot, m).concat(others.slice(ot.length)) : others;
+    } else {
+        [rl, ro] = await Promise.all([
+            laws.length > 1 ? rerankService.rerankResults(query, laws) : laws,
+            others.length > 1 ? rerankService.rerankResults(query, others, { k: _rerankKJud() }) : others
+        ]);
+    }
     const lawSlots = Math.min(rl.length, Math.max(limit - ro.length, Math.ceil(limit * share)));
     const pickL = rl.slice(0, lawSlots);
     const pickO = ro.slice(0, Math.max(0, limit - pickL.length));

@@ -61,7 +61,7 @@ describe('přeřazení zákonů a judikatury zvlášť', () => {
         calls = [];
         // Falešný reranker: obrátí pořadí top k (aby bylo vidět, že přeřadil) a zapíše, co dostal.
         jest.doMock('../lib/rerank_service', () => ({
-            rerankEnabled: () => true, rerankK: () => 20,
+            rerankEnabled: () => true, rerankK: () => 20, rerankProvider: () => '',
             rerankResults: async (q, res, o) => { calls.push({ n: res.length, k: (o && o.k) || 20, first: res[0].fileName }); const k = (o && o.k) || 20; return res.slice(0, k).reverse().concat(res.slice(k)); }
         }));
         rag = require('../lib/rag');

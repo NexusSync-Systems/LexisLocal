@@ -21,6 +21,7 @@ function fakeFetch(calls, scoresByText) {
 const kb = (n, score) => ({ fileName: `OZ 89-2012 § ${n}.txt`, scope: '_kb_resersnik', score, text: `zákon ${n}` });
 const spis = (n, score) => ({ fileName: `spis/${n}.pdf`, scope: null, score, text: `klient ${n} Novák` });
 const allow = () => ({ ok: true });
+beforeEach(() => { RS._resetBedrock(); delete process.env.BEDROCK_RERANK_RPM; });
 
 test('požadavek: EU agent-runtime, /rerank, model v EU, podepsaný', async () => {
     const calls = [];
@@ -77,4 +78,80 @@ test('výchozí brána v požadavku: veřejný dotaz při zapnutém Bedrocku pro
         if (prev.c === undefined) delete process.env.AI_CHAT_PROVIDER; else process.env.AI_CHAT_PROVIDER = prev.c;
         if (prev.l !== undefined) process.env.LEXIS_PILOT_LOCAL_ONLY = prev.l;
     }
+});
+
+describe('limit volání, opakování a cache (kvóta nového účtu 3/min, 1. 11. 2026)', () => {
+    const base = { force: true, provider: 'bedrock', gate: allow, bedrock: bedrockEu, weight: 1 };
+    test('přes limit: asistent nečeká, hledá bez přeřazení a nic neposílá', async () => {
+        process.env.BEDROCK_RERANK_RPM = '1';
+        const calls = [];
+        const f = fakeFetch(calls, t => (t === 'zákon 2' ? 0.9 : 0.1));
+        const a = await RS.rerankResults('dotaz A', [kb(1, 0.9), kb(2, 0.8)], Object.assign({ fetchImpl: f, maxWaitMs: 0 }, base));
+        expect(a[0].fileName).toBe('OZ 89-2012 § 2.txt');
+        const top = [kb(3, 0.9), kb(4, 0.8)];
+        const l0 = RS.stats.bedrockLimit;
+        const b = await RS.rerankResults('dotaz B', top, Object.assign({ fetchImpl: f, maxWaitMs: 0 }, base));
+        expect(b).toBe(top);
+        expect(calls).toHaveLength(1);
+        expect(RS.stats.bedrockLimit).toBe(l0 + 1);
+    });
+    test('měření smí počkat na volný slot (simulovaný čas)', async () => {
+        process.env.BEDROCK_RERANK_RPM = '1';
+        let t = 1000000;
+        const now = () => t, sleep = async ms => { t += ms; };
+        const calls = [];
+        const f = fakeFetch(calls, () => 0.5);
+        await RS.bedrockScores('q1', [kb(1), kb(2)], { gate: allow, bedrock: bedrockEu, fetchImpl: f, now, sleep, maxWaitMs: 120000 });
+        await RS.bedrockScores('q2', [kb(1), kb(2)], { gate: allow, bedrock: bedrockEu, fetchImpl: f, now, sleep, maxWaitMs: 120000 });
+        expect(calls).toHaveLength(2);
+        expect(t - 1000000).toBeGreaterThanOrEqual(60000); // druhé volání počkalo na další minutu
+    });
+    test('429 → opakování s prodlevou, pak skóre', async () => {
+        let n = 0;
+        const f = async (url, init) => {
+            n++;
+            if (n === 1) return { ok: false, status: 429, text: async () => '{"message":"Your request rate is too high."}' };
+            return fakeFetch([], t => (t === 'zákon 2' ? 0.9 : 0.1))(url, init);
+        };
+        const out = await RS.rerankResults('dotaz C', [kb(1, 0.9), kb(2, 0.8)], Object.assign({ fetchImpl: f, sleep: async () => {} }, base));
+        expect(n).toBe(2);
+        expect(out[0].fileName).toBe('OZ 89-2012 § 2.txt');
+    });
+    test('stejný dotaz nad stejnými pasážemi → z cache, bez dalšího volání', async () => {
+        const calls = [];
+        const f = fakeFetch(calls, () => 0.5);
+        await RS.bedrockScores('stejný', [kb(1), kb(2)], { gate: allow, bedrock: bedrockEu, fetchImpl: f });
+        await RS.bedrockScores('stejný', [kb(1), kb(2)], { gate: allow, bedrock: bedrockEu, fetchImpl: f });
+        expect(calls).toHaveLength(1);
+    });
+    test('úsek ze spisu do bedrockScores neprojde (pojistka)', async () => {
+        await expect(RS.bedrockScores('q', [kb(1), spis('a')], { gate: allow })).rejects.toThrow(/jen pasáže báze/);
+    });
+});
+
+describe('přeřazení zákonů a judikatury zvlášť přes Bedrock: jedno volání', () => {
+    test('zákony i judikatura v jednom volání, úseky ze spisů se neposílají', async () => {
+        const prev = { ...process.env };
+        Object.assign(process.env, { RAG_RERANK: '1', RAG_RERANK_PROVIDER: 'bedrock', AI_CHAT_PROVIDER: 'bedrock', BEDROCK_REGION: 'eu-central-1',
+            AWS_ACCESS_KEY_ID: 'AKIATEST', AWS_SECRET_ACCESS_KEY: 'x' });
+        delete process.env.LEXIS_PILOT_LOCAL_ONLY;
+        const calls = [];
+        const realFetch = global.fetch;
+        global.fetch = fakeFetch(calls, t => (/NS/.test(t) ? 0.95 : 0.2));
+        try {
+            const rag = require('../lib/rag'), rc = require('../lib/request_context'), cp = require('../lib/cloud_policy');
+            const jud = n => ({ fileName: `NS_${n}_2020.txt`, scope: '_kb_resersnik', score: 0.6, text: `NS rozhodnutí ${n}` });
+            const ranked = [spis('a', 0.9), kb(1, 0.8), kb(2, 0.7), jud(1, 0.6), jud(2, 0.5)];
+            const out = await rc.run({}, () => { cp.declare({ dataClass: 'verejne' }); return rag._rerankSplitMix('dotaz', ranked, 5, 0.75); });
+            expect(calls).toHaveLength(1);
+            const sent = calls[0].body.sources.map(s => s.inlineDocumentSource.textDocument.text);
+            expect(sent.sort()).toEqual(['NS rozhodnutí 1', 'NS rozhodnutí 2', 'zákon 1', 'zákon 2']);
+            expect(out).toHaveLength(5);
+            expect(out[0].fileName).toBe('spis/a.pdf');
+        } finally {
+            global.fetch = realFetch;
+            for (const k of Object.keys(process.env)) if (!(k in prev)) delete process.env[k];
+            Object.assign(process.env, prev);
+        }
+    });
 });

@@ -68,8 +68,19 @@ BEDROCK_RERANK_USD=0.002                     # odhad ceny jednoho volání (nák
 - IAM: `bedrock:Rerank` + `bedrock:InvokeModel` na `cohere.rerank-*` / `amazon.rerank-*` v eu-* (šablona
   `scripts/aws/bedrock-eu-kancelar.yaml`). Cohere je model třetí strany (AWS Marketplace) — předplatné jednou potvrdit
   v konzoli Bedrock → Model access.
+- **Kvóta volání:** nový účet má Cohere Rerank 3 volání/min a Amazon Rerank 2/min (Service Quotas, 1. 11. 2026;
+  požádáno o zvýšení). LexisLocal dělá 1 volání na dotaz (zákony i judikatura dohromady), výsledky drží 10 min v cache
+  a hlídá limit: `BEDROCK_RERANK_RPM` (výchozí 3), čekání na volný slot nejvýš `BEDROCK_RERANK_MAX_WAIT_MS` (výchozí
+  3000 ms — pak hledá bez přeřazení), po 429 až `BEDROCK_RERANK_RETRIES` opakování (výchozí 2).
 - Kontrola: `node backend/scripts/aws-pilot-test.js` kroky R1 (přeřazení funguje) a R2 (u spisu stupně A nic neodejde).
 - Měření: profil `pilot-hledani` (`docs/SIMULACE_KANCELARE.md`), `KB_REG_PILOT=1` v `kb_regression.js`.
+- Měření 1. 11. 2026 (`2026-11-01_0733_remote_judikatura`, původní bge-m3, 5 pasáží): Bedrock Rerank **neproběhl**
+  (role testovací instance měla ze staré verze šablony výslovný zákaz InvokeModel mimo Clauda → 0 úspěšných volání;
+  opravit aktualizací stacku na novou šablonu a měření zopakovat). Bez rerankeru: správný § mezi pasážemi —
+  zlatá 84,7 % (na 1. místě 33,9 %), se slovníkem **89,5 %** (37,9 %); dotazy klientů 77,9 → 85,3 %; odložená
+  38,1 → 81,0 %; nezávislá odložená 56,7 → 60,0 %. **Bez rerankeru slovník pomáhá → zapnout.** Řazení „zákony
+  napřed“ (cesta přeřazení zvlášť s nefunkčním rerankerem) zvedlo 1. místo na zlaté 33,9 → 58,9 % při stejném
+  hit@5 — kandidát na výchozí chování i bez rerankeru.
 
 Po startu se vyhledávací model v aplikaci načte hned (ne až u prvního dotazu); vypnutí `EMBED_ONNX_WARMUP=0`.
 

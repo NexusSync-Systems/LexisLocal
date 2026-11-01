@@ -24,6 +24,9 @@
  *                                Do AWS jde jen dotaz a VEŘEJNÉ pasáže báze (scope _kb_*), nikdy úseky ze spisů,
  *                                a jen když pravidla cloudu (lib/cloud_policy.js) dotaz do Bedrocku pustí.
  *                                Jinak / při chybě původní pořadí (fail-open).
+ *                                Limit volání: BEDROCK_RERANK_RPM (výchozí 3 = kvóta nového účtu), čekání na volný slot
+ *                                nejvýš BEDROCK_RERANK_MAX_WAIT_MS (výchozí 3000 — asistent jinak hledá bez přeřazení),
+ *                                po 429 až BEDROCK_RERANK_RETRIES opakování (výchozí 2); výsledky 10 min v cache.
  *
  * Skóre výsledků (`score`) se NEMĚNÍ — prahy (RAG_MIN_SCORE, 0.70 v conflicts) drží význam.
  * Mění se jen pořadí; skóre rerankeru je v `rerankScore`.
@@ -117,7 +120,7 @@ async function scoreInProcess(query, documents, { inProcess } = {}) {
 
 function rerankProvider() { return String(process.env.RAG_RERANK_PROVIDER || '').trim().toLowerCase(); }
 function bedrockRerankModel() { return String(process.env.BEDROCK_RERANK_MODEL || 'cohere.rerank-v3-5:0').trim(); }
-const stats = { bedrockOk: 0, bedrockChyba: 0, bedrockOdepreno: 0, posledniChyba: null }; // pro měření a diagnostiku
+const stats = { bedrockOk: 0, bedrockChyba: 0, bedrockOdepreno: 0, bedrockLimit: 0, bedrockCache: 0, bedrockOpakovani: 0, posledniChyba: null }; // pro měření a diagnostiku
 const _isKb = r => !!(r && typeof r.scope === 'string' && r.scope.indexOf('_kb_') === 0);
 
 /**
@@ -174,20 +177,114 @@ async function scoreViaBedrock(query, documents, { timeoutMs = rerankTimeoutMs()
 /**
  * Bedrock: přeřadí jen veřejné pasáže báze; úseky ze spisů zůstanou na svých místech a do AWS nejdou.
  */
-async function _rerankBedrock(query, top, opts) {
+// --- Limit volání a cache (1. 11. 2026: nový účet má kvótu Cohere Rerank 3/min, Amazon Rerank 2/min) ---
+function bedrockRpm() { const v = parseInt(process.env.BEDROCK_RERANK_RPM, 10); return v > 0 ? v : 3; }
+function bedrockMaxWaitMs(opts) {
+    if (opts && Number.isFinite(opts.maxWaitMs)) return opts.maxWaitMs;
+    const v = parseInt(process.env.BEDROCK_RERANK_MAX_WAIT_MS, 10); return v >= 0 ? v : 3000; // asistent nečeká dlouho
+}
+function bedrockRetries() { const v = parseInt(process.env.BEDROCK_RERANK_RETRIES, 10); return v >= 0 ? v : 2; }
+const _calls = new Map();          // model → časy volání za poslední minutu
+let _limQueue = Promise.resolve(); // přidělování slotů po jednom
+const _sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/** Počká na volný slot v limitu volání za minutu; když by čekání přesáhlo deadline, vyhodí { limit: true }. */
+function _acquire(model, deadline, opts) {
+    const now = (opts && opts.now) || Date.now, sleep = (opts && opts.sleep) || _sleep, rpm = bedrockRpm();
+    const run = async () => {
+        for (;;) {
+            const arr = (_calls.get(model) || []).filter(t => now() - t < 60000);
+            _calls.set(model, arr);
+            if (arr.length < rpm) { arr.push(now()); return; }
+            const wait = arr[0] + 60000 - now() + 50;
+            if (now() + wait > deadline) throw Object.assign(new Error(`limit ${rpm} volání/min`), { limit: true });
+            await sleep(wait);
+        }
+    };
+    const p = _limQueue.then(run, run);
+    _limQueue = p.catch(() => {});
+    return p;
+}
+
+const _cache = new Map(); // klíč → { t, scores }; stejný dotaz nad stejnými pasážemi se neplatí znovu
+const CACHE_TTL = 10 * 60 * 1000, CACHE_MAX = 500;
+function _cacheKey(model, query, docs) {
+    return require('crypto').createHash('sha256').update(model + '\u0000' + query + '\u0000' + docs.join('\u0001')).digest('hex');
+}
+
+/**
+ * Skóre pasáží báze z Bedrock Rerank (brána pravidel cloudu, cache, limit volání, opakování po 429).
+ * `items` musí být jen veřejné pasáže báze (scope _kb_*). Vrací pole skóre, nebo null (nepoužito / chyba → původní pořadí).
+ */
+async function bedrockScores(query, items, opts) {
+    opts = opts || {};
+    const kb = (items || []).filter(_isKb);
+    if (kb.length !== (items || []).length) throw new Error('do Bedrocku smí jen pasáže báze (_kb_*)');
+    if (kb.length < 2) return null;
     const gate = opts.gate ? opts.gate() : bedrockGate();
     if (!gate.ok) { stats.bedrockOdepreno++; _warn(`Bedrock nepoužit (${gate.duvod})`, true); return null; }
+    const model = bedrockRerankModel();
+    const docs = kb.map(r => String(r.text || '').slice(0, 4000));
+    const key = _cacheKey(model, String(query), docs);
+    const hit = _cache.get(key);
+    const now = opts.now || Date.now, sleep = opts.sleep || _sleep;
+    if (hit && now() - hit.t < CACHE_TTL) { stats.bedrockCache++; return hit.scores; }
+    const deadline = now() + bedrockMaxWaitMs(opts);
+    for (let pokus = 0; ; pokus++) {
+        try {
+            await _acquire(model, deadline, opts);
+        } catch (e) {
+            stats.bedrockLimit++; _warn(`Bedrock Rerank: ${e.message}`, true); return null;
+        }
+        try {
+            const scores = await scoreViaBedrock(query, docs, opts);
+            stats.bedrockOk++;
+            _cache.set(key, { t: now(), scores });
+            if (_cache.size > CACHE_MAX) _cache.delete(_cache.keys().next().value);
+            return scores;
+        } catch (e) {
+            const msg = String((e && e.message) || e);
+            const throttled = / 429[: ]|ThrottlingException|Too many|rate is too high/i.test(msg);
+            if (throttled && pokus < bedrockRetries()) {
+                const wait = Math.min(1000 * Math.pow(2, pokus), Math.max(0, deadline - now()));
+                if (wait > 0 || deadline - now() > 0) { stats.bedrockOpakovani++; await sleep(wait); continue; }
+            }
+            stats.bedrockChyba++; stats.posledniChyba = msg.slice(0, 200);
+            throw e;
+        }
+    }
+}
+
+/**
+ * Přeřadí v `top` jen položky, které mají skóre v `scoreOf` (Map položka → skóre); ostatní (úseky ze spisů)
+ * zůstanou na svých místech. Vrací nové pole.
+ */
+function applyScores(top, scoreOf, weight) {
     const slots = [], kb = [];
-    top.forEach((r, i) => { if (_isKb(r)) { slots.push(i); kb.push(r); } });
-    if (kb.length < 2) return null;
-    let scores;
-    try { scores = await scoreViaBedrock(query, kb.map(r => String(r.text || '')), opts); stats.bedrockOk++; }
-    catch (e) { stats.bedrockChyba++; stats.posledniChyba = String((e && e.message) || e).slice(0, 200); throw e; }
-    if (!scores.some(x => x != null)) return null;
-    const ordered = mixOrder(kb, scores, opts.weight != null ? opts.weight : rerankWeight());
+    top.forEach((r, i) => { if (scoreOf.has(r)) { slots.push(i); kb.push(r); } });
+    if (kb.length < 2) return top.slice();
+    const ordered = mixOrder(kb, kb.map(r => scoreOf.get(r)), weight != null ? weight : rerankWeight());
     const out = top.slice();
     slots.forEach((pos, j) => { out[pos] = ordered[j]; });
     return out;
+}
+
+/** Jedno volání pro víc skupin najednou (zákony + judikatura): Map položka → skóre, nebo null. */
+async function bedrockScoresMap(query, items, opts) {
+    const kb = (items || []).filter(_isKb);
+    const scores = await bedrockScores(query, kb, opts);
+    if (!scores || !scores.some(x => x != null)) return null;
+    const m = new Map();
+    kb.forEach((r, i) => { if (scores[i] != null) m.set(r, scores[i]); });
+    return m;
+}
+
+/**
+ * Bedrock: přeřadí jen veřejné pasáže báze; úseky ze spisů zůstanou na svých místech a do AWS nejdou.
+ */
+async function _rerankBedrock(query, top, opts) {
+    const m = await bedrockScoresMap(query, top.filter(_isKb), opts);
+    return m ? applyScores(top, m, opts.weight) : null;
 }
 
 /**
@@ -216,4 +313,4 @@ async function rerankResults(query, results, opts = {}) {
     }
 }
 
-module.exports = { rerankEnabled, rerankK, rerankWeight, rerankTimeoutMs, rerankProvider, bedrockRerankModel, bedrockGate, mixOrder, scoreViaService, scoreInProcess, scoreViaBedrock, rerankResults, stats };
+module.exports = { rerankEnabled, rerankK, rerankWeight, rerankTimeoutMs, rerankProvider, bedrockRerankModel, bedrockGate, mixOrder, scoreViaService, scoreInProcess, scoreViaBedrock, bedrockScores, bedrockScoresMap, applyScores, bedrockRpm, rerankResults, stats, _resetBedrock: () => { _calls.clear(); _cache.clear(); _limQueue = Promise.resolve(); } };

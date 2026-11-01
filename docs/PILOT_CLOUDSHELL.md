@@ -85,6 +85,7 @@ BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-4-6
 RAG_RERANK=1
 RAG_RERANK_PROVIDER=bedrock
 BEDROCK_RERANK_MODEL=cohere.rerank-v3-5:0
+BEDROCK_RERANK_RPM=3            # kvóta účtu (Service Quotas); po zvýšení upravit
 EOF
 ```
 

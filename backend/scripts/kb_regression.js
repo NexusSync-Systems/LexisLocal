@@ -227,9 +227,15 @@ async function main() {
             VAR.push(['pilot: bez rerankeru', { rerankSplit: false, queryTerms: false, _env: bez }]);
             VAR.push(['pilot: bez rerankeru + slovník', { rerankSplit: false, queryTerms: true, _env: bez }]);
             const modely = String(process.env.KB_REG_BEDROCK_RERANK || 'cohere.rerank-v3-5:0,amazon.rerank-v1:0').split(',').map(x => x.trim()).filter(Boolean);
+            // Kvóty nového účtu (1. 11. 2026): Cohere Rerank 3/min, Amazon Rerank 2/min → měření čeká na volný slot
+            // (BEDROCK_RERANK_MAX_WAIT_MS), opakuje po 429 a sdílí výsledky stejných dotazů (zlatá – klient ⊂ zlatá).
+            // KB_REG_RERANK_RPM „model=počet,…“; KB_REG_BEDROCK_VARIANTY=vse přidá i variantu bez slovníku.
+            const rpm = Object.fromEntries(String(process.env.KB_REG_RERANK_RPM || 'cohere.rerank-v3-5:0=3,amazon.rerank-v1:0=2')
+                .split(',').map(x => x.split('=').map(y => y.trim())).filter(x => x.length === 2));
             for (const m of modely) {
-                const env = { RAG_RERANK: '1', RAG_RERANK_PROVIDER: 'bedrock', BEDROCK_RERANK_MODEL: m, AI_CHAT_PROVIDER: 'bedrock', RAG_RERANK_TIMEOUT_MS: '15000' };
-                VAR.push([`Bedrock ${m.split('.')[0]} + zvlášť`, { rerankSplit: true, queryTerms: false, _env: env, _verejne: true }]);
+                const env = { RAG_RERANK: '1', RAG_RERANK_PROVIDER: 'bedrock', BEDROCK_RERANK_MODEL: m, AI_CHAT_PROVIDER: 'bedrock', RAG_RERANK_TIMEOUT_MS: '15000',
+                    BEDROCK_RERANK_RPM: String(rpm[m] || 2), BEDROCK_RERANK_MAX_WAIT_MS: '180000', BEDROCK_RERANK_RETRIES: '6' };
+                if (String(process.env.KB_REG_BEDROCK_VARIANTY || '') === 'vse') VAR.push([`Bedrock ${m.split('.')[0]} + zvlášť`, { rerankSplit: true, queryTerms: false, _env: env, _verejne: true }]);
                 VAR.push([`Bedrock ${m.split('.')[0]} + zvlášť + slovník`, { rerankSplit: true, queryTerms: true, _env: env, _verejne: true }]);
             }
         }
@@ -263,8 +269,10 @@ async function main() {
                     mi.poradiTop50 = rankOf(deep, mi.rel);
                 }
                 obnov();
-                const bedrock = o._verejne ? { ok: RSs.bedrockOk - s0.bedrockOk, chyb: RSs.bedrockChyba - s0.bedrockChyba, odepreno: RSs.bedrockOdepreno - s0.bedrockOdepreno, posledniChyba: RSs.posledniChyba } : null;
-                if (bedrock && (bedrock.chyb || bedrock.odepreno)) console.log(`   ⚠️ ${nm}: Bedrock Rerank ${bedrock.ok} ok, ${bedrock.chyb} chyb, ${bedrock.odepreno} odepřeno (${bedrock.posledniChyba || '—'})`);
+                const bedrock = o._verejne ? { ok: RSs.bedrockOk - s0.bedrockOk, chyb: RSs.bedrockChyba - s0.bedrockChyba, odepreno: RSs.bedrockOdepreno - s0.bedrockOdepreno,
+                    limit: RSs.bedrockLimit - s0.bedrockLimit, opakovani: RSs.bedrockOpakovani - s0.bedrockOpakovani, cache: RSs.bedrockCache - s0.bedrockCache, posledniChyba: RSs.posledniChyba } : null;
+                if (bedrock) console.log(`   ☁️ ${nm}: Bedrock Rerank ${bedrock.ok} volání, z cache ${bedrock.cache}, opakování po 429 ${bedrock.opakovani}, přes limit ${bedrock.limit}`);
+                if (bedrock && (bedrock.chyb || bedrock.odepreno || bedrock.limit)) console.log(`   ⚠️ ${nm}: Bedrock Rerank ${bedrock.ok} ok, ${bedrock.chyb} chyb, ${bedrock.odepreno} odepřeno (${bedrock.posledniChyba || '—'})`);
                 const m = qs.length;
                 out.varianty.sady[sada][nm] = { dotazu: m, hit1: st.h1 / m, hitK: st.hk / m, mrr: st.mrr / m, latP50: quantile(st.lat, 0.5), latP95: quantile(st.lat, 0.95), miny: st.miny, bedrock };
                 const v = out.varianty.sady[sada][nm];
@@ -336,7 +344,7 @@ async function main() {
         ...z.vytlacene.map(d => `- „${d.q}" → ${d.rel.join(', ')} (bez judikatury #${d.rankJenZakony}, s ní ${d.rankPlna ? '#' + d.rankPlna : 'mimo top 5'}); top 3: ${d.top3Plna.join(', ')}`),
         '',
         out.varianty ? `## Varianty K17 (jako agent${out.varianty.rerank ? ', s rerankerem' : ', BEZ rerankeru'}, ${KA} pasáží)\n\n| Sada | Varianta | hit@1 | hit@${KA} (agent) | MRR | hledání p50/p95 |\n|---|---|---|---|---|---|\n` +
-            Object.entries(out.varianty.sady).map(([sada, vs]) => Object.entries(vs).map(([nm, v]) => `| ${sada} (${v.dotazu}) | ${nm}${v.bedrock && (v.bedrock.chyb || v.bedrock.odepreno) ? ` ⚠️ Bedrock ${v.bedrock.ok} ok / ${v.bedrock.chyb} chyb / ${v.bedrock.odepreno} odepřeno` : ''} | ${pct(v.hit1)} | ${pct(v.hitK)} | ${v.mrr.toFixed(3)} | ${Math.round(v.latP50)} / ${Math.round(v.latP95)} ms |`).join('\n')).join('\n') + '\n' : '',
+            Object.entries(out.varianty.sady).map(([sada, vs]) => Object.entries(vs).map(([nm, v]) => `| ${sada} (${v.dotazu}) | ${nm}${v.bedrock && (v.bedrock.chyb || v.bedrock.odepreno || v.bedrock.limit) ? ` ⚠️ Bedrock ${v.bedrock.ok} ok / ${v.bedrock.chyb} chyb / ${v.bedrock.odepreno} odepřeno / ${v.bedrock.limit} přes limit` : ''} | ${pct(v.hit1)} | ${pct(v.hitK)} | ${v.mrr.toFixed(3)} | ${Math.round(v.latP50)} / ${Math.round(v.latP95)} ms |`).join('\n')).join('\n') + '\n' : '',
         out.varianty ? '## Nenalezené paragrafy (poslední varianta)\n\n' + Object.entries(out.varianty.sady).map(([sada, vs]) => {
             const nm = Object.keys(vs).pop(), mi = vs[nm].miny || [];
             return `### ${sada} — ${nm}: ${mi.length}\n\n` + (mi.length ? '| Dotaz | Správně | Pořadí v zákonech (top 50) | Asistent dostal |\n|---|---|---|---|\n' +
