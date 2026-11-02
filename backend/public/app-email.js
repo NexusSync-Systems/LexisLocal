@@ -28,6 +28,30 @@ Object.assign(LexisLocalApp.prototype, {
         } catch (e) {
             console.error("Chyba při načítání emailových úkolů:", e);
         }
+        // E-maily od cizích adres čekající na schválení (nastavení „E-maily od cizích adres“).
+        try {
+            const r2 = await fetch(`${this.apiBase}/email/pending`, { headers: this.getHeaders() });
+            const d2 = await r2.json();
+            this.emailPending = (d2 && d2.success && Array.isArray(d2.pending)) ? d2.pending : [];
+        } catch (e) { this.emailPending = []; }
+    },
+
+    async resolveEmailPending(id, akce) {
+        let body = {};
+        if (akce === 'zpracovat') {
+            const cn = await LexisUI.prompt('Sp. zn. spisu, ke kterému zadání patří (nepovinné — prázdné = bez spisu):', '');
+            if (cn === null) return;
+            body = { caseNumber: String(cn || '').trim() };
+        } else if (!await LexisUI.confirm('Zamítnout tento e-mail? Agenti ho nezpracují a odesílateli se nic nepošle.')) return;
+        try {
+            const res = await fetch(`${this.apiBase}/email/pending/${encodeURIComponent(id)}/${akce}`, {
+                method: 'POST', headers: this.getHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body)
+            });
+            const d = await res.json();
+            if (!res.ok || !d.success) alert('❌ ' + (d.error || 'Akce selhala.'));
+        } catch (e) { alert('❌ Síťová chyba: ' + e.message); }
+        await this.loadEmailTasks();
+        this.renderInbox();
     },
 
     async saveEmailSettings(e) {
@@ -49,7 +73,9 @@ Object.assign(LexisLocalApp.prototype, {
             smtp_pass: document.getElementById('em-smtp-pass').value,
             imap_pass: (document.getElementById('em-imap-pass') || {}).value || '',
             imap_enabled: !!(document.getElementById('em-imap-enabled') || {}).checked,
-            imap_poll_minutes: parseInt((document.getElementById('em-poll-min') || {}).value, 10) || 5
+            imap_poll_minutes: parseInt((document.getElementById('em-poll-min') || {}).value, 10) || 5,
+            email_cizi: (document.getElementById('em-cizi') || {}).value || 'ke_schvaleni',
+            email_duveryhodni: ((document.getElementById('em-duveryhodni') || {}).value || '').split(/[\s,;]+/).map(x => x.trim()).filter(Boolean)
         };
         
         try {
@@ -244,6 +270,23 @@ Object.assign(LexisLocalApp.prototype, {
             }).join('');
         }
 
+        const cekajici = (this.emailPending || []).filter(p => p.stav === 'ceka');
+        const pendingHtml = cekajici.length ? `
+            <div class="glass" style="border: 1px solid rgba(234,179,8,0.35); border-radius: 12px; padding: 14px; background: rgba(234,179,8,0.06); display:flex; flex-direction:column; gap:10px;">
+                <strong style="color: var(--text-primary); font-size: 0.9rem;">✋ Čeká na schválení — e-maily od cizích adres (${cekajici.length})</strong>
+                <span style="font-size:0.75rem; opacity:0.8;">Agenti je zpracují až po kliknutí „Zpracovat“. Výsledek dostanete vy, odesílateli se nic nepošle.</span>
+                ${cekajici.map(p => `
+                    <div style="border-top: 1px solid var(--border-glass); padding-top: 8px; font-size: 0.8rem;">
+                        <div><b>${escapeHtml(p.predmet || '(bez předmětu)')}</b></div>
+                        <div style="opacity:0.8;">Od: ${escapeHtml(p.od)} · ${escapeHtml(new Date(p.prijato).toLocaleString('cs-CZ'))} · ${p.overeni ? '✓ původ ověřen (' + escapeHtml(String(p.overeni).toUpperCase()) + ')' : '⚠️ původ neověřen — adresa může být podvržená'}</div>
+                        <div style="margin-top:4px; max-height:90px; overflow:auto; white-space:pre-wrap; background: var(--sunken-1); padding:6px 8px; border-radius:6px;">${escapeHtml(String(p.text || '').slice(0, 1500))}</div>
+                        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:6px;">
+                            <button class="btn btn-secondary" onclick="window.appInstance.resolveEmailPending('${safeId(p.id)}','zamitnout')" style="font-size:0.75rem; padding:5px 10px;">Zamítnout</button>
+                            <button class="btn btn-primary" onclick="window.appInstance.resolveEmailPending('${safeId(p.id)}','zpracovat')" style="font-size:0.75rem; padding:5px 10px;">Zpracovat ▶</button>
+                        </div>
+                    </div>`).join('')}
+            </div>` : '';
+
         container.innerHTML = `
             <div class="email-tasks-layout" style="display: grid; grid-template-columns: 1fr 1.8fr; gap: 25px; margin-top: 15px; align-items: start;">
                 <!-- Settings Panel -->
@@ -267,8 +310,8 @@ Object.assign(LexisLocalApp.prototype, {
                             <input type="email" id="em-auth-sender" required style="width: 100%; padding: 8px 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); outline: none;" />
                         </div>
                         <div>
-                            <label style="opacity: 0.8; display: block; margin-bottom: 4px; font-weight: 500;">Cílová adresa asistentů (filtr)</label>
-                            <input type="text" id="em-recip-filter" required style="width: 100%; padding: 8px 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); outline: none;" />
+                            <label style="opacity: 0.8; display: block; margin-bottom: 4px; font-weight: 500;">Cílová adresa asistentů (filtr) — zpracují se jen e-maily poslané na ni; prázdné = celá schránka</label>
+                            <input type="text" id="em-recip-filter" style="width: 100%; padding: 8px 12px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); outline: none;" />
                         </div>
                         
                         <div style="border-top: 1px solid var(--border-glass); padding-top: 10px; margin-top: 5px;">
@@ -302,6 +345,16 @@ Object.assign(LexisLocalApp.prototype, {
                         </div>
                         </details>
                         
+                        <div style="border-top: 1px solid var(--border-glass); padding-top: 10px;">
+                            <label style="opacity: 0.8; display: block; margin-bottom: 4px; font-weight: 500;">E-maily od cizích adres</label>
+                            <select id="em-cizi" style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;">
+                                <option value="ke_schvaleni">Ke schválení — zpracuje se až po mém kliknutí (doporučeno)</option>
+                                <option value="ignorovat">Ignorovat — jen záznam v auditu</option>
+                                <option value="automaticky">Zpracovat automaticky — jen s ověřeným původem (riziko: kdokoli zadá úkol)</option>
+                            </select>
+                            <label style="opacity: 0.8; display: block; margin: 8px 0 4px; font-weight: 500;">Důvěryhodné adresy (koncipient, asistentka) — jako advokát</label>
+                            <textarea id="em-duveryhodni" rows="2" placeholder="koncipient@kancelar.cz, asistentka@kancelar.cz" style="width: 100%; padding: 8px; background: var(--sunken-1); border: 1px solid var(--border-glass); border-radius: 6px; color: var(--text-primary); font-size: 0.8rem;"></textarea>
+                        </div>
                         <label style="display:flex; gap:8px; align-items:center; font-size:0.8rem; margin-top:4px; cursor:pointer;">
                             <input type="checkbox" id="em-imap-enabled" /> <b>Zapnout automatický příjem</b> (číst schránku a zpracovávat úkoly)
                         </label>
@@ -331,6 +384,7 @@ Object.assign(LexisLocalApp.prototype, {
                     <h3 style="margin-top: 0; margin-bottom: 5px; font-family: 'Outfit', sans-serif; font-size: 1.1rem; color: var(--text-primary);">
                         📥 Úkoly pro asistenty z e-mailu
                     </h3>
+                    ${pendingHtml}
                     ${tasksHtml}
                 </div>
             </div>
@@ -355,6 +409,10 @@ Object.assign(LexisLocalApp.prototype, {
         if (imapEnEl) imapEnEl.checked = s.imap_enabled === true;
         const pollEl = document.getElementById('em-poll-min');
         if (pollEl) pollEl.value = s.imap_poll_minutes || 5;
+        const ciziEl = document.getElementById('em-cizi');
+        if (ciziEl) ciziEl.value = ['ke_schvaleni', 'ignorovat', 'automaticky'].includes(s.email_cizi) ? s.email_cizi : 'ke_schvaleni';
+        const duvEl = document.getElementById('em-duveryhodni');
+        if (duvEl) duvEl.value = Array.isArray(s.email_duveryhodni) ? s.email_duveryhodni.join(', ') : (s.email_duveryhodni || '');
     },
 
     // Rychlé nastavení: z e-mailu odvodí servery a vyplní formulář.
@@ -409,7 +467,7 @@ Object.assign(LexisLocalApp.prototype, {
             const res = await fetch(`${this.apiBase}/email/poll`, { method: 'POST', headers: this.getHeaders() });
             const d = await res.json();
             if (d.success) {
-                if (note) note.textContent = `✅ Hotovo: zpracováno ${d.processed}, přeskočeno ${d.skipped}${d.errors ? ', chyby ' + d.errors : ''} (z ${d.total}).`;
+                if (note) note.textContent = `✅ Hotovo: zpracováno ${d.processed}, ke schválení ${d.waiting || 0}, přeskočeno ${d.skipped}${d.ignored ? ", mimo filtr příjemce " + d.ignored : ""}${d.errors ? ', chyby ' + d.errors : ''} (z ${d.total}).`;
                 await this.loadEmailTasks();
                 this.renderInbox();
             } else {

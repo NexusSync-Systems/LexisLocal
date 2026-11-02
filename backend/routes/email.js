@@ -377,4 +377,57 @@ router.post('/poll', async (req, res) => {
     }
 });
 
+// E-maily od cizích adres čekající na schválení (nastavení email_cizi = ke_schvaleni, lib/email_pending.js).
+// Zpracovat / zamítnout smí jen advokát nebo správce (scope approve), nikdy agent.
+function _smiSchvalit(req) {
+    const p = req.principal;
+    return !(p && (p.kind === 'agent' || !require('../lib/principal').hasScope(p, 'approve')));
+}
+
+router.get('/pending', (req, res) => {
+    try { res.json({ success: true, pending: require('../lib/email_pending').seznam() }); }
+    catch (err) { res.status(500).json({ error: 'Nelze načíst čekající e-maily: ' + err.message }); }
+});
+
+router.post('/pending/:id/zpracovat', async (req, res) => {
+    let rozpracovano = null;
+    try {
+        if (!_smiSchvalit(req)) return res.status(403).json({ error: 'Zpracovat e-mail od cizí adresy smí jen advokát nebo správce.', code: 'forbidden_role' });
+        const P = require('../lib/email_pending');
+        const item = P.najdi(req.params.id);
+        if (!item) return res.status(404).json({ error: 'E-mail nenalezen.' });
+        if (item.stav !== 'ceka') return res.status(409).json({ error: 'E-mail už byl vyřízen.' });
+        const caseNumber = String((req.body && req.body.caseNumber) || '').trim().slice(0, 60) || null;
+        if (caseNumber) {   // sp. zn. zadává advokát — jen ke spisu, ke kterému má přístup
+            const sp = spisy.findByCase(caseNumber);
+            if (!sp) return res.status(400).json({ error: 'Spis se sp. zn. ' + caseNumber + ' nenalezen.' });
+            if (!require('../lib/access').canAccess(sp, req.principal, 'write')) return res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
+        }
+        P.oznac(item.id, 'zpracovava'); rozpracovano = item.id;
+        logEvent('E-mail', 'E-mail od cizí adresy schválen ke zpracování', item.od, { subject: item.predmet, caseNumber });
+        const r = await processEmailTask({ sender: item.od, subject: item.predmet || '(bez předmětu)', body: item.text || '(prázdné)',
+            caseNumber, schvaleno: true, overeni: item.overeni || null });
+        if (r.status !== 'ok') { P.oznac(item.id, 'ceka'); return res.status(r.status === 'unauthorized' ? 403 : 400).json({ error: r.error }); }
+        P.oznac(item.id, 'zpracovano', { taskId: r.task && r.task.id });
+        res.json({ success: true, task: r.task, replied: r.replied, replyError: r.replyError, draft: r.draft });
+    } catch (err) {
+        if (rozpracovano) { try { require('../lib/email_pending').oznac(rozpracovano, 'ceka'); } catch (e) { /* best-effort */ } }
+        res.status(500).json({ error: 'Zpracování selhalo: ' + err.message });
+    }
+});
+
+router.post('/pending/:id/zamitnout', (req, res) => {
+    try {
+        if (!_smiSchvalit(req)) return res.status(403).json({ error: 'Zamítnout smí jen advokát nebo správce.', code: 'forbidden_role' });
+        const P = require('../lib/email_pending');
+        const item = P.najdi(req.params.id);
+        if (!item) return res.status(404).json({ error: 'E-mail nenalezen.' });
+        P.oznac(item.id, 'zamitnuto');
+        logEvent('E-mail', 'E-mail od cizí adresy zamítnut', item.od, { subject: item.predmet });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Zamítnutí selhalo: ' + err.message });
+    }
+});
+
 module.exports = router;

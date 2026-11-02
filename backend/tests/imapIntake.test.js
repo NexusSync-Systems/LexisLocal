@@ -33,7 +33,7 @@ function makeAdapter(messages) {
     };
 }
 
-beforeEach(() => { db.set('email_settings', [SETTINGS]); db.set('email_tasks', []); db.set('imap_processed', []); });
+beforeEach(() => { db.set('email_settings', [SETTINGS]); db.set('email_tasks', []); db.set('imap_processed', []); db.set('email_pending', []); });
 
 describe('imapIntake.pollOnce', () => {
     test('chybějící IMAP konfigurace → ok:false', async () => {
@@ -49,7 +49,7 @@ describe('imapIntake.pollOnce', () => {
         ]);
         const r = await imap.pollOnce(SETTINGS, ad);
         expect(r.processed).toBe(1);
-        expect(r.skipped).toBe(1);
+        expect(r.waiting).toBe(1);   // cizí → ke schválení (výchozí), agenti ho nezpracují
         expect(ad.seen).toEqual(expect.arrayContaining([1, 2]));
         const tasks = db.get('email_tasks') || [];
         expect(tasks.some(t => t.subject === 'Úkol')).toBe(true);

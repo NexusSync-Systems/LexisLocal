@@ -10,6 +10,9 @@
  *   • schůzku rezervuje jen sekretářka s oprávněním manage_calendar (deterministicky),
  *   • auto-odpověď smí jít VÝHRADNĚ zpět na authorized_sender,
  *   • bez nastaveného authorized_sender se nespustí nic (žádná výchozí adresa),
+ *   • důvěryhodné adresy (email_duveryhodni) = jako advokát; odpověď jde jim samotným,
+ *   • cizí odesílatel jen přes IMAP (input.cizi, nastavení „automaticky“) nebo po schválení advokátem
+ *     (input.schvaleno): spis se z jeho textu nepřiřadí, rezervace schůzky jen po schválení, odpověď jde advokátovi,
  *   • AI běží pod cloud_policy (revize 2. 11. 2026): zadání se sp. zn. → pravidla spisu (stupeň, souhlas);
  *     bez sp. zn. jen tehdy, když v textu nejsou osobní údaje (jinak se v cloudu nezpracuje).
  */
@@ -75,9 +78,9 @@ function _mdToHtml(md, title) {
  * Zařazení zadání pro cloud_policy: { caseNumber, spisId, dataClass, unknown }.
  * sp. zn. z pole caseNumber, jinak z předmětu / těla. Bez spisu: veřejné jen bez osobních údajů.
  */
-function zaradZadani({ subject, body, caseNumber }) {
+function zaradZadani({ subject, body, caseNumber, autoSpis }) {
     let cn = String(caseNumber || '').trim() || null;
-    if (!cn) { try { cn = findCaseNumber(String(subject || '') + '\n' + String(body || '')) || null; } catch (e) { cn = null; } }
+    if (!cn && autoSpis !== false) { try { cn = findCaseNumber(String(subject || '') + '\n' + String(body || '')) || null; } catch (e) { cn = null; } }
     let spisId = null;
     if (cn) { try { const sp = spisy.findByCase(cn); if (sp) spisId = sp.id; } catch (e) { spisId = null; } }
     if (spisId) return { caseNumber: cn, spisId, dataClass: null, unknown: null };
@@ -124,16 +127,22 @@ async function processEmailTask(input) {
         logEvent('E-mail', 'Úkolování ZAMÍTNUTO — není nastaven e-mail advokáta', sender, { subject });
         return { status: 'unauthorized', error: 'Přístup odepřen: v nastavení e-mailu chybí autorizovaný e-mail advokáta.' };
     }
-    if (cleanSender !== authorized) {
+    const duveryhodni = require('./email_pending').duveryhodni(settings);
+    // Cizí odesílatel smí jen s příznakem z IMAP (automaticky) nebo ze schválení — HTTP /process je nepředává.
+    const cizi = !!(input.cizi || input.schvaleno);
+    const interni = cleanSender === authorized || duveryhodni.includes(cleanSender);
+    if (!interni && !cizi) {
         logEvent('E-mail', 'Úkolování ZAMÍTNUTO — neautorizovaný odesílatel', sender, { subject });
         return { status: 'unauthorized', error: `Přístup odepřen: odesílatel „${sender}" není autorizovaný e-mail advokáta.` };
     }
+    const puvod = interni ? (cleanSender === authorized ? 'advokat' : 'duveryhodny') : (input.schvaleno ? 'cizi-schvaleno' : 'cizi-automaticky');
 
-    const zarazeni = zaradZadani({ subject, body: zadaniBezPodpisu(body), caseNumber: input.caseNumber });
-    return vRozsahuZadani(zarazeni, () => _zpracuj(input, settings, authorized, zarazeni));
+    // U cizího se sp. zn. z jeho textu nebere (jinak by kdokoli „navázal“ zadání na spis) — jen co zadá advokát.
+    const zarazeni = zaradZadani({ subject, body: zadaniBezPodpisu(body), caseNumber: input.caseNumber, autoSpis: interni });
+    return vRozsahuZadani(zarazeni, () => _zpracuj(input, settings, authorized, zarazeni, { interni, puvod }));
 }
 
-async function _zpracuj(input, settings, authorized, zarazeni) {
+async function _zpracuj(input, settings, authorized, zarazeni, kdo) {
     const { sender, subject, body } = input;
     const caseNumber = zarazeni.caseNumber;
 
@@ -271,7 +280,10 @@ async function _zpracuj(input, settings, authorized, zarazeni) {
     let scheduleNote = '';
     const secretary = agents['sekretarka'];
     const calendarAllowed = !!(secretary && secretary.permissions && secretary.permissions.manage_calendar === true);
-    if (scheduling.detectSchedulingIntent(body) && !calendarAllowed) {
+    if (scheduling.detectSchedulingIntent(body) && kdo.puvod === 'cizi-automaticky') {
+        scheduleResult = { intent: true, skipped: 'cizi-odesilatel' };
+        scheduleNote = '\n\n📅 Zadání od cizí adresy obsahuje žádost o schůzku — automaticky se nerezervuje. Termín potvrďte ručně.';
+    } else if (scheduling.detectSchedulingIntent(body) && !calendarAllowed) {
         scheduleResult = { intent: true, skipped: 'no-permission' };
         scheduleNote = '\n\n📅 Rozpoznal jsem žádost o schůzku, ale správu kalendáře nemá povolenou žádný agent (sekretářka: manage_calendar). Rezervaci proveďte ručně.';
     } else if (scheduling.detectSchedulingIntent(body)) {
@@ -310,18 +322,20 @@ async function _zpracuj(input, settings, authorized, zarazeni) {
         ? `\n\n⚠️ UPOZORNĚNÍ K ŠABLONĚ: ${templateWarnings.join(' ')}`
         : '';
     const stepsBlock = stepsSummary.length ? `\nPrůběh zpracování:\n- ${stepsSummary.join('\n- ')}\n` : '';
-    const fullReply = `Vážený pane doktore,\n\nk Vašemu zadání ze dne ${dateStr} („${subject.replace(/\[[^\]]+\]\s*/g, '')}") zasílám zpracovaný výstup.\n${stepsBlock}\nS úctou,\nVaše AI kancelář (LexisLocal)\n\n${'-'.repeat(80)}\nVÝSTUP:\n${'-'.repeat(80)}\n${require('./ai_disclosure').TEXT_NOTICE}\n\n${output}${citationNote}${templateNote}${scheduleNote}${draftNote}`;
+    const odKoho = kdo.interni ? '' : `\n\n⚠️ Zadání přišlo z cizí adresy ${String(sender).trim()} (${kdo.puvod === 'cizi-schvaleno' ? 'zpracováno po Vašem schválení' : 'zpracováno automaticky podle nastavení'}${input.overeni ? ', původ ověřen ' + input.overeni.toUpperCase() : ', původ NEOVĚŘEN'}). Odesílateli nic odesláno nebylo.`;
+    const fullReply = `Vážený pane doktore,${odKoho}\n\nk ${kdo.interni ? 'Vašemu zadání' : 'zadání'} ze dne ${dateStr} („${subject.replace(/\[[^\]]+\]\s*/g, '')}") zasílám zpracovaný výstup.\n${stepsBlock}\nS úctou,\nVaše AI kancelář (LexisLocal)\n\n${'-'.repeat(80)}\nVÝSTUP:\n${'-'.repeat(80)}\n${require('./ai_disclosure').TEXT_NOTICE}\n\n${output}${citationNote}${templateNote}${scheduleNote}${draftNote}`;
 
     const createdTask = db.insert('email_tasks', {
         sender: String(sender).trim(), subject: String(subject).trim(), body: String(body).trim(),
         mode, steps: stepsSummary, caseNumber: caseNumber || null, responseSent: fullReply,
-        status: cloudOdepren ? 'cloud-odepren' : 'completed', overeni: input.overeni || null
+        status: cloudOdepren ? 'cloud-odepren' : 'completed', overeni: input.overeni || null, puvod: kdo.puvod
     });
 
-    // AUTO-ODPOVĚĎ — výhradně na authorized_sender (fail-closed).
+    // AUTO-ODPOVĚĎ — advokátovi nebo důvěryhodnému odesílateli samotnému; zadání od cizího → advokátovi (fail-closed).
     let replied = false, replyError = null;
-    const to = String(sender).trim();
-    if (!authorized || to.toLowerCase() !== authorized) {
+    const to = kdo.interni ? String(sender).trim() : authorized;
+    const povoleni = [authorized, ...require('./email_pending').duveryhodni(settings)];
+    if (!authorized || !povoleni.includes(to.toLowerCase())) {
         replyError = 'Odpověď neodeslána: příjemce není autorizovaný e-mail advokáta (fail-closed).';
         logEvent('E-mail', 'Auto-odpověď ZAMÍTNUTA — příjemce != advokát', to, { subject });
     } else {

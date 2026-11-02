@@ -153,3 +153,96 @@ describe('processEmailTask — fail-closed a cloud_policy', () => {
         }
     });
 });
+
+describe('cizí a důvěryhodní odesílatelé, filtr příjemce', () => {
+    const request = require('supertest');
+    const app = require('../server');
+    const H = (r) => r.set('X-API-Token', 'tok-test');
+    const BASE = { authorized_sender: 'advokat@dias.cz', imap_host: 'imap.x.cz', imap_port: '993', imap_user: 'asist@x.cz', imap_pass: 's', imap_ssl: true };
+    const AR = (dom) => [`mx.prijem.cz; dkim=pass header.d=${dom}; dmarc=pass header.from=${dom}`];
+    const ad = (msgs) => { const seen = []; return { seen, async listUnseen() { return msgs; }, async markSeen(u) { seen.push(u); } }; };
+    const ulozit = (extra) => { const s = Object.assign({}, BASE, extra || {}); db.set('email_settings', [s]); return s; };
+    beforeEach(() => { db.set('email_tasks', []); db.set('imap_processed', []); db.set('email_pending', []); });
+
+    test('výchozí: cizí → ke schválení, úkol nevznikne', async () => {
+        const s = ulozit();
+        const r = await imap.pollOnce(s, ad([{ uid: 1, from: 'klient@firma.cz', subject: 'Prosím o radu', text: 'Mám dotaz.', authResults: AR('firma.cz') }]));
+        expect(r.waiting).toBe(1);
+        expect((db.get('email_tasks') || []).length).toBe(0);
+        const p = require('../lib/email_pending').seznam();
+        expect(p[0]).toMatchObject({ od: 'klient@firma.cz', stav: 'ceka', overeni: 'dmarc' });
+    });
+
+    test('ignorovat: cizí jen přeskočen', async () => {
+        const s = ulozit({ email_cizi: 'ignorovat' });
+        const r = await imap.pollOnce(s, ad([{ uid: 2, from: 'klient@firma.cz', subject: 'x', text: 'y', authResults: AR('firma.cz') }]));
+        expect(r.skipped).toBe(1); expect(r.waiting).toBe(0);
+        expect(require('../lib/email_pending').seznam()).toHaveLength(0);
+    });
+
+    test('automaticky: ověřený cizí se zpracuje, odpověď jen advokátovi, spis z textu se nepřiřadí', async () => {
+        const s = ulozit({ email_cizi: 'automaticky' });
+        const r = await imap.pollOnce(s, ad([{ uid: 3, from: 'klient@firma.cz', subject: 'Spis 12 C 34/2026', text: 'Jaká je lhůta k odvolání?', authResults: AR('firma.cz') }]));
+        expect(r.processed).toBe(1);
+        const t = (db.get('email_tasks') || [])[0];
+        expect(t.puvod).toBe('cizi-automaticky');
+        expect(t.caseNumber).toBeNull();
+        expect(t.responseSent).toMatch(/cizí adresy klient@firma\.cz/);
+    });
+
+    test('automaticky: neověřený cizí → ke schválení', async () => {
+        const s = ulozit({ email_cizi: 'automaticky' });
+        const r = await imap.pollOnce(s, ad([{ uid: 4, from: 'klient@firma.cz', subject: 'x', text: 'y', authResults: [] }]));
+        expect(r.processed).toBe(0); expect(r.waiting).toBe(1);
+    });
+
+    test('důvěryhodná adresa jako advokát (s DKIM), podvržená zamítnuta', async () => {
+        const s = ulozit({ email_duveryhodni: ['koncipient@dias.cz'] });
+        const r = await imap.pollOnce(s, ad([
+            { uid: 5, from: 'koncipient@dias.cz', subject: 'Dotaz', text: 'Jaká je lhůta k odvolání?', authResults: AR('dias.cz') },
+            { uid: 6, from: 'koncipient@dias.cz', subject: 'Podvrh', text: 'x', authResults: ['mx.prijem.cz; dmarc=fail header.from=dias.cz'] }
+        ]));
+        expect(r.processed).toBe(1); expect(r.rejected).toBe(1);
+        expect((db.get('email_tasks') || [])[0].puvod).toBe('duveryhodny');
+    });
+
+    test('filtr příjemce: zpráva na jinou adresu se nechá být (ani přečtená)', async () => {
+        const s = ulozit({ recipient_filter: 'dias+asistenti@dias.cz' });
+        const a = ad([
+            { uid: 7, from: 'advokat@dias.cz', to: ['dias@dias.cz'], subject: 'Osobní', text: 'x', authResults: AR('dias.cz') },
+            { uid: 8, from: 'advokat@dias.cz', to: ['Dias+Asistenti@dias.cz'], subject: 'Úkol', text: 'Jaká je lhůta?', authResults: AR('dias.cz') }
+        ]);
+        const r = await imap.pollOnce(s, a);
+        expect(r.ignored).toBe(1); expect(r.processed).toBe(1);
+        expect(a.seen).toEqual([8]);
+    });
+
+    test('processEmailTask: cizí bez příznaku (HTTP /process) → unauthorized', async () => {
+        ulozit();
+        expect((await processEmailTask({ sender: 'klient@firma.cz', subject: 'x', body: 'y' })).status).toBe('unauthorized');
+    });
+
+    test('schválení: zpracovat → úkol pro advokáta; zamítnout; dvakrát nejde', async () => {
+        ulozit();
+        const P = require('../lib/email_pending');
+        const a = P.pridej({ od: 'klient@firma.cz', predmet: 'Dotaz', text: 'Jaká je lhůta k odvolání?', overeni: 'dmarc' });
+        const b = P.pridej({ od: 'spam@x.cz', predmet: 'Spam', text: 'koupit', overeni: null });
+        const r1 = await H(request(app).post(`/api/email/pending/${a.id}/zpracovat`)).send({});
+        expect(r1.statusCode).toBe(200);
+        expect(r1.body.task.puvod).toBe('cizi-schvaleno');
+        expect(P.najdi(a.id).stav).toBe('zpracovano');
+        const r2 = await H(request(app).post(`/api/email/pending/${a.id}/zpracovat`)).send({});
+        expect(r2.statusCode).toBe(409);
+        const r3 = await H(request(app).post(`/api/email/pending/${b.id}/zamitnout`)).send({});
+        expect(r3.statusCode).toBe(200);
+        expect(P.najdi(b.id).stav).toBe('zamitnuto');
+        const r4 = await H(request(app).post(`/api/email/pending/${b.id}/zpracovat`)).send({ caseNumber: '99 C 1/2026' });
+        expect(r4.statusCode).toBe(409);
+    });
+
+    test('nastavení: neznámá volba → ke schválení; seznam důvěryhodných se čistí', () => {
+        const P = require('../lib/email_pending');
+        expect(P.rezimCizich({ email_cizi: 'cokoli' })).toBe('ke_schvaleni');
+        expect(P.duveryhodni({ email_duveryhodni: ' A@b.cz, spatne, c@d.cz ' })).toEqual(['a@b.cz', 'c@d.cz']);
+    });
+});

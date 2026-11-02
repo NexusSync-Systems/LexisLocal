@@ -178,6 +178,15 @@ ji vybírá (IMAP) a odpoví mu zpět. Zpracuje Claude přes Bedrock **podle pra
    Bez sp. zn. jen obecný dotaz **bez osobních údajů**; jinak odpověď vysvětlí, že se v cloudu nezpracoval.
    Podpis a citovaná korespondence se před kontrolou i před odesláním Claudovi odříznou.
 4. Výstup = koncept ve spisu (03_Koncepty) a odpověď **jen** na autorizovaný e-mail. Klientům se nic neposílá.
+5. **Kdo smí zadávat:** advokát a **důvěryhodné adresy** (koncipient, asistentka — také s DKIM/DMARC; odpověď jde jim).
+   **E-maily od cizích adres** (Nastavení → E-mail, lze kdykoli změnit):
+   - *Ke schválení* (výchozí) — zpráva čeká v dashboardu (E-mailové úkoly → „Čeká na schválení“), agenti ji zpracují
+     až po kliknutí **Zpracovat** (sp. zn. zadá advokát); **Zamítnout** = nic se nestane,
+   - *Ignorovat* — jen záznam v auditu,
+   - *Zpracovat automaticky* — jen s ověřeným původem, jinak ke schválení (riziko: úkol může zadat kdokoli).
+   Cizímu se nikdy nic neodesílá, výsledek dostane advokát; spis se podle textu cizího nepřiřadí a schůzka se sama nerezervuje.
+6. **Filtr příjemce** (Cílová adresa asistentů, např. `dias+asistenti@…`): zpracují se jen e-maily poslané na ni, ostatní
+   pošta ve schránce zůstane nepřečtená a nedotčená. Prázdné = celá schránka.
 
 Server musí běžet (služba, C8) a Mac nesmí spát — jinak se pošta vybere až po probuzení.
 E-mailový agent, který běží 24/7 v AWS (jen obecné dotazy, bez spisů): **docs/EMAIL_AGENT_AWS.md**.
