@@ -117,6 +117,13 @@ echo "$RUN_ID" > "$OUT/_run_id"
 
 shutdown -h +"$MAX_MINUTES" "LexisLocal remote test: časový limit"
 
+# Automatické aktualizace Ubuntu po startu drží zámek dpkg → instalace Node.js selhala a celý běh skončil po 13 min
+# („node: command not found“, generálka 1. 11. 2026). Vypnout je a apt nechat na zámek počkat.
+systemctl stop unattended-upgrades.service apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1 || break; echo "=== čekám na uvolnění dpkg ($i)"; sleep 10; done
+echo 'DPkg::Lock::Timeout "600";' > /etc/apt/apt.conf.d/99lexis-lock-timeout
+
 AWS=$(command -v aws || true)
 if [ -z "$AWS" ]; then apt-get update -qq && apt-get install -y -qq awscli || snap install aws-cli --classic || true; AWS=$(command -v aws || true); fi
 upload() {
@@ -170,7 +177,14 @@ done
 
 # 2) Node.js 22 + aplikace
 if ! command -v node >/dev/null || [ "$(node -v | cut -c2- | cut -d. -f1)" -lt 20 ]; then
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -; apt-get install -y nodejs
+  for t in 1 2 3; do
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs && command -v node >/dev/null && break
+    echo "!! instalace Node.js selhala (pokus $t)"; sleep 30
+  done
+fi
+if ! command -v node >/dev/null; then
+  echo "!! Node.js chybí — test nemá smysl, nahrávám logy a vypínám $(date -Is)"
+  cp /var/log/lexis-remote.log "$OUT/" 2>/dev/null; upload; shutdown -h +2 "LexisLocal remote test: chybí Node.js"; exit 1
 fi
 git clone --depth 1 -b "$BRANCH" "$REPO" /opt/LexisLocal
 cd /opt/LexisLocal
