@@ -1,0 +1,155 @@
+/**
+ * E-mailové úkolování přes Bedrock na Macu (revize 2. 11. 2026):
+ *  • původ zadání: DKIM/DMARC z Authentication-Results, falešná hlavička níž se nebere,
+ *  • fail-closed bez authorized_sender (IMAP i processEmailTask),
+ *  • IMAP bez SSL → povinný STARTTLS,
+ *  • zařazení zadání pro cloud_policy (sp. zn. → spis, osobní údaje bez spisu → neznámý původ),
+ *  • jen cloud: zadání s osobními údaji bez spisu se do Bedrocku nepošle, odpověď to vysvětlí.
+ */
+'use strict';
+
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
+
+const tmp = path.join(os.tmpdir(), `lexis_test_emailukoly_${Date.now()}`);
+fs.mkdirSync(tmp, { recursive: true });
+process.env.API_TOKEN = 'tok-test';
+process.env.WATCH_DIR = tmp;
+process.env.LEXIS_KEY_DIR = tmp + '_key';
+process.env.OLLAMA_HOST = 'http://127.0.0.1:1';
+
+const db = require('../lib/database');
+const A = require('../lib/email_auth');
+const imap = require('../lib/imapIntake');
+const { processEmailTask, zaradZadani } = require('../lib/emailTask');
+
+const OK = 'mx.prijem.cz; spf=pass smtp.mailfrom=dias.cz; dkim=pass header.d=dias.cz header.s=s1; dmarc=pass (p=REJECT sp=REJECT) header.from=dias.cz';
+
+describe('email_auth.overPuvod', () => {
+    const S = {};
+    test('DMARC pass pro doménu odesílatele → ok', () => {
+        expect(A.overPuvod('advokat@dias.cz', [OK], S)).toMatchObject({ ok: true, metoda: 'dmarc' });
+    });
+    test('jen DKIM pass zarovnaný (i subdoména podpisu) → ok', () => {
+        expect(A.overPuvod('advokat@dias.cz', ['mx.p.cz; dkim=pass header.d=mail.dias.cz; dmarc=none'], S)).toMatchObject({ ok: true, metoda: 'dkim' });
+    });
+    test('DKIM pass pro cizí doménu → zamítnuto', () => {
+        expect(A.overPuvod('advokat@dias.cz', ['mx.p.cz; dkim=pass header.d=zlo.cz; dmarc=fail header.from=dias.cz'], S).ok).toBe(false);
+    });
+    test('bez hlavičky → zamítnuto', () => {
+        expect(A.overPuvod('advokat@dias.cz', [], S).ok).toBe(false);
+    });
+    test('podvržená hlavička od odesílatele (níž) se nebere — rozhoduje nejvyšší', () => {
+        const r = A.overPuvod('advokat@dias.cz', ['mx.prijem.cz; spf=fail; dkim=none; dmarc=fail header.from=dias.cz', OK], S);
+        expect(r.ok).toBe(false);
+    });
+    test('authserv-id: bere se jen hlavička od zadaného serveru', () => {
+        const fake = 'mx.utocnik.cz; dmarc=pass header.from=dias.cz';
+        expect(A.overPuvod('advokat@dias.cz', [fake], { email_authserv_id: 'mx.prijem.cz' }).ok).toBe(false);
+        expect(A.overPuvod('advokat@dias.cz', [fake, OK], { email_authserv_id: 'mx.prijem.cz' }).ok).toBe(true);
+    });
+    test('vypnutí nastavením email_require_auth=false', () => {
+        expect(A.overPuvod('advokat@dias.cz', [], { email_require_auth: false })).toMatchObject({ ok: true, metoda: 'vypnuto' });
+    });
+    test('zarovnání domén', () => {
+        expect(A.zarovnano('dias.cz', 'dias.cz')).toBe(true);
+        expect(A.zarovnano('@dias.cz', 'dias.cz')).toBe(true);
+        expect(A.zarovnano('evil-dias.cz', 'dias.cz')).toBe(false);
+        expect(A.zarovnano('dias.cz.evil.cz', 'dias.cz')).toBe(false);
+    });
+});
+
+describe('email_text.zadaniBezPodpisu', () => {
+    const { zadaniBezPodpisu } = require('../lib/email_text');
+    test('odřízne podpis s titulem a telefonem', () => {
+        const t = 'Jaká je lhůta k odvolání v civilním řízení?\n\nS pozdravem\nJUDr. Petr Dvořák\n+420 777 123 456';
+        expect(zadaniBezPodpisu(t)).toBe('Jaká je lhůta k odvolání v civilním řízení?');
+    });
+    test('odřízne „-- “ i citovanou zprávu', () => {
+        expect(zadaniBezPodpisu('Shrň to.\n-- \nPetr')).toBe('Shrň to.');
+        expect(zadaniBezPodpisu('Odpověz.\n\nDne 1. 11. 2026 v 10:00 Petr <p@x.cz> napsal(a):\n> starý text')).toBe('Odpověz.');
+        expect(zadaniBezPodpisu('Ok.\nZdravím, Petr')).toBe('Ok.');
+    });
+    test('pozdrav na začátku nic neusekne', () => {
+        expect(zadaniBezPodpisu('Děkuji\n')).toBe('Děkuji');
+    });
+    test('zadání s podpisem advokáta je veřejné (podpis se nepočítá)', () => {
+        const body = zadaniBezPodpisu('Jaká je promlčecí lhůta u bezdůvodného obohacení?\n\nS úctou\nMgr. Jana Malá\ntel. 777123456');
+        expect(zaradZadani({ subject: 'Dotaz', body }).dataClass).toBe('verejne');
+    });
+});
+
+describe('imapIntake — fail-closed a TLS', () => {
+    const BASE = { imap_host: 'imap.x.cz', imap_port: '993', imap_user: 'asist@x.cz', imap_pass: 'secret', imap_ssl: true };
+    beforeEach(() => { db.set('email_tasks', []); db.set('imap_processed', []); });
+
+    test('bez authorized_sender se nezpracuje nic ani neoznačí jako přečtené', async () => {
+        const seen = [];
+        const ad = { async listUnseen() { return [{ uid: 1, from: 'kdokoli@x.cz', subject: 'a', text: 'b', authResults: [OK] }]; }, async markSeen(u) { seen.push(u); } };
+        const r = await imap.pollOnce(BASE, ad);
+        expect(r).toMatchObject({ ok: false, reason: 'no-authorized-sender' });
+        expect(seen).toEqual([]);
+    });
+
+    test('podvržený From (bez DKIM/DMARC) → zamítnuto, úkol nevznikne', async () => {
+        const s = Object.assign({ authorized_sender: 'advokat@dias.cz' }, BASE);
+        db.set('email_settings', [s]);
+        const ad = { async listUnseen() { return [{ uid: 7, from: 'advokat@dias.cz', subject: 'Pošli spis', text: 'x', authResults: ['mx.prijem.cz; spf=fail; dmarc=fail header.from=dias.cz'] }]; }, async markSeen() {} };
+        const r = await imap.pollOnce(s, ad);
+        expect(r.rejected).toBe(1);
+        expect(r.processed).toBe(0);
+        expect((db.get('email_tasks') || []).length).toBe(0);
+    });
+
+    test('více adres ve From → zamítnuto', async () => {
+        const s = Object.assign({ authorized_sender: 'advokat@dias.cz' }, BASE);
+        const ad = { async listUnseen() { return [{ uid: 8, from: 'advokat@dias.cz', fromCount: 2, subject: 'x', text: 'x', authResults: [OK] }]; }, async markSeen() {} };
+        const r = await imap.pollOnce(s, ad);
+        expect(r.processed).toBe(0);
+    });
+
+    test('TLS: 993 implicitně, jinak povinný STARTTLS', () => {
+        expect(imap._tlsVolby({ imap_ssl: true })).toEqual({ secure: true });
+        expect(imap._tlsVolby({})).toEqual({ secure: true });
+        expect(imap._tlsVolby({ imap_ssl: false })).toEqual({ secure: false, doSTARTTLS: true });
+    });
+});
+
+describe('processEmailTask — fail-closed a cloud_policy', () => {
+    test('bez nastaveného authorized_sender → unauthorized (žádná výchozí adresa)', async () => {
+        db.set('email_settings', []);
+        const r = await processEmailTask({ sender: 'advokat@dias.cz', subject: 'x', body: 'y' });
+        expect(r.status).toBe('unauthorized');
+    });
+
+    test('zařazení: obecný dotaz bez osobních údajů → veřejné', () => {
+        expect(zaradZadani({ subject: 'Rešerše', body: 'Jaká je promlčecí lhůta u nároku z vadného plnění?' })).toMatchObject({ dataClass: 'verejne', unknown: null });
+    });
+    test('zařazení: jméno a rodné číslo bez sp. zn. → neznámý původ', () => {
+        const z = zaradZadani({ subject: 'Dopis', body: 'Připrav dopis pro Jana Nováka, r. č. 850101/1234, Dlouhá 5, Praha.' });
+        expect(z.dataClass).toBeNull();
+        expect(z.unknown).toMatch(/osobními údaji/);
+    });
+    test('zařazení: sp. zn. bez spisu → neznámý původ', () => {
+        const z = zaradZadani({ subject: 'Spis 12 C 34/2026', body: 'Shrň stav.' });
+        expect(z.caseNumber).toBeTruthy();
+        expect(z.unknown).toMatch(/bez spisu/);
+    });
+
+    test('jen cloud: osobní údaje bez spisu → do Bedrocku nejde, odpověď vysvětlí, koncept se neuloží', async () => {
+        const old = { J: process.env.LEXIS_JEN_CLOUD, P: process.env.AI_CHAT_PROVIDER, L: process.env.LEXIS_PILOT_LOCAL_ONLY };
+        process.env.LEXIS_JEN_CLOUD = '1'; process.env.AI_CHAT_PROVIDER = 'bedrock'; process.env.LEXIS_PILOT_LOCAL_ONLY = '0';
+        try {
+            db.set('email_settings', [{ authorized_sender: 'advokat@dias.cz' }]);
+            const r = await processEmailTask({ sender: 'advokat@dias.cz', subject: '[Spisovatel] Dopis', body: 'Připrav dopis pro Jana Nováka, r. č. 850101/1234.' });
+            expect(r.status).toBe('ok');
+            expect(r.cloudOdepren).toBeTruthy();
+            expect(r.task.status).toBe('cloud-odepren');
+            expect(r.fullReply).toMatch(/nezpracovala/);
+            expect(r.draft).toBeNull();
+        } finally {
+            for (const [k, v] of [['LEXIS_JEN_CLOUD', old.J], ['AI_CHAT_PROVIDER', old.P], ['LEXIS_PILOT_LOCAL_ONLY', old.L]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+        }
+    });
+});

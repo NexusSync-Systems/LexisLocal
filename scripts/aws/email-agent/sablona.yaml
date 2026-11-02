@@ -1,0 +1,227 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  LexisLocal — e-mailový agent v AWS (24/7, bez přístupu ke spisům): SES příjem v eu-central-1 → S3 → Lambda →
+  Claude přes Amazon Bedrock (EU profil) → odpověď přes SES jen povoleným odesílatelům. Nasazení a aktivace:
+  scripts/aws/email-agent-cloudshell.sh (docs/EMAIL_AGENT_AWS.md).
+
+Parameters:
+  DomenaPrijmu:
+    Type: String
+    Description: Subdoména jen pro agenta (MX povede do SES), např. ukoly.nexusstack.eu
+    AllowedPattern: '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+  AdresaAgenta:
+    Type: String
+    Description: Adresa, na kterou advokát posílá zadání (v DomenaPrijmu), např. asistent@ukoly.nexusstack.eu
+    AllowedPattern: '^[a-z0-9._+-]+@[a-z0-9.-]+$'
+  Povoleni:
+    Type: String
+    Description: Povolení odesílatelé (e-maily advokátů oddělené čárkou). Jiným se neodpovídá.
+    AllowedPattern: '^[A-Za-z0-9._%+@,-]+$'
+  ModelId:
+    Type: String
+    Default: eu.anthropic.claude-sonnet-4-6
+    AllowedPattern: '^eu\.[a-z0-9.:-]+$'
+    Description: EU inference profile Clauda
+  DenniLimit:
+    Type: Number
+    Default: 40
+    MinValue: 1
+    MaxValue: 500
+    Description: Nejvýš zpracovaných zadání za den (ochrana nákladů)
+  NazevSadyPravidel:
+    Type: String
+    Default: lexislocal-email-agent
+    AllowedPattern: '^[A-Za-z0-9_-]{1,64}$'
+
+Resources:
+  # ---------------------------------------------------------------------------------------------------
+  # Úložiště přijatých zpráv (šifrované, neveřejné, zprávy se po 7 dnech samy smažou)
+  # ---------------------------------------------------------------------------------------------------
+  Posta:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      LifecycleConfiguration:
+        Rules:
+          - { Id: prijate-zpravy-7-dni, Status: Enabled, Prefix: prijem/, ExpirationInDays: 7 }
+          - { Id: stav-400-dni, Status: Enabled, Prefix: stav/, ExpirationInDays: 400 }
+      Tags: [{ Key: aplikace, Value: LexisLocal }]
+
+  PostaPolitika:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Posta
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SesUkladaPrijatouPostu
+            Effect: Allow
+            Principal: { Service: ses.amazonaws.com }
+            Action: s3:PutObject
+            Resource: !Sub '${Posta.Arn}/prijem/*'
+            Condition:
+              StringEquals: { 'AWS:SourceAccount': !Ref 'AWS::AccountId' }
+              ArnLike: { 'AWS:SourceArn': !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/${NazevSadyPravidel}:receipt-rule/*' }
+          - Sid: JenSifrovanePripojeni
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt Posta.Arn, !Sub '${Posta.Arn}/*']
+            Condition:
+              Bool: { 'aws:SecureTransport': 'false' }
+
+  # ---------------------------------------------------------------------------------------------------
+  # Funkce agenta (nejmenší oprávnění: číst poštu, zapsat stav, Claude v EU, odeslat jen z adresy agenta)
+  # ---------------------------------------------------------------------------------------------------
+  Logy:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}'
+      RetentionInDays: 30
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { 'aws:SourceAccount': !Ref 'AWS::AccountId' }
+      Policies:
+        - PolicyName: email-agent
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: Logy
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub '${Logy.Arn}:*'
+              - Sid: CteniPrijatePosty
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${Posta.Arn}/prijem/*'
+              - Sid: Stav
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub '${Posta.Arn}/stav/*'
+              - Sid: VypisStavu   # bez něj S3 vrací u chybějícího objektu 403 místo 404
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt Posta.Arn
+                Condition:
+                  StringLike: { 's3:prefix': 'stav/*' }
+              - Sid: ClaudeVEU
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/${ModelId}'
+                  - !Sub ['arn:aws:bedrock:eu-*::foundation-model/${Zaklad}*', { Zaklad: !Select [1, !Split ['eu.', !Ref ModelId]] }]
+                Condition:
+                  StringLike: { 'aws:RequestedRegion': 'eu-*' }
+              - Sid: OdpovedJenZAdresyAgenta
+                Effect: Allow
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*'
+                Condition:
+                  StringEquals: { 'ses:FromAddress': !Ref AdresaAgenta }
+      Tags: [{ Key: aplikace, Value: LexisLocal }]
+
+  Agent:
+    Type: AWS::Lambda::Function
+    DependsOn: Logy
+    Properties:
+      FunctionName: !Ref 'AWS::StackName'
+      Description: LexisLocal e-mailový agent (bez přístupu ke spisům)
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      Handler: index.handler
+      Role: !GetAtt Role.Arn
+      Timeout: 180
+      MemorySize: 512
+      Environment:
+        Variables:
+          BUCKET: !Ref Posta
+          AGENT_ADRESA: !Ref AdresaAgenta
+          POVOLENI: !Ref Povoleni
+          MODEL_ID: !Ref ModelId
+          DENNI_LIMIT: !Ref DenniLimit
+      Code:
+        # Zástupný kód — skutečný nahraje: bash email-agent-cloudshell.sh kod (před aktivací příjmu).
+        ZipFile: |
+          exports.handler = async () => { throw new Error('Kód agenta ještě není nahraný: bash email-agent-cloudshell.sh kod'); };
+      Tags: [{ Key: aplikace, Value: LexisLocal }]
+
+  AgentOpakovani:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref Agent
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 1
+      MaximumEventAgeInSeconds: 3600
+
+  SesSmiSpustitAgenta:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt Agent.Arn
+      Action: lambda:InvokeFunction
+      Principal: ses.amazonaws.com
+      SourceAccount: !Ref 'AWS::AccountId'
+      SourceArn: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/${NazevSadyPravidel}:receipt-rule/prijem-zadani'
+
+  # ---------------------------------------------------------------------------------------------------
+  # SES: doména agenta (Easy DKIM = ověření domény i podpis odpovědí) a pravidlo příjmu
+  # ---------------------------------------------------------------------------------------------------
+  DomenaAgenta:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref DomenaPrijmu
+      DkimSigningAttributes: { NextSigningKeyLength: RSA_2048_BIT }
+
+  SadaPravidel:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: !Ref NazevSadyPravidel
+
+  PravidloPrijmu:
+    Type: AWS::SES::ReceiptRule
+    DependsOn: [PostaPolitika, SesSmiSpustitAgenta]
+    Properties:
+      RuleSetName: !Ref SadaPravidel
+      Rule:
+        Name: prijem-zadani
+        Enabled: true
+        ScanEnabled: true          # verdikty virus / spam / SPF / DKIM / DMARC pro funkci
+        TlsPolicy: Require         # zprávy jen přes šifrované SMTP
+        Recipients: [!Ref AdresaAgenta]
+        Actions:
+          - S3Action: { BucketName: !Ref Posta, ObjectKeyPrefix: prijem/ }
+          - LambdaAction: { FunctionArn: !GetAtt Agent.Arn, InvocationType: Event }
+
+Outputs:
+  Funkce:
+    Value: !Ref Agent
+  Posta:
+    Value: !Ref Posta
+  SadaPravidel:
+    Value: !Ref SadaPravidel
+  MX:
+    Description: DNS záznam MX pro DomenaPrijmu
+    Value: !Sub '${DomenaPrijmu}. MX 10 inbound-smtp.${AWS::Region}.amazonaws.com.'
+  Dkim1:
+    Value: !Sub '${DomenaAgenta.DkimDNSTokenName1} CNAME ${DomenaAgenta.DkimDNSTokenValue1}'
+  Dkim2:
+    Value: !Sub '${DomenaAgenta.DkimDNSTokenName2} CNAME ${DomenaAgenta.DkimDNSTokenValue2}'
+  Dkim3:
+    Value: !Sub '${DomenaAgenta.DkimDNSTokenName3} CNAME ${DomenaAgenta.DkimDNSTokenValue3}'

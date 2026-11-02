@@ -3,7 +3,10 @@
  *
  * Fail-closed a idempotentní:
  *   • zpracují se JEN zprávy od authorized_sender; ostatní se přeskočí (nikdo cizí
- *     nemůže přes e-mail ovládat agenty),
+ *     nemůže přes e-mail ovládat agenty); bez nastaveného authorized_sender se nezpracuje nic,
+ *   • adresa From se dá podvrhnout → zpráva musí mít od serveru schránky DKIM/DMARC pass
+ *     pro doménu odesílatele (lib/email_auth.js, revize 2. 11. 2026),
+ *   • bez SSL se vyžaduje STARTTLS (heslo ani zadání nejdou po síti nešifrovaně),
  *   • dedup přes uložené UID (imap_processed) — stejná zpráva se nezpracuje dvakrát,
  *   • zprávy se NEmažou; jen se označí jako přečtené (\Seen). Mazání je zakázané.
  *
@@ -15,8 +18,16 @@
 const db = require('./database');
 const { logEvent } = require('./audit');
 const { processEmailTask } = require('./emailTask');
+const emailAuth = require('./email_auth');
 
 const PROCESSED_CAP = 500;
+const MAX_TELO = 50000;   // znaků těla zadání (delší se zkrátí)
+
+// TLS: port 993 = implicitní TLS; jinak (143) povinný STARTTLS — imapflow bez něj spojení odmítne.
+function _tlsVolby(settings) {
+    const secure = settings.imap_ssl !== false;
+    return secure ? { secure: true } : { secure: false, doSTARTTLS: true };
+}
 
 function _requiredImap(settings) {
     const missing = [];
@@ -32,7 +43,8 @@ function _saveProcessed(set) {
 }
 
 // Vyzvedne a zpracuje nové zprávy. `adapter` (test seam) implementuje:
-//   listUnseen(): Promise<[{ uid, from, subject, text }]>   // from = e-mailová adresa
+//   listUnseen(): Promise<[{ uid, from, subject, text, authResults, fromCount }]>
+//     from = e-mailová adresa, authResults = hlavičky Authentication-Results shora dolů
 //   markSeen(uid): Promise<void>
 //   close?(): Promise<void>
 async function pollOnce(settings, adapter) {
@@ -41,11 +53,15 @@ async function pollOnce(settings, adapter) {
     if (missing.length) return { ok: false, reason: 'imap-config', missing };
 
     const authorized = (settings.authorized_sender || '').trim().toLowerCase();
+    if (!authorized) {   // fail-closed: bez advokátovy adresy nezpracujeme nic (ani neoznačíme jako přečtené)
+        logEvent('E-mail', 'IMAP: zpracování vypnuto — chybí autorizovaný e-mail advokáta', settings.imap_user || '');
+        return { ok: false, reason: 'no-authorized-sender' };
+    }
     const own = adapter ? null : await _imapflowAdapter(settings);
     const mbox = adapter || own;
 
     const processed = _loadProcessed();
-    let processedCount = 0, skipped = 0, errors = 0, total = 0;
+    let processedCount = 0, skipped = 0, errors = 0, total = 0, rejected = 0;
     try {
         const messages = await mbox.listUnseen();
         total = messages.length;
@@ -53,15 +69,23 @@ async function pollOnce(settings, adapter) {
             const key = String(m.uid);
             if (processed.has(key)) { skipped++; continue; }               // dedup
             const from = String(m.from || '').trim().toLowerCase();
-            if (authorized && from !== authorized) {                        // fail-closed filtr
+            if (from !== authorized || (m.fromCount || 1) !== 1) {          // fail-closed filtr
                 logEvent('E-mail', 'IMAP: přeskočen neautorizovaný odesílatel', m.from || '(neznámý)', { subject: m.subject || '' });
                 processed.add(key);
                 try { await mbox.markSeen(m.uid); } catch (e) {}
                 skipped++;
                 continue;
             }
+            const puvod = emailAuth.overPuvod(from, m.authResults, settings);
+            if (!puvod.ok) {                                                // podvržený / neověřený odesílatel
+                logEvent('E-mail', 'IMAP: zadání ZAMÍTNUTO — neověřený původ', m.from || '(neznámý)', { subject: m.subject || '', duvod: puvod.duvod });
+                processed.add(key);
+                try { await mbox.markSeen(m.uid); } catch (e) {}
+                rejected++; skipped++;
+                continue;
+            }
             try {
-                await processEmailTask({ sender: m.from, subject: m.subject || '(bez předmětu)', body: m.text || '' });
+                await processEmailTask({ sender: m.from, subject: m.subject || '(bez předmětu)', body: String(m.text || '').slice(0, MAX_TELO), overeni: puvod.metoda });
                 processedCount++;
             } catch (e) {
                 errors++;
@@ -74,8 +98,8 @@ async function pollOnce(settings, adapter) {
         _saveProcessed(processed);
         if (own && own.close) { try { await own.close(); } catch (e) {} }
     }
-    logEvent('E-mail', 'IMAP: vyzvednutí schránky', settings.imap_user || '', { total, processed: processedCount, skipped, errors });
-    return { ok: true, total, processed: processedCount, skipped, errors };
+    logEvent('E-mail', 'IMAP: vyzvednutí schránky', settings.imap_user || '', { total, processed: processedCount, skipped, rejected, errors });
+    return { ok: true, total, processed: processedCount, skipped, rejected, errors };
 }
 
 // Reálný IMAP adaptér přes imapflow + mailparser (líně načtené).
@@ -85,7 +109,7 @@ async function _imapflowAdapter(settings) {
     const client = new ImapFlow({
         host: settings.imap_host,
         port: parseInt(settings.imap_port, 10) || 993,
-        secure: settings.imap_ssl !== false,
+        ..._tlsVolby(settings),
         auth: { user: settings.imap_user, pass: settings.imap_pass },
         logger: false
     });
@@ -97,8 +121,12 @@ async function _imapflowAdapter(settings) {
             for await (const msg of client.fetch({ seen: false }, { uid: true, source: true })) {
                 try {
                     const parsed = await simpleParser(msg.source);
-                    const from = parsed.from && parsed.from.value && parsed.from.value[0] ? parsed.from.value[0].address : '';
-                    out.push({ uid: msg.uid, from, subject: parsed.subject || '', text: parsed.text || '' });
+                    const adresy = (parsed.from && parsed.from.value) || [];
+                    const from = adresy[0] ? adresy[0].address : '';
+                    const authResults = (parsed.headerLines || [])
+                        .filter(h => h && h.key === 'authentication-results')
+                        .map(h => String(h.line || '').replace(/^[^:]*:\s*/, ''));
+                    out.push({ uid: msg.uid, from, fromCount: adresy.length, subject: parsed.subject || '', text: parsed.text || '', authResults });
                 } catch (e) { /* nečitelnou zprávu přeskočíme */ }
             }
             return out;
@@ -136,7 +164,7 @@ async function testConnection(settings, _connector) {
         const { ImapFlow } = require('imapflow');
         const client = new ImapFlow({
             host: settings.imap_host, port: parseInt(settings.imap_port, 10) || 993,
-            secure: settings.imap_ssl !== false, auth: { user: settings.imap_user, pass: settings.imap_pass }, logger: false
+            ..._tlsVolby(settings), auth: { user: settings.imap_user, pass: settings.imap_pass }, logger: false
         });
         await client.connect();
         await client.mailboxOpen('INBOX');
@@ -147,4 +175,4 @@ async function testConnection(settings, _connector) {
     }
 }
 
-module.exports = { pollOnce, startPolling, testConnection, _requiredImap, _imapflowAdapter };
+module.exports = { pollOnce, startPolling, testConnection, _requiredImap, _imapflowAdapter, _tlsVolby };

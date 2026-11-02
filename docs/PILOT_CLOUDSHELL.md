@@ -166,6 +166,22 @@ Aktualizovat mimo pracovní dobu (server je ~3–6 min nedostupný). `.env`, dat
 vektory; zkušební instalace 26. 10. bez chyb za ~5 min) — na šifrovaný USB disk, na Macu do `~/Downloads`. Stejná báze
 jako v měřeních vyhledávání a v generálce.
 
+**C9. Úkoly e-mailem (volitelně)** — advokát pošle zadání ze své adresy do schránky asistentů, LexisLocal na Macu
+ji vybírá (IMAP) a odpoví mu zpět. Zpracuje Claude přes Bedrock **podle pravidel spisu**:
+
+1. Nastavení → E-mail: vyplnit **autorizovaný e-mail advokáta** (bez něj se nezpracuje nic), IMAP a SMTP schránky
+   asistentů, zapnout příjem, interval (min.). Port 993 = TLS; jiný port jen se STARTTLS (bez šifrování se nepřipojí).
+2. Zadání projde jen s **DKIM/DMARC pass** pro doménu advokáta (hlavička `Authentication-Results` od serveru
+   schránky; podvržený odesílatel se zahodí). Volitelně `email_authserv_id` (např. `mx.google.com`) — pak se věří jen
+   hlavičce od toho serveru. Když schránka hlavičku nepřidává: `LEXIS_EMAIL_OVERENI=0` v `.env` (nedoporučeno).
+3. **Sp. zn. v předmětu** (např. `12 C 34/2026`) → zadání se váže ke spisu a platí jeho stupeň a souhlas klienta.
+   Bez sp. zn. jen obecný dotaz **bez osobních údajů**; jinak odpověď vysvětlí, že se v cloudu nezpracoval.
+   Podpis a citovaná korespondence se před kontrolou i před odesláním Claudovi odříznou.
+4. Výstup = koncept ve spisu (03_Koncepty) a odpověď **jen** na autorizovaný e-mail. Klientům se nic neposílá.
+
+Server musí běžet (služba, C8) a Mac nesmí spát — jinak se pošta vybere až po probuzení.
+E-mailový agent, který běží 24/7 v AWS (jen obecné dotazy, bez spisů): **docs/EMAIL_AGENT_AWS.md**.
+
 ## D. Konec pilotu (CloudShell)
 
 ```bash

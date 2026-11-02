@@ -27,7 +27,7 @@ router.get('/settings', (req, res) => {
     try {
         const settingsList = db.get('email_settings') || [];
         const currentSettings = settingsList.length > 0 ? settingsList[0] : {
-            authorized_sender: 'advokat@dias.cz',
+            authorized_sender: '',   // bez výchozí adresy — úkolování e-mailem se zapne až vyplněním (fail-closed)
             recipient_filter: 'dias+asistenti@advokatnikancelar.cz',
             imap_host: 'imap.advokatnikancelar.cz',
             imap_port: '993',
@@ -97,11 +97,12 @@ router.post('/simulate', async (req, res) => {
     try {
         // 1. Ověření autorizovaného odesílatele
         const settingsList = db.get('email_settings') || [];
-        const settings = settingsList.length > 0 ? settingsList[0] : {
-            authorized_sender: 'advokat@dias.cz'
-        };
+        const settings = settingsList.length > 0 ? settingsList[0] : {};
 
-        if (settings && settings.authorized_sender) {
+        if (!settings.authorized_sender || !String(settings.authorized_sender).trim()) {
+            return res.status(403).json({ error: '❌ Přístup odepřen: v nastavení e-mailu chybí autorizovaný e-mail advokáta.' });
+        }
+        {
             const cleanSender = sender.trim().toLowerCase();
             const cleanAuthorized = settings.authorized_sender.trim().toLowerCase();
             if (cleanSender !== cleanAuthorized) {
@@ -171,7 +172,8 @@ router.post('/simulate', async (req, res) => {
         const cleanBody = body.replace(/^@[a-zA-Z0-9_ěščřžýáíéúůóďťňĎŤŇ]+\s*/, ''); // Odstranit případný tag z těla
 
         try {
-            const response = await ollama.chat({
+            const { zaradZadani, vRozsahuZadani } = require('../lib/emailTask');
+            const response = await vRozsahuZadani(zaradZadani({ subject, body: require('../lib/email_text').zadaniBezPodpisu(cleanBody) }), () => ollama.chat({
                 model: selectedModel,
                 messages: [
                     { role: 'system', content: agent.systemPrompt },
@@ -180,7 +182,7 @@ router.post('/simulate', async (req, res) => {
                 options: {
                     temperature: 0.3
                 }
-            });
+            }));
             replyText = response.message.content;
         } catch (ollamaErr) {
             console.warn(`⚠️ E-mail: Selhalo spojení s Ollama (${ollamaErr.message}). Používám robustní fallback.`);

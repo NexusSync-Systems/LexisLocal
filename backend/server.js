@@ -342,7 +342,8 @@ if (require.main === module) {
         const db = require('./lib/database');
         const imapIntake = require('./lib/imapIntake');
         const _getEmailSettings = () => { const l = db.get('email_settings') || []; return l[0] || {}; };
-        const _pollMs = Math.max(60, parseInt((_getEmailSettings().imap_poll_minutes || 5), 10)) * 60 * 1000;
+        // interval v minutách (min. 1); dřív Math.max(60, …) → nejméně hodinu (revize 2. 11. 2026)
+        const _pollMs = Math.max(1, parseInt((_getEmailSettings().imap_poll_minutes || 5), 10) || 5) * 60 * 1000;
         imapIntake.startPolling(_getEmailSettings, _pollMs);
     } catch (e) { console.error('⚠️ IMAP poller se nepodařilo spustit:', e.message); }
 

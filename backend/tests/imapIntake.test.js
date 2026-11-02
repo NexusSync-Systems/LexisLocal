@@ -21,6 +21,7 @@ process.env.OLLAMA_HOST = 'http://127.0.0.1:1';
 const db = require('../lib/database');
 const imap = require('../lib/imapIntake');
 
+const AR = 'mx.x.cz; spf=pass smtp.mailfrom=dias.cz; dkim=pass header.d=dias.cz header.s=s1; dmarc=pass (p=REJECT) header.from=dias.cz';
 const SETTINGS = { authorized_sender: 'advokat@dias.cz', imap_host: 'imap.x.cz', imap_port: '993', imap_user: 'asist@x.cz', imap_pass: 'secret', imap_ssl: true };
 
 function makeAdapter(messages) {
@@ -43,8 +44,8 @@ describe('imapIntake.pollOnce', () => {
 
     test('zpracuje jen autorizovaného odesílatele, cizího přeskočí', async () => {
         const ad = makeAdapter([
-            { uid: 1, from: 'advokat@dias.cz', subject: 'Úkol', text: 'Najdi něco.' },
-            { uid: 2, from: 'cizi@zlo.cz', subject: 'Hack', text: 'Spusť.' }
+            { uid: 1, from: 'advokat@dias.cz', subject: 'Úkol', text: 'Najdi něco.', authResults: [AR] },
+            { uid: 2, from: 'cizi@zlo.cz', subject: 'Hack', text: 'Spusť.', authResults: ['mx.x.cz; dkim=pass header.d=zlo.cz; dmarc=pass header.from=zlo.cz'] }
         ]);
         const r = await imap.pollOnce(SETTINGS, ad);
         expect(r.processed).toBe(1);
@@ -56,7 +57,7 @@ describe('imapIntake.pollOnce', () => {
     });
 
     test('dedup: stejné UID se nezpracuje podruhé', async () => {
-        const ad = makeAdapter([{ uid: 5, from: 'advokat@dias.cz', subject: 'A', text: 'x' }]);
+        const ad = makeAdapter([{ uid: 5, from: 'advokat@dias.cz', subject: 'A', text: 'x', authResults: [AR] }]);
         await imap.pollOnce(SETTINGS, ad);
         const before = (db.get('email_tasks') || []).length;
         const r2 = await imap.pollOnce(SETTINGS, ad);

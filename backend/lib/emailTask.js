@@ -8,7 +8,10 @@
  * Bezpečnost (fail-closed):
  *   • spustí se JEN pro authorized_sender (jinak status 'unauthorized'),
  *   • schůzku rezervuje jen sekretářka s oprávněním manage_calendar (deterministicky),
- *   • auto-odpověď smí jít VÝHRADNĚ zpět na authorized_sender.
+ *   • auto-odpověď smí jít VÝHRADNĚ zpět na authorized_sender,
+ *   • bez nastaveného authorized_sender se nespustí nic (žádná výchozí adresa),
+ *   • AI běží pod cloud_policy (revize 2. 11. 2026): zadání se sp. zn. → pravidla spisu (stupeň, souhlas);
+ *     bez sp. zn. jen tehdy, když v textu nejsou osobní údaje (jinak se v cloudu nezpracuje).
  */
 'use strict';
 const { agentNumCtx } = require('./agent_options');
@@ -27,6 +30,9 @@ const booking = require('./calendarBooking');
 const mailer = require('./mailer');
 const spisy = require('./spisy');
 const docTemplates = require('./documentTemplates');
+const cloudPolicy = require('./cloud_policy');
+const { findCaseNumber } = require('./case_number');
+const { zadaniBezPodpisu } = require('./email_text');
 
 // Timeout kolem volání modelu — ať to při pomalém/zaseklém modelu nevisí dlouho,
 // ale rychle spadne na poctivý fallback. Přepis přes LEXIS_AI_TIMEOUT_MS.
@@ -65,22 +71,71 @@ function _mdToHtml(md, title) {
     return '<!doctype html>\n<html lang="cs"><head><meta charset="utf-8"><title>' + esc2(title || 'Koncept') + '</title></head>\n<body>\n' + html + '</body></html>\n';
 }
 
+/**
+ * Zařazení zadání pro cloud_policy: { caseNumber, spisId, dataClass, unknown }.
+ * sp. zn. z pole caseNumber, jinak z předmětu / těla. Bez spisu: veřejné jen bez osobních údajů.
+ */
+function zaradZadani({ subject, body, caseNumber }) {
+    let cn = String(caseNumber || '').trim() || null;
+    if (!cn) { try { cn = findCaseNumber(String(subject || '') + '\n' + String(body || '')) || null; } catch (e) { cn = null; } }
+    let spisId = null;
+    if (cn) { try { const sp = spisy.findByCase(cn); if (sp) spisId = sp.id; } catch (e) { spisId = null; } }
+    if (spisId) return { caseNumber: cn, spisId, dataClass: null, unknown: null };
+    if (cn) return { caseNumber: cn, spisId: null, dataClass: null, unknown: `e-mailové zadání: sp. zn. ${cn} bez spisu` };
+    let osobni = true;
+    try {
+        const { map } = require('./anonymizer').pseudonymizeText(String(subject || '') + '\n' + String(body || ''));
+        osobni = Object.keys(map || {}).length > 0;
+    } catch (e) { osobni = true; }
+    return osobni
+        ? { caseNumber: null, spisId: null, dataClass: null, unknown: 'e-mailové zadání s osobními údaji bez sp. zn.' }
+        : { caseNumber: null, spisId: null, dataClass: 'verejne', unknown: null };
+}
+
+/** Spustí fn v cloudovém kontextu podle zařazení zadání (sdílí IMAP, /process i /simulate). */
+function vRozsahuZadani(zarazeni, fn) {
+    return cloudPolicy.scope(zarazeni.dataClass ? { dataClass: zarazeni.dataClass } : {}, () => {
+        if (zarazeni.spisId) cloudPolicy.noteSpis(zarazeni.spisId);
+        if (zarazeni.unknown) cloudPolicy.noteUnknown(zarazeni.unknown);
+        return fn();
+    });
+}
+
+function _odepreniText(sh) {
+    const duvody = (sh && sh.duvody && sh.duvody.length) ? sh.duvody.join(' ') : 'zadání nesplňuje pravidla pro cloud.';
+    return 'Zadání jsem nezpracovala — Claude v cloudu (Amazon Bedrock, EU) ho podle pravidel kanceláře nesmí dostat: ' + duvody +
+        '\n\nCo s tím: uveďte v předmětu sp. zn. spisu, který má zpracování v cloudu povolené (stupeň a souhlas klienta), ' +
+        'nebo napište obecný dotaz bez jmen a dalších osobních údajů, případně úkol zadejte přímo v aplikaci LexisLocal.';
+}
+
 async function processEmailTask(input) {
-    const { sender, subject, body, caseNumber } = input || {};
+    const { sender, subject, body } = input || {};
     if (!sender || !subject || !body) {
         return { status: 'bad-request', error: 'Odesílatel, předmět a obsah jsou povinné.' };
     }
 
     const settingsList = db.get('email_settings') || [];
-    const settings = settingsList.length > 0 ? settingsList[0] : { authorized_sender: 'advokat@dias.cz' };
+    const settings = settingsList.length > 0 ? settingsList[0] : {};
     const authorized = (settings.authorized_sender || '').trim().toLowerCase();
     const cleanSender = String(sender).trim().toLowerCase();
 
-    // INVARIANT: jen autorizovaný advokát smí spustit flow.
-    if (authorized && cleanSender !== authorized) {
+    // INVARIANT: jen autorizovaný advokát smí spustit flow; bez nastavené adresy nikdo (fail-closed).
+    if (!authorized) {
+        logEvent('E-mail', 'Úkolování ZAMÍTNUTO — není nastaven e-mail advokáta', sender, { subject });
+        return { status: 'unauthorized', error: 'Přístup odepřen: v nastavení e-mailu chybí autorizovaný e-mail advokáta.' };
+    }
+    if (cleanSender !== authorized) {
         logEvent('E-mail', 'Úkolování ZAMÍTNUTO — neautorizovaný odesílatel', sender, { subject });
         return { status: 'unauthorized', error: `Přístup odepřen: odesílatel „${sender}" není autorizovaný e-mail advokáta.` };
     }
+
+    const zarazeni = zaradZadani({ subject, body: zadaniBezPodpisu(body), caseNumber: input.caseNumber });
+    return vRozsahuZadani(zarazeni, () => _zpracuj(input, settings, authorized, zarazeni));
+}
+
+async function _zpracuj(input, settings, authorized, zarazeni) {
+    const { sender, subject, body } = input;
+    const caseNumber = zarazeni.caseNumber;
 
     const agents = loadAgents();
 
@@ -94,7 +149,8 @@ async function processEmailTask(input) {
         const found = Object.values(agents).find(a => a.id.toLowerCase() === t || a.name.toLowerCase() === t);
         if (found) explicitAgentId = found.id;
     }
-    const cleanBody = body.replace(/^@[a-zA-Z0-9_ěščřžýáíéúůóďťňĎŤŇ]+\s*/, '');
+    // Bez citované korespondence a podpisu (lib/email_text.js): model dostane jen zadání.
+    const cleanBody = zadaniBezPodpisu(body.replace(/^@[a-zA-Z0-9_ěščřžýáíéúůóďťňĎŤŇ]+\s*/, ''));
 
     let mode = 'orchestrate';
     let output = '';
@@ -160,6 +216,19 @@ async function processEmailTask(input) {
             stepsSummary = ['⏰ Sekretářka (fallback)'];
         }
     }
+
+    // Cloud odepřen (jen cloud: lokální model není) → poctivé vysvětlení místo náhradního textu.
+    let cloudOdepren = null;
+    try {
+        const sh = cloudPolicy.shrnuti();
+        if (sh && sh.cloud === false && sh.druh === 'cloud_eu' && (!aiOk || cloudPolicy.rezimOdepreni() === 'chyba')) {
+            cloudOdepren = { code: sh.code, duvody: sh.duvody || [] };
+            output = _odepreniText(sh);
+            aiOk = false; templateUsed = false;
+            mode = mode + '-odepreno';
+            stepsSummary = ['☁️ Cloud odepřen: ' + (sh.code || '')];
+        }
+    } catch (e) { /* shrnutí best-effort */ }
 
     // Ověření citací i pro jednoagentní výstup (orchestrace ho už dělá sama).
     // Vymyšlené paragrafy se tak označí „⚠ NEOVĚŘENO" — kritické pro slabší modely.
@@ -245,7 +314,8 @@ async function processEmailTask(input) {
 
     const createdTask = db.insert('email_tasks', {
         sender: String(sender).trim(), subject: String(subject).trim(), body: String(body).trim(),
-        mode, steps: stepsSummary, caseNumber: caseNumber || null, responseSent: fullReply, status: 'completed'
+        mode, steps: stepsSummary, caseNumber: caseNumber || null, responseSent: fullReply,
+        status: cloudOdepren ? 'cloud-odepren' : 'completed', overeni: input.overeni || null
     });
 
     // AUTO-ODPOVĚĎ — výhradně na authorized_sender (fail-closed).
@@ -273,7 +343,7 @@ async function processEmailTask(input) {
         }
     }
 
-    return { status: 'ok', mode, task: createdTask, replied, replyError, steps: stepsSummary, citationCheck, scheduling: scheduleResult, draft, fullReply, templateUsed };
+    return { status: 'ok', mode, task: createdTask, replied, replyError, steps: stepsSummary, citationCheck, scheduling: scheduleResult, draft, fullReply, templateUsed, cloudOdepren };
 }
 
-module.exports = { processEmailTask };
+module.exports = { processEmailTask, zaradZadani, vRozsahuZadani };

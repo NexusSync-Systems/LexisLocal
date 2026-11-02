@@ -180,7 +180,7 @@ Object.assign(LexisLocalApp.prototype, {
         });
 
         const s = this.emailSettings || {
-            authorized_sender: 'advokat@dias.cz',
+            authorized_sender: '',
             recipient_filter: 'dias+asistenti@advokatnikancelar.cz',
             imap_host: 'imap.advokatnikancelar.cz',
             imap_port: '993',
