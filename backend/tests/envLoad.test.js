@@ -34,3 +34,11 @@ describe('env_load: odkud server čte .env (aplikace z .dmg i ze zdrojů)', () =
         expect(process.env.ENVT_C).toBe('data');
     });
 });
+
+describe('složka modelů ONNX', () => {
+    test('aplikace z .dmg (app.asar) → datová složka; ze zdrojů výchozí knihovny; EMBED_ONNX_CACHE vyhrává', () => {
+        expect(E.slozkaModelu({ LEXIS_DATA_DIR: '/data' }, '/Applications/LexisLocal.app/Contents/Resources/app.asar/backend/lib')).toBe('/data/modely');
+        expect(E.slozkaModelu({}, '/Users/x/LexisLocal/backend/lib')).toBeNull();
+        expect(E.slozkaModelu({ EMBED_ONNX_CACHE: '/cache' }, '/x/app.asar/backend/lib')).toBe('/cache');
+    });
+});

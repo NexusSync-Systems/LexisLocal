@@ -4,13 +4,19 @@
 #   bash scripts/mac/lexis-aktualizuj.sh              # stáhne novou verzi, otestuje, restartuje službu
 #   bash scripts/mac/lexis-aktualizuj.sh --kontrola   # jen ukáže, co je nového (nic nemění)
 #
-# Postup: kontrola, že instalace nemá ručně změněné soubory → zastavení služby → git (jen fast-forward z větve,
+# Instalace z balíčku (bez .git) → scripts/mac/instaluj-balicek.sh aktualizuj.
+# Postup (instalace ze zdrojů): kontrola, že instalace nemá ručně změněné soubory → zastavení služby → git (jen fast-forward z větve,
 # na které instalace je) → npm ci jen při změně závislostí → testy → start. Když testy neprojdou, vrátí se
 # předchozí verze (i závislosti) a spustí se ta. .env, data, báze a klíče se nemění (nejsou v gitu).
 # Spouštět mimo pracovní dobu — server je během aktualizace (~3–6 min) nedostupný. Log: ~/Library/Logs/LexisLocal/aktualizace.log
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# Instalace z balíčku na GitHubu (bez gitu) se aktualizuje stažením novějšího balíčku.
+if [ ! -d "$ROOT/.git" ] && [ -f "$ROOT/scripts/mac/instaluj-balicek.sh" ]; then
+  [ "${1:-}" = "--kontrola" ] && { echo "Instalace z balíčku: běží $(cat "$ROOT/VERSION" 2>/dev/null); nejnovější: https://github.com/NexusSync-Systems/LexisLocal/releases/latest"; exit 0; }
+  exec bash "$ROOT/scripts/mac/instaluj-balicek.sh" aktualizuj "$@"
+fi
 SLUZBA="$ROOT/scripts/mac/lexislocal-sluzba.sh"
 LOG="$HOME/Library/Logs/LexisLocal/aktualizace.log"
 mkdir -p "$(dirname "$LOG")"

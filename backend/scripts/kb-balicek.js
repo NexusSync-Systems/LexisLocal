@@ -31,7 +31,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
-try { require('dotenv').config({ path: path.join(ROOT, '.env') }); } catch (e) { /* bez dotenv */ }
+try { require('../lib/env_load').nacti({ cwd: ROOT }); } catch (e) { /* bez dotenv */ } // .env v projektu nebo v datové složce aplikace
 
 const FORMAT = 1;
 const CACHE_NAME = 'embeddings.jsonl.gz';

@@ -63,12 +63,30 @@ mkdir -p ~/.aws && chmod 700 ~/.aws && touch ~/.aws/credentials && chmod 600 ~/.
 
 Do souboru vložit tři řádky z `klic` (`[lexislocal-pilot]`, `aws_access_key_id`, `aws_secret_access_key`), uložit.
 
-**C3. LexisLocal** — Node.js 22 LTS (instalátor z nodejs.org), pak:
+**C3. LexisLocal — varianta A (doporučeno): balíček z GitHubu**, bez gitu a bez instalace Node.js. Balíček
+(`lexislocal-macos-arm64.tar.gz`, Apple Silicon) sestaví GitHub Actions ke každému tagu `v*` (`.github/workflows/pilot-balicek.yml`):
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/NexusSync-Systems/LexisLocal/release-prep/scripts/mac/instaluj-balicek.sh
+bash instaluj-balicek.sh instaluj        # stáhne, ověří SHA-256, rozbalí do ~/Applications/LexisLocal, založí .env a službu
+```
+
+Nastavení je pak v `~/Library/Application Support/LexisLocal/.env` (skript ho založí s blokem z C4 — kroky C4 a C6 „služba“
+odpadají). Skripty spouštět přibaleným Node.js: `~/Applications/LexisLocal/aktualni/node/bin/node
+~/Applications/LexisLocal/aktualni/backend/scripts/…`. Aktualizace: `bash instaluj-balicek.sh aktualizuj` (když nová verze
+nenaběhne, vrátí předchozí), návrat `zpet`, přehled `stav`. Stahovat přes `curl` v Terminálu (ne prohlížečem) — soubory
+pak nemají karanténní značku macOS.
+
+**C3. Varianta B: ze zdrojů** — Node.js 22 LTS (instalátor z nodejs.org), pak:
 
 ```bash
 cd ~ && git clone https://github.com/NexusSync-Systems/LexisLocal.git && cd LexisLocal && git checkout release-prep && npm ci
 ```
 
+> Varianta C — podepsaná aplikace z `.dmg` (release.yml, Developer ID + notarizace): nastavení v datové složce funguje
+> a modely ONNX se od 2. 11. ukládají do datové složky (ne do app.asar). Instalace báze a testy z aplikace zatím neověřené —
+> pro pilot varianta A.
+>
 > Instalace z `.dmg` (od 1. 11. 2026): nastavení patří do `~/Library/Application Support/LexisLocal/.env`
 > (server ho čte, když v pracovní složce `.env` není; v logu po startu „⚙️ Nastavení (.env): …“). Skripty v kroku C5–C6
 > (báze, testy) zatím potřebují zdrojovou složku — pro pilot proto dál instalace ze zdrojů.

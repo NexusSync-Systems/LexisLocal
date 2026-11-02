@@ -12,7 +12,7 @@
  */
 'use strict';
 const path = require('path');
-try { require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') }); } catch (e) { /* bez dotenv */ }
+try { require('../lib/env_load').nacti({ cwd: path.join(__dirname, '..', '..') }); } catch (e) { /* bez dotenv */ } // .env v projektu nebo v datové složce aplikace
 const B = require('../lib/bedrock');
 
 const ok = [], warn = [], bad = [];

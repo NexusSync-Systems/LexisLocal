@@ -22,10 +22,12 @@ DOMAIN="gui/$(id -u)"
 
 [ "$(uname -s)" = "Darwin" ] || { echo "Jen pro macOS."; exit 2; }
 
+DATAENV="$HOME/Library/Application Support/LexisLocal/.env"   # balíček z GitHubu / aplikace z .dmg (backend/lib/env_load.js)
+env_hodnota() { cat "$ROOT/.env" "$DATAENV" 2>/dev/null | grep -E "^$1=" | head -1 | cut -d= -f2 | tr -d '"' || true; }
 port_url() {
   local port https
-  port=$(grep -E '^PORT=' "$ROOT/.env" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '"' || true)
-  https=$(grep -E '^USE_HTTPS=' "$ROOT/.env" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '"' || true)
+  port=$(env_hodnota PORT)
+  https=$(env_hodnota USE_HTTPS)
   [ -n "$port" ] || port=4000
   if [ "$https" = "true" ]; then echo "https://127.0.0.1:$port"; else echo "http://127.0.0.1:$port"; fi
 }
@@ -44,13 +46,14 @@ cekej_na_api() {
 
 case "${1:-}" in
 instaluj)
-  NODE="$(command -v node || true)"
+  # Balíček z GitHubu má vlastní Node.js (node/bin/node); instalace ze zdrojů používá systémový.
+  if [ -x "$ROOT/node/bin/node" ]; then NODE="$ROOT/node/bin/node"; else NODE="$(command -v node || true)"; fi
   [ -n "$NODE" ] || { echo "Chybí Node.js (nodejs.org, verze 22 LTS)."; exit 1; }
   V=$("$NODE" -v | cut -c2- | cut -d. -f1)
   { [ "$V" -ge 20 ] && [ "$V" -lt 25 ]; } || { echo "Node.js $("$NODE" -v) — podporované 20–24 (doporučeno 22 LTS)."; exit 1; }
   [ -f "$ROOT/backend/server.js" ] || { echo "Nenalezen backend/server.js v $ROOT"; exit 1; }
   [ -d "$ROOT/node_modules" ] || { echo "Chybí node_modules — nejdřív: cd \"$ROOT\" && npm ci"; exit 1; }
-  [ -f "$ROOT/.env" ] || echo "  ! v $ROOT chybí .env — server poběží s výchozím nastavením (viz docs/PILOT_CLOUDSHELL.md, C4)"
+  [ -f "$ROOT/.env" ] || [ -f "$DATAENV" ] || echo "  ! chybí .env (v $ROOT ani v datové složce) — server poběží s výchozím nastavením (docs/PILOT_CLOUDSHELL.md, C4)"
   mkdir -p "$HOME/Library/LaunchAgents" "$LOGDIR"
   cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

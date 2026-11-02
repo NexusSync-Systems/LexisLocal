@@ -45,4 +45,20 @@ function nacti(opts = {}) {
     return nactene;
 }
 
-module.exports = { nacti, kandidati, vychoziDatovaSlozka };
+/**
+ * Složka pro stažené modely ONNX (@huggingface/transformers). Výchozí knihovna ukládá do node_modules, což
+ * v aplikaci z .dmg (app.asar, jen pro čtení) nejde → tam datová složka aplikace. EMBED_ONNX_CACHE má přednost.
+ * Vrací null = nechat výchozí chování knihovny (instalace ze zdrojů i balíček z GitHubu).
+ */
+function slozkaModelu(env = process.env, dir = __dirname) {
+    if (env.EMBED_ONNX_CACHE) return env.EMBED_ONNX_CACHE;
+    if (/app\.asar/.test(dir)) return path.join(vychoziDatovaSlozka(env), 'modely');
+    return null;
+}
+function nastavSlozkuModelu(tf) {
+    const d = slozkaModelu();
+    if (d && tf && tf.env) { try { fs.mkdirSync(d, { recursive: true }); } catch (e) { /* zkusí knihovna */ } tf.env.cacheDir = d; }
+    return d;
+}
+
+module.exports = { nacti, kandidati, vychoziDatovaSlozka, slozkaModelu, nastavSlozkuModelu };

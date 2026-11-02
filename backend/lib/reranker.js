@@ -35,6 +35,7 @@ async function _load() {
     _loading = (async () => {
         try {
             const tf = await import('@huggingface/transformers');
+            require('./env_load').nastavSlozkuModelu(tf); // aplikace z .dmg: modely do datové složky
             const { AutoTokenizer, AutoModelForSequenceClassification } = tf;
             const tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID);
             const model = await AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { dtype: DTYPE });

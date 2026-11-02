@@ -30,6 +30,7 @@ async function _load(opts) {
     _loading = (async () => {
         try {
             const tf = (opts && opts.transformers) || await import('@huggingface/transformers');
+            require('./env_load').nastavSlozkuModelu(tf); // aplikace z .dmg: modely do datové složky
             if (process.env.EMBED_ONNX_DIR && tf.env) {
                 tf.env.localModelPath = process.env.EMBED_ONNX_DIR;
                 tf.env.allowRemoteModels = false;

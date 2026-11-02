@@ -1,0 +1,78 @@
+# Balíček LexisLocalu pro Mac (Apple Silicon) bez gitu a bez instalace Node.js — pilot „jen cloud“.
+# Obsah: aplikace (backend), produkční závislosti sestavené na macOS arm64, vlastní Node.js 22 (oficiální, ověřený
+# SHA-256), skripty scripts/mac. Výstup: lexislocal-macos-arm64.tar.gz + .sha256 jako příloha GitHub Release
+# (stejný tag jako .dmg z release.yml). Instalace: scripts/mac/instaluj-balicek.sh, docs/PILOT_CLOUDSHELL.md.
+name: Balíček pro Mac (pilot)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag release, ke kterému balíček přiložit (např. v1.2.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  balicek:
+    runs-on: macos-15   # Apple Silicon (arm64)
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      NODE_MAJOR: '22'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Kontrola architektury
+        run: test "$(uname -m)" = "arm64"
+
+      - name: Testy
+        run: |
+          npm ci --no-audit --no-fund
+          npx jest --silent
+
+      - name: Produkční závislosti
+        run: |
+          rm -rf node_modules
+          npm ci --omit=dev --no-audit --no-fund
+
+      - name: Node.js (oficiální binárka, ověřený SHA-256)
+        run: |
+          BASE="https://nodejs.org/dist/latest-v${NODE_MAJOR}.x"
+          curl -fsSLO "$BASE/SHASUMS256.txt"
+          FILE=$(grep -oE "node-v[0-9.]+-darwin-arm64\.tar\.gz" SHASUMS256.txt | head -1)
+          curl -fsSLO "$BASE/$FILE"
+          grep " $FILE\$" SHASUMS256.txt | shasum -a 256 -c -
+          mkdir -p node-rt && tar -xzf "$FILE" -C node-rt --strip-components 1
+          node-rt/bin/node -v
+
+      - name: Sestavení balíčku
+        run: |
+          mkdir -p out/lexislocal
+          cp -R backend package.json package-lock.json node_modules out/lexislocal/
+          rm -rf out/lexislocal/backend/tests out/lexislocal/backend/eval
+          mkdir -p out/lexislocal/scripts && cp -R scripts/mac out/lexislocal/scripts/
+          mkdir -p out/lexislocal/docs && cp docs/PILOT_CLOUDSHELL.md docs/REZIM_JEN_CLOUD.md out/lexislocal/docs/
+          mkdir -p out/lexislocal/node && cp -R node-rt/bin node-rt/lib node-rt/LICENSE out/lexislocal/node/
+          { echo "$TAG"; echo "commit $(git rev-parse --short HEAD)"; echo "sestaveno $(date -u +%Y-%m-%dT%H:%MZ)"; echo "node $(node-rt/bin/node -v)"; } > out/lexislocal/VERSION
+          # Zkouška, že se server v balíčku vůbec načte (bez spuštění): syntaxe a závislosti.
+          (cd out/lexislocal && node/bin/node -e "require('./backend/lib/env_load'); require('./backend/lib/rerank_service'); require('./backend/lib/local_embed'); console.log('moduly OK')")
+          tar -czf lexislocal-macos-arm64.tar.gz -C out lexislocal
+          shasum -a 256 lexislocal-macos-arm64.tar.gz > lexislocal-macos-arm64.tar.gz.sha256
+          ls -lh lexislocal-macos-arm64.tar.gz; cat lexislocal-macos-arm64.tar.gz.sha256
+
+      - name: Příloha k release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "LexisLocal $TAG" --notes "Balíček pro Mac (Apple Silicon): scripts/mac/instaluj-balicek.sh"
+          gh release upload "$TAG" lexislocal-macos-arm64.tar.gz lexislocal-macos-arm64.tar.gz.sha256 --clobber

@@ -25,7 +25,7 @@
 'use strict';
 const path = require('path'), fs = require('fs'), os = require('os');
 const ROOT = path.join(__dirname, '..', '..');
-try { require('dotenv').config({ path: path.join(ROOT, '.env') }); } catch (e) { /* bez dotenv */ }
+try { require('../lib/env_load').nacti({ cwd: ROOT }); } catch (e) { /* bez dotenv */ } // .env v projektu nebo v datové složce aplikace
 
 // Dočasná data — žádný zásah do spisů, auditu ani nastavení kanceláře.
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'lexis-awstest-'));
