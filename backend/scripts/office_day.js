@@ -486,7 +486,9 @@ function summarizeCit(cc) {
     // neexistující stavy „unverified/missing“ → neověřené citace se v souhrnu nepočítaly.
     const bad = items.filter(i => i && (typeof i.verified === 'boolean' ? !i.verified : (i.status === 'unverified' || i.status === 'missing' || i.ok === false)));
     const mimo = items.filter(i => i && i.outsideContext);
-    return { celkem: items.length, neovereno: bad.length, mimoPodklady: mimo.length, mimo: [...new Set(mimo.map(i => i.raw))].slice(0, 5) };
+    // Které citace neprošly a proč (generálka 2. 11. 2026: neověřených přibylo, ze souhrnu nešlo poznat které).
+    const neovereneSeznam = [...new Set(bad.map(i => `${i.raw || i.text || '?'}${i.status ? ` [${i.status}]` : ''}`))].slice(0, 8);
+    return { celkem: items.length, neovereno: bad.length, mimoPodklady: mimo.length, mimo: [...new Set(mimo.map(i => i.raw))].slice(0, 5), neovereneSeznam };
 }
 
 // ─── 1: den ──────────────────────────────────────────────────────────────────
@@ -964,7 +966,12 @@ async function endOfDay(M) {
             const odm = agentRuns.filter(r => r.odmitnuto);
             const kody = {}; odm.forEach(r => { kody[r.odmitnuto] = (kody[r.odmitnuto] || 0) + 1; });
             check('K23c', 'Režim jen cloud: odmítnutí jen podle pravidel a se srozumitelným důvodem', odm.every(r => r.odmitnuto === 'cloud_policy' && /souhlas|stupe|neznám|spis|rozpo|veřejn/i.test(r.odmitnutoText || '')),
-                { severity: 'high', detail: `odmítnuto ${odm.length} (${Object.entries(kody).map(([k, n]) => `${k} ×${n}`).join(', ') || '—'}); z toho u spisů se souhlasem ${odm.filter(r => r.spisZn && S.souhlas[r.spisZn] === true && !S.odvolano[r.spisZn]).length}` });
+                { severity: 'high', detail: (() => {
+                    // U spisů se souhlasem odmítá oprávněně jen tvrdý strop rozpočtu (K21f) — počítat zvlášť, ať to nevypadá jako chyba.
+                    const sSouhlasem = odm.filter(r => r.spisZn && S.souhlas[r.spisZn] === true && !S.odvolano[r.spisZn]);
+                    const rozpocet = sSouhlasem.filter(r => /rozpo/i.test(r.odmitnutoText || '')).length;
+                    return `odmítnuto ${odm.length} (${Object.entries(kody).map(([k, n]) => `${k} ×${n}`).join(', ') || '—'}); z toho u spisů se souhlasem ${sSouhlasem.length - rozpocet}${rozpocet ? ` + ${rozpocet} kvůli tvrdému stropu rozpočtu (správně)` : ''}`;
+                })() });
             // Spis se souhlasem (ne v okně tvrdého stropu) se nesmí odmítnout — dřív kvůli úsekům z cizích spisů ve vyhledávání (30. 10.: 5×).
             const odmSouhlas = odm.filter(r => r.spisZn && S.souhlas[r.spisZn] === true && !S.odvolano[r.spisZn] && !/rozpo/i.test(r.odmitnutoText || ''));
             check('K23e', 'Režim jen cloud: dotaz ke spisu se souhlasem klienta se neodmítne (ani kvůli cizím spisům ve vyhledávání)', odmSouhlas.length === 0,
@@ -1085,6 +1092,9 @@ function writeReport(meta) {
         const top = Object.entries(mimo).sort((x, y) => y[1] - x[1]).slice(0, 8).map(([m, n]) => `${m} ×${n}`).join(', ');
         if (S.cloudEvents.length) L.push('', 'Cloud během dne: ' + S.cloudEvents.map(e => `${clock(e.t)} ${e.co}`).join(' · ') + '.');
         L.push('', `Citace v odpovědích: ${sum('celkem')}, neověřeno ${sum('neovereno')}, mimo podklady ${sum('mimoPodklady')}${top ? ` (nejčastěji ${top})` : ''}.`);
+        const neov = {}; cr.forEach(r => (r.citations.neovereneSeznam || []).forEach(m => { neov[m] = (neov[m] || 0) + 1; }));
+        const topN = Object.entries(neov).sort((x, y) => y[1] - x[1]).slice(0, 10).map(([m, n]) => `${m} ×${n}`).join(', ');
+        if (topN) L.push('', `Neověřené citace (nejčastěji): ${topN}.`);
     }
     L.push('', '## Akce (odezva)', '', '| Akce | Počet | Chyb | p50 | p95 | max |', '|---|---|---|---|---|---|');
     actRows.forEach(a => L.push(`| ${a.action} | ${a.n} | ${a.chyby} | ${fmtS(a.p50)} | ${fmtS(a.p95)} | ${fmtS(a.max)} |`));

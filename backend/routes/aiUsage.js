@@ -17,7 +17,9 @@ const billing = require('../lib/aws_billing');
 router.get('/summary', (req, res) => {
     try {
         const s = usage.souhrn(req.query && req.query.mesic);
-        res.json(Object.assign({ synchronizaceZapnuta: billing.zapnuto(), hodinaSynchronizace: parseInt(process.env.LEXIS_AWS_SYNC_HOUR || '22', 10) }, s));
+        let prerazeni = null;
+        try { prerazeni = require('../lib/rerank_service').prehledPrerazeni(); } catch (e) { /* jen informativní */ }
+        res.json(Object.assign({ synchronizaceZapnuta: billing.zapnuto(), hodinaSynchronizace: parseInt(process.env.LEXIS_AWS_SYNC_HOUR || '22', 10), prerazeni }, s));
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

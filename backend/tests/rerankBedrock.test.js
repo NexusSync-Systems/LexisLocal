@@ -155,3 +155,20 @@ describe('přeřazení zákonů a judikatury zvlášť přes Bedrock: jedno vol�
         }
     });
 });
+
+describe('počítadla přeřazení pro Manažerský přehled', () => {
+    test('null bez Bedrock Rerank; jinak dnešní přeřazení, cache a hledání přes limit', async () => {
+        delete process.env.RAG_RERANK; delete process.env.RAG_RERANK_PROVIDER;
+        expect(RS.prehledPrerazeni()).toBeNull();
+        process.env.RAG_RERANK = '1'; process.env.RAG_RERANK_PROVIDER = 'bedrock'; process.env.BEDROCK_RERANK_RPM = '1';
+        try {
+            const f = fakeFetch([], () => 0.5);
+            const o = { gate: allow, bedrock: bedrockEu, fetchImpl: f, maxWaitMs: 0 };
+            await RS.bedrockScores('p1', [kb(1), kb(2)], o);           // přeřazeno
+            await RS.bedrockScores('p1', [kb(1), kb(2)], o);           // z cache
+            await RS.bedrockScores('p2', [kb(1), kb(2)], o);           // přes limit 1/min
+            const p = RS.prehledPrerazeni();
+            expect(p).toMatchObject({ model: 'cohere.rerank-v3-5:0', limitZaMinutu: 1, dnes: { prerazeno: 1, zCache: 1, limit: 1, chyba: 0 } });
+        } finally { delete process.env.RAG_RERANK; delete process.env.RAG_RERANK_PROVIDER; }
+    });
+});

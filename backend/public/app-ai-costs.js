@@ -87,7 +87,7 @@
         </div>
         ${pct != null ? `<div style="height:8px;border-radius:4px;background:var(--sf-03);overflow:hidden;margin-bottom:12px;" title="${s.pct} % rozpočtu"><div style="height:100%;width:${pct}%;background:${barva};"></div></div>` : ''}
         <div id="ai-costs-chart">${this.aiCostsChart(s)}</div>
-        <div style="font-size:.78rem;opacity:.85;margin-top:8px;line-height:1.5;">${syncInfo}${s.bezCeniku ? `<br><span style="color:var(--accent-yellow);">${s.bezCeniku} dotazů s modelem bez ceníku — doplňte ceník níže.</span>` : ''}${s.tvrdyStrop ? '<br>Tvrdý strop je zapnutý: po vyčerpání rozpočtu jdou dotazy jen na lokální model.' : ''}</div>
+        <div style="font-size:.78rem;opacity:.85;margin-top:8px;line-height:1.5;">${syncInfo}${s.bezCeniku ? `<br><span style="color:var(--accent-yellow);">${s.bezCeniku} dotazů s modelem bez ceníku — doplňte ceník níže.</span>` : ''}${s.tvrdyStrop ? '<br>Tvrdý strop je zapnutý: po vyčerpání rozpočtu jdou dotazy jen na lokální model.' : ''}${this.aiCostsRerankLine(s.prerazeni)}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:18px;margin-top:16px;">
             ${list('Podle spisů', s.poSpisech, r => r.spisZn)}
             ${list('Podle uživatelů', s.poUzivatelich, r => r.klic)}
@@ -102,6 +102,17 @@
 
     // Kumulativní spotřeba po dnech (plně = potvrzeno AWS, čárkovaně = odhad), výhled do konce
     // měsíce (tečkovaně), vodorovná čára rozpočtu a hranice varování.
+    // Přeřazení výsledků přes Bedrock Rerank (pilot jen cloud): kolik hledání se kvůli kvótě účtu obešlo bez přeřazení.
+    P.aiCostsRerankLine = function (p) {
+        if (!p) return '';
+        const d = p.dnes || {}, celkem = (d.prerazeno || 0) + (d.zCache || 0) + (d.limit || 0) + (d.chyba || 0);
+        const bez = (d.limit || 0) + (d.chyba || 0);
+        const varovani = bez > 0
+            ? ` <span style="color:var(--accent-yellow);">· ${bez} hledání bez přeřazení (${d.limit || 0}× limit ${p.limitZaMinutu}/min, ${d.chyba || 0}× chyba) — při opakování požádejte AWS o vyšší kvótu</span>`
+            : '';
+        return `<br>Přeřazení výsledků (${escapeHtml(String(p.model || ''))}) dnes: ${d.prerazeno || 0} přeřazeno, ${d.zCache || 0} z mezipaměti z ${celkem} hledání${varovani}.`;
+    };
+
     P.aiCostsChart = function (s) {
         const W = 700, H = 230, L = 52, R = 16, T = 14, B = 28;
         const n = s.dnuVMesici || 30;

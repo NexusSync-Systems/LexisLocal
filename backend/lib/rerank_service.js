@@ -121,6 +121,26 @@ async function scoreInProcess(query, documents, { inProcess } = {}) {
 function rerankProvider() { return String(process.env.RAG_RERANK_PROVIDER || '').trim().toLowerCase(); }
 function bedrockRerankModel() { return String(process.env.BEDROCK_RERANK_MODEL || 'cohere.rerank-v3-5:0').trim(); }
 const stats = { bedrockOk: 0, bedrockChyba: 0, bedrockOdepreno: 0, bedrockLimit: 0, bedrockCache: 0, bedrockOpakovani: 0, posledniChyba: null }; // pro měření a diagnostiku
+// Denní počítadla pro Manažerský přehled (od startu serveru; generálka 2. 11. 2026: ze zkráceného logu se nedalo
+// zjistit, kolik hledání se kvůli kvótě obešlo bez přeřazení).
+const _den = { datum: null, prerazeno: 0, zCache: 0, limit: 0, chyba: 0, odepreno: 0 };
+function _dnes(k) {
+    const d = new Date().toISOString().slice(0, 10);
+    if (_den.datum !== d) Object.assign(_den, { datum: d, prerazeno: 0, zCache: 0, limit: 0, chyba: 0, odepreno: 0 });
+    _den[k]++;
+}
+/** Přehled pro Manažerský přehled: null, když přeřazení přes Bedrock není zapnuté. */
+function prehledPrerazeni() {
+    if (!rerankEnabled() || rerankProvider() !== 'bedrock') return null;
+    const d = new Date().toISOString().slice(0, 10);
+    const dnes = _den.datum === d ? Object.assign({}, _den) : { datum: d, prerazeno: 0, zCache: 0, limit: 0, chyba: 0, odepreno: 0 };
+    delete dnes.datum;
+    return {
+        model: bedrockRerankModel(), limitZaMinutu: bedrockRpm(), datum: d, dnes,
+        odStartu: { prerazeno: stats.bedrockOk, zCache: stats.bedrockCache, limit: stats.bedrockLimit, chyba: stats.bedrockChyba, odepreno: stats.bedrockOdepreno, opakovani: stats.bedrockOpakovani },
+        posledniChyba: stats.posledniChyba
+    };
+}
 const _isKb = r => !!(r && typeof r.scope === 'string' && r.scope.indexOf('_kb_') === 0);
 
 /**
@@ -222,23 +242,23 @@ async function bedrockScores(query, items, opts) {
     if (kb.length !== (items || []).length) throw new Error('do Bedrocku smí jen pasáže báze (_kb_*)');
     if (kb.length < 2) return null;
     const gate = opts.gate ? opts.gate() : bedrockGate();
-    if (!gate.ok) { stats.bedrockOdepreno++; _warn(`Bedrock nepoužit (${gate.duvod})`, true); return null; }
+    if (!gate.ok) { stats.bedrockOdepreno++; _dnes('odepreno'); _warn(`Bedrock nepoužit (${gate.duvod})`, true); return null; }
     const model = bedrockRerankModel();
     const docs = kb.map(r => String(r.text || '').slice(0, 4000));
     const key = _cacheKey(model, String(query), docs);
     const hit = _cache.get(key);
     const now = opts.now || Date.now, sleep = opts.sleep || _sleep;
-    if (hit && now() - hit.t < CACHE_TTL) { stats.bedrockCache++; return hit.scores; }
+    if (hit && now() - hit.t < CACHE_TTL) { stats.bedrockCache++; _dnes('zCache'); return hit.scores; }
     const deadline = now() + bedrockMaxWaitMs(opts);
     for (let pokus = 0; ; pokus++) {
         try {
             await _acquire(model, deadline, opts);
         } catch (e) {
-            stats.bedrockLimit++; _warn(`Bedrock Rerank: ${e.message}`, true); return null;
+            stats.bedrockLimit++; _dnes('limit'); _warn(`Bedrock Rerank: ${e.message}`, true); return null;
         }
         try {
             const scores = await scoreViaBedrock(query, docs, opts);
-            stats.bedrockOk++;
+            stats.bedrockOk++; _dnes('prerazeno');
             _cache.set(key, { t: now(), scores });
             if (_cache.size > CACHE_MAX) _cache.delete(_cache.keys().next().value);
             return scores;
@@ -249,7 +269,7 @@ async function bedrockScores(query, items, opts) {
                 const wait = Math.min(1000 * Math.pow(2, pokus), Math.max(0, deadline - now()));
                 if (wait > 0 || deadline - now() > 0) { stats.bedrockOpakovani++; await sleep(wait); continue; }
             }
-            stats.bedrockChyba++; stats.posledniChyba = msg.slice(0, 200);
+            stats.bedrockChyba++; _dnes('chyba'); stats.posledniChyba = msg.slice(0, 200);
             throw e;
         }
     }
@@ -313,4 +333,4 @@ async function rerankResults(query, results, opts = {}) {
     }
 }
 
-module.exports = { rerankEnabled, rerankK, rerankWeight, rerankTimeoutMs, rerankProvider, bedrockRerankModel, bedrockGate, mixOrder, scoreViaService, scoreInProcess, scoreViaBedrock, bedrockScores, bedrockScoresMap, applyScores, bedrockRpm, rerankResults, stats, _resetBedrock: () => { _calls.clear(); _cache.clear(); _limQueue = Promise.resolve(); } };
+module.exports = { rerankEnabled, rerankK, rerankWeight, rerankTimeoutMs, rerankProvider, bedrockRerankModel, bedrockGate, mixOrder, scoreViaService, scoreInProcess, scoreViaBedrock, bedrockScores, bedrockScoresMap, applyScores, bedrockRpm, rerankResults, stats, prehledPrerazeni, _resetBedrock: () => { _calls.clear(); _cache.clear(); _limQueue = Promise.resolve(); _den.datum = null; } };
