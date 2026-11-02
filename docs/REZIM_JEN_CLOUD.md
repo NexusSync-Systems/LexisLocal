@@ -97,6 +97,14 @@ BEDROCK_RERANK_USD=0.002                     # odhad ceny jednoho volání (nák
 
 Po startu se vyhledávací model v aplikaci načte hned (ne až u prvního dotazu); vypnutí `EMBED_ONNX_WARMUP=0`.
 
+## Báze agentů a cloud (bezpečnostní revize 2. 11. 2026)
+
+Do cloudu (Claude i přeřazení) jdou jako „obecné“ jen **veřejné** pasáže báze — zákony a judikatura. Každá nová pasáž
+nese původ (`lib/kb_puvod.js`): `verejne` (instalační balíček, `seed-kb.js --verejne`, správce výslovně `verejne: true`)
+nebo `kancelar` (výchozí — interní postupy, vzory, cokoli nahraného z dashboardu). Dokument kanceláře z báze ve
+výsledcích = „neznámý původ“ → cloud odmítne (jen cloud) / zpracuje lokální model. Starší pasáže bez původu jsou
+veřejné jen podle názvů souborů zákonů a judikatury z balíčku. Nahrávat do bází agentů a oborů smí jen správce.
+
 ## Báze zákonů a judikatury
 
 Báze je spočítaná Ollamou (bge-m3). Model v aplikaci je tentýž bge-m3 (CLS pooling, normalizace, 1024 rozměrů), takže

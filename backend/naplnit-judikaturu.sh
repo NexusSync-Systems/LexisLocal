@@ -85,7 +85,7 @@ cat <<EOF
 ────────────────────────────────────────────────────────────────
 HOTOVO. Teď to nahraj do oborových RAGů (zkontroluj a spusť sám):
 
-    node $SEED --root "$OUT"
+    node $SEED --verejne --root "$OUT"
 
   • --root: každá PODSLOŽKA = jeden obor → partition _kb_obor_<slug>
   • pokud tvůj seed-kb vyžaduje API token, přidej:  --token-file <cesta>

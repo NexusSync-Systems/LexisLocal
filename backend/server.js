@@ -1,5 +1,6 @@
+const path = require('path');
 // Nastavení: LEXIS_ENV_FILE → .env v pracovní složce → .env v datové složce aplikace (lib/env_load.js)
-const _envSoubory = require('./lib/env_load').nacti();
+const _envSoubory = require('./lib/env_load').nacti({ cwd: path.join(__dirname, '..') }); // kořen projektu, ne náhodná pracovní složka (revize 2. 11.)
 if (typeof process.env.JEST_WORKER_ID === 'undefined') console.log(`⚙️ Nastavení (.env): ${_envSoubory.length ? _envSoubory.join(', ') : 'žádný soubor — výchozí hodnoty'}`);
 // Režim AI zvolený správcem v aplikaci má přednost před .env (lib/ai_rezim.js) — dřív, než se cokoli načte.
 if (typeof process.env.JEST_WORKER_ID === 'undefined') require('./lib/ai_rezim').applyPersisted(console.log);
@@ -8,7 +9,6 @@ const express = require('express');
 // keep-alive delší než u klientů — jinak ECONNRESET při vytížení (lib/http_timeouts.js)
 const { applyHttpTimeouts } = require('./lib/http_timeouts');
 const cors = require('cors');
-const path = require('path');
 const fs = require('fs');
 // Doménová logika je vytažená do routes/*.js; server.js drží už jen bootstrap,
 // autentizaci, montáž routerů, /api/status a background úlohy.

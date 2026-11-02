@@ -7,7 +7,7 @@
 #
 #   curl -fsSLO https://raw.githubusercontent.com/NexusSync-Systems/LexisLocal/release-prep/scripts/aws/pilot-cloudshell.sh
 #   bash pilot-cloudshell.sh ucet                         # 1× za účet: kontroly (a s --opravit nulové ukládání dat)
-#   bash pilot-cloudshell.sh kancelar --zkratka novak --email kontakt@nexusstack.eu [--rozpocet 30]
+#   bash pilot-cloudshell.sh kancelar --zkratka novak --email kontakt@nexusstack.eu [--rozpocet 30] [--strop 50] [--ref <commit>]
 #   bash pilot-cloudshell.sh klic --zkratka novak         # nový přístupový klíč pro Mac advokáta (zobrazí se jednou)
 #   bash pilot-cloudshell.sh stav --zkratka novak         # stack, klíče (jen ID a stav), rozpočet
 #   bash pilot-cloudshell.sh konec --zkratka novak [--smazat]   # konec pilotu: klíče vypnout (a se --smazat vše smazat)
@@ -18,7 +18,9 @@ set -euo pipefail
 REGION=eu-central-1
 MODEL_ID="${BEDROCK_MODEL_ID:-eu.anthropic.claude-sonnet-4-6}"
 RERANK_MODELY="cohere.rerank-v3-5:0 amazon.rerank-v1:0"
-SABLONA_URL="https://raw.githubusercontent.com/NexusSync-Systems/LexisLocal/release-prep/scripts/aws/bedrock-eu-kancelar.yaml"
+# Šablona IAM se nasazuje pod správcem → stahuje se z konkrétního commitu (--ref) a před nasazením se ukáže, co
+# změní (change set), a čeká se na potvrzení (revize 2. 11. 2026). Bez --ref z větve release-prep (s varováním).
+SABLONA_REF="release-prep"
 
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 chyba(){ printf '  \033[31m✗\033[0m %s\n' "$*"; CHYB=$((CHYB+1)); }
@@ -27,12 +29,14 @@ nadpis(){ printf '\n\033[1m%s\033[0m\n' "$*"; }
 CHYB=0
 
 PRIKAZ="${1:-}"; shift || true
-ZKRATKA=""; EMAIL=""; ROZPOCET=30; OPRAVIT=0; SMAZAT=0
+ZKRATKA=""; EMAIL=""; ROZPOCET=30; STROP=50; OPRAVIT=0; SMAZAT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --zkratka) ZKRATKA="${2:-}"; shift 2 ;;
     --email) EMAIL="${2:-}"; shift 2 ;;
     --rozpocet) ROZPOCET="${2:-}"; shift 2 ;;
+    --strop) STROP="${2:-}"; shift 2 ;;
+    --ref) SABLONA_REF="${2:-}"; shift 2 ;;
     --opravit) OPRAVIT=1; shift ;;
     --smazat) SMAZAT=1; shift ;;
     *) echo "Neznámý přepínač: $1"; exit 2 ;;
@@ -96,13 +100,40 @@ kancelar)
   potrebuj_zkratku
   [[ "$EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || { echo "Zadejte --email pro upozornění na rozpočet"; exit 2; }
   [[ "$ROZPOCET" =~ ^[0-9]+$ ]] || { echo "--rozpocet je celé číslo v USD"; exit 2; }
-  nadpis "Stack $STACK (uživatel $UZIVATEL, rozpočet $ROZPOCET USD/měsíc, upozornění na $EMAIL)"
-  curl -fsSL "$SABLONA_URL" -o bedrock-eu-kancelar.yaml
-  aws cloudformation deploy --region "$REGION" --stack-name "$STACK" --template-file bedrock-eu-kancelar.yaml \
-    --capabilities CAPABILITY_NAMED_IAM --no-fail-on-empty-changeset \
-    --parameter-overrides "NazevUzivatele=$UZIVATEL" "MesicniRozpocetUSD=$ROZPOCET" "EmailUpozorneni=$EMAIL" "CteniNakladu=ne" \
-    --tags aplikace=LexisLocal pilot="$ZKRATKA"
-  ok "hotovo — uživatel $UZIVATEL smí jen Claude přes EU profil a rerankery v EU (náklady účtu NEvidí), rozpočet s upozorněním"
+  [[ "$STROP" =~ ^[0-9]+$ ]] && [ "$STROP" -ge 1 ] || { echo "--strop je celé číslo v USD (≥ 1)"; exit 2; }
+  [[ "$SABLONA_REF" =~ ^([0-9a-f]{7,40}|release-prep|main)$ ]] || { echo "--ref: hash commitu (nebo release-prep / main)"; exit 2; }
+  nadpis "Stack $STACK (uživatel $UZIVATEL, upozornění při $ROZPOCET USD, tvrdý strop Clauda v AWS $STROP USD, e-mail $EMAIL)"
+  [[ "$SABLONA_REF" =~ ^[0-9a-f]{7,40}$ ]] || pozor "šablona z větve $SABLONA_REF (ne z pevného commitu) — pro jistotu použijte --ref <commit>"
+  curl -fsSL "https://raw.githubusercontent.com/NexusSync-Systems/LexisLocal/$SABLONA_REF/scripts/aws/bedrock-eu-kancelar.yaml" -o bedrock-eu-kancelar.yaml
+  echo "  šablona $SABLONA_REF · SHA-256 $(sha256sum bedrock-eu-kancelar.yaml | cut -c1-16)…"
+  if aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK" >/dev/null 2>&1; then TYP=UPDATE; else TYP=CREATE; fi
+  CS="lexis-$(date +%Y%m%d%H%M%S)"
+  aws cloudformation create-change-set --region "$REGION" --stack-name "$STACK" --change-set-name "$CS" --change-set-type "$TYP" \
+    --template-body file://bedrock-eu-kancelar.yaml --capabilities CAPABILITY_NAMED_IAM \
+    --parameters "ParameterKey=NazevUzivatele,ParameterValue=$UZIVATEL" "ParameterKey=MesicniRozpocetUSD,ParameterValue=$ROZPOCET" \
+      "ParameterKey=EmailUpozorneni,ParameterValue=$EMAIL" "ParameterKey=CteniNakladu,ParameterValue=ne" \
+      "ParameterKey=TvrdyStropVAWS,ParameterValue=ano" "ParameterKey=StropClaudeUSD,ParameterValue=$STROP" \
+    --tags Key=aplikace,Value=LexisLocal "Key=pilot,Value=$ZKRATKA" >/dev/null
+  if ! aws cloudformation wait change-set-create-complete --region "$REGION" --stack-name "$STACK" --change-set-name "$CS" 2>/dev/null; then
+    DUVOD=$(aws cloudformation describe-change-set --region "$REGION" --stack-name "$STACK" --change-set-name "$CS" --query StatusReason --output text)
+    aws cloudformation delete-change-set --region "$REGION" --stack-name "$STACK" --change-set-name "$CS" >/dev/null 2>&1 || true
+    echo "$DUVOD" | grep -qi "didn't contain changes" && { ok "beze změn — stack je aktuální"; exit 0; }
+    chyba "change set se nevytvořil: $DUVOD"; exit 1
+  fi
+  nadpis "Co se změní (zkontrolujte — vytváří se oprávnění IAM)"
+  aws cloudformation describe-change-set --region "$REGION" --stack-name "$STACK" --change-set-name "$CS" \
+    --query 'Changes[].ResourceChange.[Action,ResourceType,LogicalResourceId,Replacement]' --output table
+  read -r -p "Nasadit? (ano/ne) " A
+  if [ "$A" != "ano" ]; then
+    aws cloudformation delete-change-set --region "$REGION" --stack-name "$STACK" --change-set-name "$CS" >/dev/null
+    [ "$TYP" = "CREATE" ] && aws cloudformation delete-stack --region "$REGION" --stack-name "$STACK" 2>/dev/null || true
+    echo "Nic nenasazeno."; exit 0
+  fi
+  aws cloudformation execute-change-set --region "$REGION" --stack-name "$STACK" --change-set-name "$CS"
+  if [ "$TYP" = "CREATE" ]; then aws cloudformation wait stack-create-complete --region "$REGION" --stack-name "$STACK"
+  else aws cloudformation wait stack-update-complete --region "$REGION" --stack-name "$STACK"; fi
+  ok "hotovo — uživatel $UZIVATEL smí jen Claude přes EU profil a rerankery v EU (náklady účtu NEvidí)"
+  ok "tvrdý strop v AWS: po $STROP USD za Clauda/Bedrock v měsíci AWS uživateli Bedrock zakáže (počítá celý účet)"
   echo "  Na Macu advokáta v .env: LEXIS_AWS_BILLING_SYNC=0 a test spouštět s --bez-ce (útratu hlídá: bash pilot-cloudshell.sh stav)"
   pozor "AWS pošle na $EMAIL potvrzení odběru upozornění rozpočtu — je potřeba ho potvrdit"
   echo "Další krok: bash pilot-cloudshell.sh klic --zkratka $ZKRATKA"
@@ -131,6 +162,13 @@ stav)
   for K in $(aws iam list-access-keys --user-name "$UZIVATEL" --query 'AccessKeyMetadata[].AccessKeyId' --output text); do
     aws iam get-access-key-last-used --access-key-id "$K" --query '[AccessKeyLastUsed.LastUsedDate,AccessKeyLastUsed.ServiceName,AccessKeyLastUsed.Region]' --output text | sed "s/^/  $K  /"
   done
+  nadpis "Tvrdý strop v AWS"
+  if aws iam list-attached-user-policies --user-name "$UZIVATEL" --query 'AttachedPolicies[].PolicyName' --output text | grep -q ZakazBedrocku; then
+    chyba "strop vyčerpán — AWS uživateli zakázal Bedrock. Odblokovat: AWS Budgets → $UZIVATEL-claude-strop → Actions → Reverse (nebo navýšit --strop)"
+  else ok "Bedrock povolený (strop nevyčerpán)"; fi
+  aws budgets describe-budget --account-id "$UCET" --budget-name "$UZIVATEL-claude-strop" \
+    --query 'Budget.[BudgetLimit.Amount,CalculatedSpend.ActualSpend.Amount]' --output text 2>/dev/null \
+    | awk '{ printf "  strop Claude/Bedrock %s · utraceno %s (celý účet)\n", $1, $2 }' || true
   nadpis "Rozpočet (USD)"; aws budgets describe-budget --account-id "$UCET" --budget-name "$UZIVATEL-mesicni" \
     --query 'Budget.[BudgetLimit.Amount,CalculatedSpend.ActualSpend.Amount,CalculatedSpend.ForecastedSpend.Amount]' --output text 2>/dev/null \
     | awk '{ printf "  limit %s · utraceno %s · odhad za měsíc %s\n", $1, $2, $3 }' || pozor "rozpočet nenalezen"

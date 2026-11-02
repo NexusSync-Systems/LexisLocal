@@ -32,7 +32,7 @@ jen do EU regionů, že Claude odpovídá, a oba rerankery (Cohere Rerank 3.5, A
 ## B. Pilotní kancelář — uživatel AWS, rozpočet, klíč
 
 ```bash
-bash pilot-cloudshell.sh kancelar --zkratka novak --email kontakt@nexusstack.eu --rozpocet 30
+bash pilot-cloudshell.sh kancelar --zkratka novak --email kontakt@nexusstack.eu --rozpocet 30 --strop 50 --ref <commit>
 bash pilot-cloudshell.sh klic --zkratka novak
 ```
 
@@ -40,6 +40,11 @@ bash pilot-cloudshell.sh klic --zkratka novak
   `lexislocal-pilot-novak`: IAM uživatele, který smí **jen** Claude přes EU profil a rerankery v EU (vše mimo EU
   výslovně zakázané), a měsíční rozpočet s e-mailem při 80 % a 100 %. **Náklady účtu tento uživatel nevidí**
   (`CteniNakladu=ne`) — útratu hlídá dodavatel příkazem `stav`. **Potvrdit e-mail od AWS** (odběr upozornění).
+- Šablona se stáhne z commitu `--ref` (hash z GitHubu; bez něj z větve `release-prep` s varováním) a **před nasazením
+  skript ukáže, co se v IAM změní, a čeká na „ano“** (bezpečnostní revize 2. 11. 2026).
+- `--strop` = **tvrdý strop v AWS**: po vyčerpání (USD za Clauda/Bedrock v měsíci, počítá celý účet) AWS Budgets
+  uživateli automaticky zakáže Bedrock — platí i pro případ odcizeného klíče. `stav` ukáže, zda je strop vyčerpaný;
+  odblokování: AWS Budgets → rozpočet `…-claude-strop` → Actions → Reverse.
 - `klic` vytvoří přístupový klíč a **jednou** ho zobrazí ve tvaru pro `~/.aws/credentials`. Opsat rovnou na Mac
   advokáta (krok C2), nefotit, neposílat. Po Enteru se obrazovka vymaže.
 - Kdykoli: `bash pilot-cloudshell.sh stav --zkratka novak` — stav stacku, klíče (jen ID a stav), poslední použití,
@@ -68,8 +73,12 @@ Do souboru vložit tři řádky z `klic` (`[lexislocal-pilot]`, `aws_access_key_
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/NexusSync-Systems/LexisLocal/release-prep/scripts/mac/instaluj-balicek.sh
-bash instaluj-balicek.sh instaluj        # stáhne, ověří SHA-256, rozbalí do ~/Applications/LexisLocal, založí .env a službu
+bash instaluj-balicek.sh instaluj --sha256 <ověřený součet>   # stáhne, ověří, rozbalí do ~/Applications/LexisLocal, založí .env a službu
 ```
+
+Ověřený součet připravit předem na svém Macu (GitHub CLI): stáhnout `lexislocal-macos-arm64.tar.gz` z release a
+`gh attestation verify lexislocal-macos-arm64.tar.gz --repo NexusSync-Systems/LexisLocal` (balíček sestavil náš workflow
+z našeho repa) → `shasum -a 256 lexislocal-macos-arm64.tar.gz`. Bez `--sha256` se kontroluje jen součet ze stejného release.
 
 Nastavení je pak v `~/Library/Application Support/LexisLocal/.env` (skript ho založí s blokem z C4 — kroky C4 a C6 „služba“
 odpadají). Skripty spouštět přibaleným Node.js: `~/Applications/LexisLocal/aktualni/node/bin/node

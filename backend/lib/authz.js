@@ -32,6 +32,12 @@ const ADMIN_RULES = [
     // Náklady a rozpočet cloudové AI (napříč spisy a uživateli) = vedení kanceláře.
     ['*', '/api/ai-usage'],
     ['GET', '/api/skartace/protokoly'],
+    // Báze agentů a oborové báze: co do nich přijde, ovlivní odpovědi celé kanceláře a s „verejne: true“ smí do cloudu
+    // (bezpečnostní revize 2. 11. 2026) = jen vedení kanceláře.
+    ['POST', '/api/agent-knowledge'],
+    ['DELETE', '/api/agent-knowledge'],
+    ['POST', '/api/knowledge'],
+    ['DELETE', '/api/knowledge'],
     ['POST', '/api/agents'],
     ['DELETE', '/api/agents'],
     ['POST', '/api/agent-tokens'],

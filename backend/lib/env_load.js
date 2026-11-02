@@ -4,7 +4,7 @@
  *
  * Pořadí (první nalezená hodnota vyhrává, proměnné prostředí mají přednost vždy):
  *   1) LEXIS_ENV_FILE                     — výslovná cesta (správce, testy)
- *   2) .env v aktuální složce               — vývoj a instalace ze zdrojů (npm start v kořeni projektu)
+ *   2) .env v kořeni projektu (opts.cwd; server předává kořen, ne pracovní složku procesu — revize 2. 11. 2026)
  *   3) <datová složka aplikace>/.env       — nainstalovaná aplikace (.dmg): na Macu
  *      ~/Library/Application Support/LexisLocal/.env (LEXIS_DATA_DIR ji přesune)
  *

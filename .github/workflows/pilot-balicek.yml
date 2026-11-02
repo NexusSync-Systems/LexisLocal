@@ -1,7 +1,10 @@
 # Balíček LexisLocalu pro Mac (Apple Silicon) bez gitu a bez instalace Node.js — pilot „jen cloud“.
 # Obsah: aplikace (backend), produkční závislosti sestavené na macOS arm64, vlastní Node.js 22 (oficiální, ověřený
 # SHA-256), skripty scripts/mac. Výstup: lexislocal-macos-arm64.tar.gz + .sha256 jako příloha GitHub Release
-# (stejný tag jako .dmg z release.yml). Instalace: scripts/mac/instaluj-balicek.sh, docs/PILOT_CLOUDSHELL.md.
+# (stejný tag jako .dmg z release.yml) + atestace původu (instalace ji ověří: scripts/mac/instaluj-balicek.sh).
+#
+# Bezpečnost (revize 2. 11. 2026): sestavení (npm ci, testy = cizí kód) běží jen s právem ČÍST repo a bez uloženého
+# tokenu; právo zapisovat do release má jen malý job, který nic z npm nespouští. Akce připnuté na SHA.
 name: Balíček pro Mac (pilot)
 
 on:
@@ -14,26 +17,30 @@ on:
         description: 'Tag release, ke kterému balíček přiložit (např. v1.2.1)'
         required: true
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
-  balicek:
+  sestaveni:
     runs-on: macos-15   # Apple Silicon (arm64)
+    permissions:
+      contents: read
     env:
       TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       NODE_MAJOR: '22'
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - name: Kontrola tagu a architektury
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || { echo "Neplatný tag: $TAG"; exit 1; }
+          test "$(uname -m)" = "arm64"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-
-      - name: Kontrola architektury
-        run: test "$(uname -m)" = "arm64"
 
       - name: Testy
         run: |
@@ -64,15 +71,44 @@ jobs:
           mkdir -p out/lexislocal/docs && cp docs/PILOT_CLOUDSHELL.md docs/REZIM_JEN_CLOUD.md out/lexislocal/docs/
           mkdir -p out/lexislocal/node && cp -R node-rt/bin node-rt/lib node-rt/LICENSE out/lexislocal/node/
           { echo "$TAG"; echo "commit $(git rev-parse --short HEAD)"; echo "sestaveno $(date -u +%Y-%m-%dT%H:%MZ)"; echo "node $(node-rt/bin/node -v)"; } > out/lexislocal/VERSION
-          # Zkouška, že se server v balíčku vůbec načte (bez spuštění): syntaxe a závislosti.
           (cd out/lexislocal && node/bin/node -e "require('./backend/lib/env_load'); require('./backend/lib/rerank_service'); require('./backend/lib/local_embed'); console.log('moduly OK')")
           tar -czf lexislocal-macos-arm64.tar.gz -C out lexislocal
           shasum -a 256 lexislocal-macos-arm64.tar.gz > lexislocal-macos-arm64.tar.gz.sha256
           ls -lh lexislocal-macos-arm64.tar.gz; cat lexislocal-macos-arm64.tar.gz.sha256
 
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: balicek
+          path: |
+            lexislocal-macos-arm64.tar.gz
+            lexislocal-macos-arm64.tar.gz.sha256
+          retention-days: 3
+
+  zverejneni:
+    needs: sestaveni
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # příloha k release
+      id-token: write        # atestace původu (Sigstore)
+      attestations: write
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: balicek
+
+      - name: Kontrolní součet
+        run: shasum -a 256 -c lexislocal-macos-arm64.tar.gz.sha256
+
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: lexislocal-macos-arm64.tar.gz
+
       - name: Příloha k release
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "LexisLocal $TAG" --notes "Balíček pro Mac (Apple Silicon): scripts/mac/instaluj-balicek.sh"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || { echo "Neplatný tag: $TAG"; exit 1; }
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --title "LexisLocal $TAG" --notes "Balíček pro Mac (Apple Silicon): scripts/mac/instaluj-balicek.sh"
           gh release upload "$TAG" lexislocal-macos-arm64.tar.gz lexislocal-macos-arm64.tar.gz.sha256 --clobber

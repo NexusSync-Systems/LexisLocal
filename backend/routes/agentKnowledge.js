@@ -52,14 +52,16 @@ router.get('/:agentId', (req, res) => {
 router.post('/:agentId', async (req, res) => {
     const agent = resolveAgent(req, res);
     if (!agent) return;
-    const { fileName, text } = req.body || {};
+    const { fileName, text, verejne } = req.body || {};
     if (!fileName || !String(fileName).trim() || !text || !String(text).trim()) {
         return res.status(400).json({ error: 'Povinné je „fileName" i „text".' });
     }
+    // Do cloudu jako veřejná pasáž jen výslovně (verejne: true = zákon / judikatura); jinak dokument kanceláře.
+    const puvod = require('../lib/kb_puvod').puvodZVolby(verejne);
     try {
-        const result = await rag.indexKnowledge(agent.knowledgeScope, String(fileName).trim(), String(text));
+        const result = await rag.indexKnowledge(agent.knowledgeScope, String(fileName).trim(), String(text), { puvod });
         logEvent('LexisLocal Dashboard', `Znalostní báze agenta: ${agent.name}`, 'Per-agent RAG', {
-            agentId: agent.id, scope: agent.knowledgeScope, fileName: fileName, chunks: result.indexed
+            agentId: agent.id, scope: agent.knowledgeScope, fileName: fileName, chunks: result.indexed, puvod
         });
         res.json({ success: true, agentId: agent.id, scope: agent.knowledgeScope, ...result });
     } catch (err) {
@@ -103,7 +105,8 @@ router.delete('/:agentId/:fileName', async (req, res) => {
 router.post('/:agentId/upload', async (req, res) => {
     const agent = resolveAgent(req, res);
     if (!agent) return;
-    const { fileName, base64 } = req.body || {};
+    const { fileName, base64, verejne } = req.body || {};
+    const puvod = require('../lib/kb_puvod').puvodZVolby(verejne);
     if (!fileName || !String(fileName).trim() || !base64) {
         return res.status(400).json({ error: 'Povinné je „fileName" i „base64" (obsah souboru).' });
     }
@@ -133,9 +136,9 @@ router.post('/:agentId/upload', async (req, res) => {
             });
         }
 
-        const result = await rag.indexKnowledge(agent.knowledgeScope, label, String(text));
+        const result = await rag.indexKnowledge(agent.knowledgeScope, label, String(text), { puvod });
         logEvent('LexisLocal Dashboard', `Nahrání souboru do báze agenta: ${agent.name}`, 'Per-agent RAG', {
-            agentId: agent.id, scope: agent.knowledgeScope, fileName: label, ocr: !!usedOcr,
+            agentId: agent.id, scope: agent.knowledgeScope, fileName: label, ocr: !!usedOcr, puvod,
             chars: String(text).length, chunks: result.indexed
         });
         res.json({

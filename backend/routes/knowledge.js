@@ -48,12 +48,12 @@ router.get('/:obor', (req, res) => {
 router.post('/:obor', async (req, res) => {
     const scope = resolveScope(req, res);
     if (!scope) return;
-    const { fileName, text } = req.body || {};
+    const { fileName, text, verejne } = req.body || {};
     if (!fileName || !String(fileName).trim() || !text || !String(text).trim()) {
         return res.status(400).json({ error: 'Povinné je „fileName" i „text".' });
     }
     try {
-        const result = await rag.indexKnowledge(scope, String(fileName).trim(), String(text));
+        const result = await rag.indexKnowledge(scope, String(fileName).trim(), String(text), { puvod: require('../lib/kb_puvod').puvodZVolby(verejne) });
         logEvent('LexisLocal Dashboard', `Oborová báze: ${req.params.obor}`, 'Oborový RAG', { scope, fileName, chunks: result.indexed });
         res.json({ success: true, obor: req.params.obor, scope, ...result });
     } catch (err) {
@@ -92,7 +92,7 @@ router.delete('/:obor/:fileName', async (req, res) => {
 router.post('/:obor/upload', async (req, res) => {
     const scope = resolveScope(req, res);
     if (!scope) return;
-    const { fileName, base64 } = req.body || {};
+    const { fileName, base64, verejne } = req.body || {};
     if (!fileName || !String(fileName).trim() || !base64) {
         return res.status(400).json({ error: 'Povinné je „fileName" i „base64" (obsah souboru).' });
     }
@@ -113,7 +113,7 @@ router.post('/:obor/upload', async (req, res) => {
         if (!text || !String(text).trim()) {
             return res.status(422).json({ error: `Ze souboru „${label}" se nepodařilo získat text${usedOcr ? ' (ani přes OCR)' : ''}.` });
         }
-        const result = await rag.indexKnowledge(scope, label, String(text));
+        const result = await rag.indexKnowledge(scope, label, String(text), { puvod: require('../lib/kb_puvod').puvodZVolby(verejne) });
         logEvent('LexisLocal Dashboard', `Nahrání do oborové báze: ${req.params.obor}`, 'Oborový RAG', { scope, fileName: label, ocr: !!usedOcr, chars: String(text).length, chunks: result.indexed });
         res.json({ success: true, obor: req.params.obor, scope, fileName: label, ocr: !!usedOcr, chars: String(text).length, ...result });
     } catch (err) {

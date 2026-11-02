@@ -34,6 +34,15 @@ port_url() {
 
 bezi() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
 
+# Log neroste donekonečna (revize 2. 11. 2026): nad 50 MB se přesune na server.log.1 (drží se 3 starší).
+rotuj_log() {
+  local f="$LOGDIR/server.log"
+  [ -f "$f" ] || return 0
+  [ "$(stat -f %z "$f" 2>/dev/null || echo 0)" -gt 52428800 ] || return 0
+  for i in 2 1; do [ -f "$f.$i" ] && mv -f "$f.$i" "$f.$((i + 1))"; done
+  mv -f "$f" "$f.1"; : > "$f"; chmod 600 "$f"
+}
+
 cekej_na_api() {
   local url; url="$(port_url)"
   for _ in $(seq 1 60); do
@@ -77,6 +86,7 @@ instaluj)
 </plist>
 EOF
   plutil -lint "$PLIST" >/dev/null
+  touch "$LOGDIR/server.log"; chmod 600 "$LOGDIR/server.log"; chmod 700 "$LOGDIR"; rotuj_log
   bezi && launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   launchctl bootstrap "$DOMAIN" "$PLIST"
   echo "✓ služba $LABEL nainstalovaná (start po přihlášení, restart po pádu)"
@@ -96,9 +106,9 @@ stav)
   else echo "Služba neběží / není nainstalovaná."; fi
   [ -f "$LOGDIR/server.log" ] && { echo "--- poslední řádky logu"; tail -n 15 "$LOGDIR/server.log"; }
   ;;
-restart) launchctl kickstart -k "$DOMAIN/$LABEL" && cekej_na_api ;;
+restart) rotuj_log; launchctl kickstart -k "$DOMAIN/$LABEL" && cekej_na_api ;;
 zastav)  launchctl bootout "$DOMAIN/$LABEL" && echo "✓ zastaveno (znovu: spust, nebo po příštím přihlášení)" ;;
-spust)   bezi || launchctl bootstrap "$DOMAIN" "$PLIST"; cekej_na_api ;;
+spust)   rotuj_log; bezi || launchctl bootstrap "$DOMAIN" "$PLIST"; cekej_na_api ;;
 log)     tail -n 50 -f "$LOGDIR/server.log" ;;
 odinstaluj)
   bezi && launchctl bootout "$DOMAIN/$LABEL" || true

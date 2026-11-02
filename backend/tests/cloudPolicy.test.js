@@ -118,7 +118,7 @@ describe('rozhodnutí podle poskytovatele a kontextu', () => {
     });
     test('veřejný dotaz, do kterého RAG přidal klientský úsek, se řídí spisem úseku', async () => {
         await P.scope({ dataClass: 'verejne' }, async () => {
-            P.noteRagMatches([{ fileName: 'zakon.txt', scope: '_kb_resersnik' }]);
+            P.noteRagMatches([{ fileName: 'zakon.txt', scope: '_kb_resersnik', puvod: 'verejne' }]);
             expect(P.rozhodni('bedrock').allowed).toBe(true);
             P.noteRagMatches([{ fileName: 'smlouva_b.pdf', scope: null }]);
             expect(P.rozhodni('bedrock')).toMatchObject({ allowed: false, code: 'spis' });

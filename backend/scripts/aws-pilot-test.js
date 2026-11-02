@@ -128,7 +128,7 @@ async function main() {
 
     const RS = require('../lib/rerank_service');
     const kbDocs = ['Promlčecí lhůta trvá tři roky.', 'Smluvní pokuta se sjednává písemně.', 'Nájemce platí nájemné měsíčně.']
-        .map((text, i) => ({ fileName: `TEST § ${i}.txt`, scope: '_kb_test', score: 0.8 - i * 0.1, text }));
+        .map((text, i) => ({ fileName: `TEST § ${i}.txt`, scope: '_kb_test', puvod: 'verejne', score: 0.8 - i * 0.1, text }));
     await krok('R1', `Přeřazení výsledků: Bedrock Rerank (${RS.bedrockRerankModel()})`, async () => {
         const n0 = sit.length, t0 = Date.now();
         let err = null;

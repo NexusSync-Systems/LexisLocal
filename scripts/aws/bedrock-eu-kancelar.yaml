@@ -27,8 +27,22 @@ Parameters:
       Smí LexisLocal číst náklady účtu (Cost Explorer) pro porovnání odhadu s fakturou? „ano“ ve vlastním účtu
       kanceláře; „ne“ pro pilot v účtu dodavatele (klíč na Macu advokáta by jinak viděl náklady celého účtu).
 
+  TvrdyStropVAWS:
+    Type: String
+    Default: ne
+    AllowedValues: [ano, ne]
+    Description: >
+      „ano“ = při vyčerpání StropClaudeUSD AWS uživateli automaticky zakáže Bedrock (AWS Budgets action) — skutečný
+      strop i pro případ odcizeného klíče. Počítá útratu za Clauda v celém účtu (Budgets neumí rozlišit uživatele).
+  StropClaudeUSD:
+    Type: Number
+    Default: 50
+    MinValue: 1
+    Description: Měsíční strop útraty za Clauda / Bedrock v USD, po kterém AWS uživateli zakáže Bedrock (jen s TvrdyStropVAWS=ano).
+
 Conditions:
   SNaklady: !Equals [!Ref CteniNakladu, ano]
+  SeStropem: !Equals [!Ref TvrdyStropVAWS, ano]
 
 Resources:
   BedrockEuPolitika:
@@ -146,6 +160,86 @@ Resources:
           Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref EmailUpozorneni }]
         - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE }
           Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref EmailUpozorneni }]
+
+  # --- Tvrdý strop v AWS (revize 2. 11. 2026): rozpočet jen za Clauda/Bedrock a při 100 % automaticky zákaz Bedrocku ---
+  ZakazBedrockuPolitika:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: SeStropem
+    Properties:
+      Description: LexisLocal - zakaz Bedrocku po vycerpani rozpoctu (pripojuje AWS Budgets)
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: StropRozpoctu
+            Effect: Deny
+            Action: 'bedrock:*'
+            Resource: '*'
+
+  RozpoctovaAkceRole:
+    Type: AWS::IAM::Role
+    Condition: SeStropem
+    Properties:
+      Description: AWS Budgets smi pripojit zakaz Bedrocku k uzivateli LexisLocalu
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: budgets.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: pripojit-zakaz
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:AttachUserPolicy
+                  - iam:DetachUserPolicy
+                Resource: !GetAtt LexisLocalUzivatel.Arn
+                Condition:
+                  ArnEquals:
+                    iam:PolicyARN: !Ref ZakazBedrockuPolitika
+
+  RozpocetClaudeStop:
+    Type: AWS::Budgets::Budget
+    Condition: SeStropem
+    Properties:
+      Budget:
+        BudgetName: !Sub '${NazevUzivatele}-claude-strop'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref StropClaudeUSD
+          Unit: USD
+        # Názvy služeb, pod kterými AWS účtuje Clauda (ověřeno ve vyúčtování 10/2026) a Bedrock.
+        CostFilters:
+          Service:
+            - 'Claude Sonnet 4.6 (Amazon Bedrock Edition)'
+            - 'Amazon Bedrock'
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref EmailUpozorneni }]
+
+  RozpoctovaAkce:
+    Type: AWS::Budgets::BudgetsAction
+    Condition: SeStropem
+    Properties:
+      BudgetName: !Ref RozpocetClaudeStop
+      NotificationType: ACTUAL
+      ActionType: APPLY_IAM_POLICY
+      ActionThreshold: { Type: PERCENTAGE, Value: 100 }
+      ExecutionRoleArn: !GetAtt RozpoctovaAkceRole.Arn
+      ApprovalModel: AUTOMATIC
+      Definition:
+        IamActionDefinition:
+          PolicyArn: !Ref ZakazBedrockuPolitika
+          Users: [!Ref LexisLocalUzivatel]
+      Subscribers:
+        - Type: EMAIL
+          Address: !Ref EmailUpozorneni
 
 Outputs:
   Uzivatel:

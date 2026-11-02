@@ -74,11 +74,11 @@ cat <<EOF
 ────────────────────────────────────────────────────────────────
 HOTOVO. Naseeduj JEN dotčené obory (idempotentní — nezdvojí):
 
-    node $SEED --obor "Daňové a finanční právo"      --dir "$OUT/Daňové a finanční právo"
-    node $SEED --obor "Insolvenční právo"            --dir "$OUT/Insolvenční právo"
-    node $SEED --obor "Náhrada škody a odpovědnost"  --dir "$OUT/Náhrada škody a odpovědnost"
-    node $SEED --obor "Rodinné právo"                --dir "$OUT/Rodinné právo"
-    node $SEED --obor "Spotřebitelské právo"         --dir "$OUT/Spotřebitelské právo"
+    node $SEED --verejne --obor "Daňové a finanční právo"      --dir "$OUT/Daňové a finanční právo"
+    node $SEED --verejne --obor "Insolvenční právo"            --dir "$OUT/Insolvenční právo"
+    node $SEED --verejne --obor "Náhrada škody a odpovědnost"  --dir "$OUT/Náhrada škody a odpovědnost"
+    node $SEED --verejne --obor "Rodinné právo"                --dir "$OUT/Rodinné právo"
+    node $SEED --verejne --obor "Spotřebitelské právo"         --dir "$OUT/Spotřebitelské právo"
 
   (potřebuje-li seed-kb token: přidej --token-file ~/.lexislocal/api_token)
 

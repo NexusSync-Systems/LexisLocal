@@ -19,7 +19,7 @@
  *   node backend/scripts/fetch-nss-sbirka.js --probe
  *   node backend/scripts/fetch-nss-sbirka.js --out ./judikatura-nss
  *   node backend/scripts/fetch-nss-sbirka.js --out ./judikatura-nss --od-roku 2020 --limit 50
- * Pak: node backend/scripts/seed-kb.js --agent resersnik --dir ./judikatura-nss --token-file ~/.lexislocal/api_token
+ * Pak: node backend/scripts/seed-kb.js --verejne --agent resersnik --dir ./judikatura-nss --token-file ~/.lexislocal/api_token
  *
  * Přepínače: --od-roku RRRR  --do-roku RRRR  --limit N  --delay ms (min. 1000)
  * Bez závislostí — Node ≥ 18 (záloha přes systémový curl jako u fetch-ns-sbirka.js).
@@ -238,7 +238,7 @@ async function main() {
         }
     }
     console.log(`✅ Uloženo ${saved}, už staženo ${existing}, selhalo ${failed} → ${a.out}`);
-    console.log(`   Další krok: node backend/scripts/seed-kb.js --agent resersnik --dir "${a.out}" --token-file ~/.lexislocal/api_token`);
+    console.log(`   Další krok: node backend/scripts/seed-kb.js --verejne --agent resersnik --dir "${a.out}" --token-file ~/.lexislocal/api_token`);
 }
 
 if (require.main === module) main().catch(e => { console.error('❌ ' + e.message); process.exit(1); });

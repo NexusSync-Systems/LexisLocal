@@ -60,6 +60,7 @@ function parseArgs(argv) {
         else if (k === '--server-wait') a.serverWait = Math.max(0, parseInt(next(), 10) || 0);
         else if (k === '--dry-run') a.dryRun = true;
         else if (k === '--replace') a.replace = true;
+        else if (k === '--verejne') a.verejne = true; // zákony / judikatura → smí do cloudu jako veřejné (lib/kb_puvod.js)
         else if (k === '--help' || k === '-h') a.help = true;
         else { console.error(`Neznámý argument: ${k}`); a.help = true; }
     }
@@ -75,6 +76,7 @@ Režimy (jeden z nich):
   --root <složka>     DÁVKA: každá podsložka = obor (naplní všechny najednou)
 
   --dir <cesta>       zdrojová složka (u --agent/--obor; projde se i rekurzivně)
+  --verejne           obsah je VEŘEJNÝ (zákony, judikatura) — smí do cloudu; bez volby = dokument kanceláře
   --api <url>         základ API (výchozí http://127.0.0.1:4000)
   --token <hodnota>   API token (nebo --token-file, nebo $LEXIS_API_TOKEN)
   --token-file <c>    soubor s tokenem (přečte se a ořízne)
@@ -199,7 +201,7 @@ async function uploadOne(a, base, token, file) {
     if (buf.length > MAX_BYTES) return { skipped: true, reason: `> ${Math.round(MAX_BYTES / 1e6)} MB` };
     const res = await apiFetch(a, `${a.api}${base}/upload`, {
         method: 'POST', headers: headers(token),
-        body: JSON.stringify({ fileName: label, base64: buf.toString('base64') })
+        body: JSON.stringify(Object.assign({ fileName: label, base64: buf.toString('base64') }, a.verejne ? { verejne: true } : {}))
     }, `upload ${label}`);
     const txt = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${txt.slice(0, 300)}`);

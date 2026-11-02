@@ -100,7 +100,7 @@ async function main(argv) {
             const dirs = [...new Set(ZDROJE.filter(z => nove[z.nazev].length).map(z => z.dir))];
             for (const dir of dirs) {
                 const z = { dir };
-                const r = await run(['backend/scripts/seed-kb.js', '--agent', 'resersnik', '--dir', './' + z.dir, '--api', url, '--token-file', TOKEN_FILE], `nahrání ${z.dir}`);
+                const r = await run(['backend/scripts/seed-kb.js', '--verejne', '--agent', 'resersnik', '--dir', './' + z.dir, '--api', url, '--token-file', TOKEN_FILE], `nahrání ${z.dir}`);
                 const m = /Hotovo:[^\n]*/.exec(r.tail);
                 res.push(`${z.dir}: ${m ? m[0] : `kód ${r.code}`}`);
                 if (r.code !== 0) chyby++;

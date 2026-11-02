@@ -2,7 +2,7 @@
 # instaluj-balicek.sh — LexisLocal na Macu z balíčku na GitHubu (bez gitu, bez instalace Node.js).
 #
 #   curl -fsSLO https://raw.githubusercontent.com/NexusSync-Systems/LexisLocal/release-prep/scripts/mac/instaluj-balicek.sh
-#   bash instaluj-balicek.sh instaluj [--verze v1.2.1]   # stáhne, ověří SHA-256, rozbalí, založí .env a službu
+#   bash instaluj-balicek.sh instaluj [--verze v1.2.1] [--sha256 <součet>]   # stáhne, ověří, rozbalí, založí .env a službu
 #   bash instaluj-balicek.sh aktualizuj [--verze …]      # novější balíček; když nová verze nenaběhne, vrátí předchozí
 #   bash instaluj-balicek.sh zpet                         # přepne na předchozí nainstalovanou verzi
 #   bash instaluj-balicek.sh stav                         # nainstalované verze, která běží
@@ -11,6 +11,10 @@
 # Silicon: aplikace, závislosti a vlastní Node.js. Verze leží v ~/Applications/LexisLocal/verze/<verze>,
 # odkaz ~/Applications/LexisLocal/aktualni ukazuje na běžící. Nastavení (.env), data, báze a klíče jsou mimo
 # (~/Library/Application Support/LexisLocal, ~/.aws) — aktualizace je nemění. Viz docs/PILOT_CLOUDSHELL.md.
+#
+# Ověření (revize 2. 11. 2026): součet .sha256 z téhož release chrání jen před poškozeným stažením. Proti podvrženému
+# release: dodavatel ověří atestaci původu (gh attestation verify … --repo NexusSync-Systems/LexisLocal) a součet předá
+# instalaci přes --sha256 — ta pak balíček s jiným obsahem odmítne. Karanténa macOS se neruší (curl ji nenastavuje).
 set -euo pipefail
 
 REPO="NexusSync-Systems/LexisLocal"
@@ -24,8 +28,9 @@ PONECHAT=3
 [ "$(uname -m)" = "arm64" ] || { echo "Balíček je pro Apple Silicon (arm64), tento Mac je $(uname -m)."; exit 2; }
 
 PRIKAZ="${1:-}"; shift || true
-VERZE=""
-while [ $# -gt 0 ]; do case "$1" in --verze) VERZE="${2:-}"; shift 2 ;; *) echo "Neznámý přepínač: $1"; exit 2 ;; esac; done
+VERZE=""; SHA_OVERENY=""
+while [ $# -gt 0 ]; do case "$1" in --verze) VERZE="${2:-}"; shift 2 ;; --sha256) SHA_OVERENY="${2:-}"; shift 2 ;; *) echo "Neznámý přepínač: $1"; exit 2 ;; esac; done
+[ -z "$SHA_OVERENY" ] || [[ "$SHA_OVERENY" =~ ^[0-9a-f]{64}$ ]] || { echo "--sha256 musí být 64 hex znaků"; exit 2; }
 [ -z "$VERZE" ] || [[ "$VERZE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || { echo "Neplatná verze: $VERZE"; exit 2; }
 
 url() { if [ -n "$VERZE" ]; then echo "https://github.com/$REPO/releases/download/$VERZE/$1"; else echo "https://github.com/$REPO/releases/latest/download/$1"; fi; }
@@ -38,14 +43,18 @@ stahni() {   # → do $NOVA rozbalená nová verze
   curl -fsSL --retry 3 -o "$TMP/$ASSET.sha256" "$(url "$ASSET.sha256")"
   OCEK=$(awk '{print $1}' "$TMP/$ASSET.sha256"); SKUT=$(shasum -a 256 "$TMP/$ASSET" | awk '{print $1}')
   [ "$OCEK" = "$SKUT" ] || { echo "✗ Kontrolní součet nesedí ($SKUT ≠ $OCEK) — balíček nepoužiji."; exit 1; }
-  echo "✓ SHA-256 sedí"
+  if [ -n "$SHA_OVERENY" ]; then
+    [ "$SKUT" = "$SHA_OVERENY" ] || { echo "✗ Balíček neodpovídá ověřenému součtu (--sha256) — nepoužiji ho."; exit 1; }
+    echo "✓ SHA-256 sedí s ověřeným součtem (--sha256)"
+  else
+    echo "✓ SHA-256 sedí se součtem v release  (! bez --sha256 není ověřeno, že release je od nás — viz hlavička skriptu)"
+  fi
   tar -xzf "$TMP/$ASSET" -C "$TMP"
   [ -f "$TMP/lexislocal/VERSION" ] && [ -x "$TMP/lexislocal/node/bin/node" ] || { echo "✗ Balíček nemá očekávaný obsah."; exit 1; }
   V="$(head -1 "$TMP/lexislocal/VERSION" | tr -cd 'A-Za-z0-9._-')"
   mkdir -p "$BASE/verze"
   NOVA="$BASE/verze/$V"
   if [ -d "$NOVA" ]; then echo "  verze $V už je nainstalovaná — použiji ji"; else mv "$TMP/lexislocal" "$NOVA"; fi
-  xattr -dr com.apple.quarantine "$NOVA" 2>/dev/null || true
   "$NOVA/node/bin/node" -v >/dev/null || { echo "✗ Přibalený Node.js nejde spustit."; exit 1; }
 }
 

@@ -241,18 +241,23 @@ function omezRagNaSpisy(matches) {
     const acl = require('./file_acl');
     const keep = list.filter(m => {
         if (!m) return false;
-        if (typeof m.scope === 'string' && m.scope.indexOf('_kb_') === 0) return true;
+        if (require('./kb_puvod').jeVerejna(m)) return true;
         let s = null;
         try { s = acl.spisForFileName(m.fileName); } catch (e) { s = null; }
         return !!(s && spisy.has(String(s.id)));
     });
     return { matches: keep, vyrazeno: list.length - keep.length };
 }
-/** Výsledky RAG: znalostní báze (scope _kb_*) je veřejná, klientské úseky se přiřadí ke spisu. */
+/**
+ * Výsledky RAG: veřejné pasáže báze (zákony, judikatura) nic nemění, klientské úseky se přiřadí ke spisu
+ * a dokumenty kanceláře nahrané do báze agenta jsou „neznámého původu“ (lib/kb_puvod.js, revize 2. 11. 2026).
+ */
 function noteRagMatches(matches) {
+    const P = require('./kb_puvod');
     (matches || []).forEach(m => {
         if (!m) return;
-        if (typeof m.scope === 'string' && m.scope.indexOf('_kb_') === 0) return;
+        if (P.jeVerejna(m)) return;
+        if (P.jeKb(m)) { noteUnknown(`dokument kanceláře v bázi agenta: ${String(m.fileName || '').slice(0, 80)}`); return; }
         noteFile(m.fileName);
     });
 }

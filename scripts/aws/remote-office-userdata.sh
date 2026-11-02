@@ -359,21 +359,21 @@ fi
 [ "$KB_LAWS" = /opt/zakony ] && mkdir -p /opt/zakony && tar -xzf "$KB" -C /opt/zakony
 for d in "$KB_LAWS"/*/; do
   echo "=== seed $(basename "$d") $(date -Is)"
-  NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --agent resersnik --dir "$d" \
+  NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --verejne --agent resersnik --dir "$d" \
     --api https://127.0.0.1 --token "$TOKEN" --delay 0 2>&1 | tail -n 3
 done
 # 5b) Judikatura → oborové báze (_kb_obor_<slug>); podsložka archivu = obor
 JUD="backend/eval/kb/judikatura.tar.gz"
 if [ -f "$JUD" ]; then
   mkdir -p /opt/judikatura && tar -xzf "$JUD" -C /opt/judikatura
-  NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --root /opt/judikatura \
+  NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --verejne --root /opt/judikatura \
     --api https://127.0.0.1 --token "$TOKEN" --delay 0 2>&1 | tail -n 5
 fi
 # 5c) Judikatura NS, ÚS, NSS z archivu → báze rešeršníka (jako na Macu: seed-kb --dir ./judikatura-…)
 for d in /opt/kb/judikatura-ns /opt/kb/judikatura-us /opt/kb/judikatura-nss; do
   [ -d "$d" ] || continue
   echo "=== seed $(basename "$d") ($(ls "$d" | wc -l) souborů) $(date -Is)"
-  NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --agent resersnik --dir "$d" \
+  NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/scripts/seed-kb.js --verejne --agent resersnik --dir "$d" \
     --api https://127.0.0.1 --token "$TOKEN" --delay 0 2>&1 | tail -n 3
   upload
 done

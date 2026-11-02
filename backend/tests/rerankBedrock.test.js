@@ -125,7 +125,7 @@ describe('limit volání, opakování a cache (kvóta nového účtu 3/min, 1. 1
         expect(calls).toHaveLength(1);
     });
     test('úsek ze spisu do bedrockScores neprojde (pojistka)', async () => {
-        await expect(RS.bedrockScores('q', [kb(1), spis('a')], { gate: allow })).rejects.toThrow(/jen pasáže báze/);
+        await expect(RS.bedrockScores('q', [kb(1), spis('a')], { gate: allow })).rejects.toThrow(/jen veřejné pasáže báze/);
     });
 });
 

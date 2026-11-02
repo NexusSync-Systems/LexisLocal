@@ -1071,7 +1071,9 @@ function _registerKbScope(scope) {
  * slévá všechny klientské partitiony). Bez modelu uloží chunky textově (vector=null),
  * dohledatelné lexikálně.
  */
-async function indexKnowledge(scope, fileName, text) {
+async function indexKnowledge(scope, fileName, text, opts = {}) {
+    // Původ pasáže (lib/kb_puvod.js): do cloudu jako veřejná jen 'verejne'; výchozí 'kancelar'.
+    const puvod = opts && opts.puvod === 'verejne' ? 'verejne' : 'kancelar';
     if (!scope || String(scope).indexOf(KB_PREFIX) !== 0) {
         throw new Error(`indexKnowledge: neplatný scope „${scope}" (musí začínat ${KB_PREFIX}).`);
     }
@@ -1101,7 +1103,8 @@ async function indexKnowledge(scope, fileName, text) {
                 embedded: vectors[i] != null,
                 chunkIndex: i,
                 totalChunks: chunks.length,
-                scope: scope
+                scope: scope,
+                puvod: puvod
             });
         }
         savePartition(scope, { chunks: kept });
@@ -1438,6 +1441,7 @@ async function searchSimilar(query, limit = 5, filters = null, opts = {}) {
             method: method,
             degraded: embeddingFailed,
             scope: chunk.scope || null, // KB chunk (_kb_<id>) vs. klientský spis (null)
+            puvod: chunk.puvod || null, // u KB: 'verejne' | 'kancelar' | null (starší) — lib/kb_puvod.js
             chunkIndex: chunk.chunkIndex,
             totalChunks: chunk.totalChunks
         };

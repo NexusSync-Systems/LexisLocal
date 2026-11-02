@@ -141,7 +141,8 @@ function prehledPrerazeni() {
         posledniChyba: stats.posledniChyba
     };
 }
-const _isKb = r => !!(r && typeof r.scope === 'string' && r.scope.indexOf('_kb_') === 0);
+// Do Bedrocku jen VEŘEJNÉ pasáže báze (zákony, judikatura) — dokumenty kanceláře v bázi ne (lib/kb_puvod.js).
+const _isKb = r => require('./kb_puvod').jeVerejna(r);
 
 /**
  * Smí dotaz do Bedrocku? Stejná pravidla jako odpověď Clauda (spis se souhlasem / veřejný dotaz,
@@ -152,7 +153,10 @@ function bedrockGate() {
         const cp = require('./cloud_policy');
         if (!cp.stavKancelare().cloudAktivni) return { ok: false, duvod: 'cloud v kanceláři vypnutý' };
         const d = cp.rozhodni('bedrock');
-        return d.allowed ? { ok: true } : { ok: false, duvod: 'pravidla cloudu: ' + d.code };
+        if (!d.allowed) return { ok: false, duvod: 'pravidla cloudu: ' + d.code };
+        // Tvrdý strop rozpočtu platí i pro přeřazení (revize 2. 11. 2026).
+        const r = require('./ai_usage').kontrolaRozpoctu();
+        return r && r.ok === false ? { ok: false, duvod: 'tvrdý strop rozpočtu' } : { ok: true };
     } catch (e) {
         return { ok: false, duvod: e.message };
     }
@@ -239,7 +243,7 @@ function _cacheKey(model, query, docs) {
 async function bedrockScores(query, items, opts) {
     opts = opts || {};
     const kb = (items || []).filter(_isKb);
-    if (kb.length !== (items || []).length) throw new Error('do Bedrocku smí jen pasáže báze (_kb_*)');
+    if (kb.length !== (items || []).length) throw new Error('do Bedrocku smí jen veřejné pasáže báze (zákony, judikatura)');
     if (kb.length < 2) return null;
     const gate = opts.gate ? opts.gate() : bedrockGate();
     if (!gate.ok) { stats.bedrockOdepreno++; _dnes('odepreno'); _warn(`Bedrock nepoužit (${gate.duvod})`, true); return null; }

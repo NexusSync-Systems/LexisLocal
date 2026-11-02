@@ -193,7 +193,7 @@ async function instaluj(opts) {
             try {
                 const { text } = await extractTextFromFile(f);
                 if (!String(text || '').trim()) { err++; continue; }
-                const r = await rag.indexKnowledge(scope, label, String(text));
+                const r = await rag.indexKnowledge(scope, label, String(text), { puvod: 'verejne' }); // zákony a judikatura z balíčku
                 ok++; chunks += r.indexed || 0; bezVektoru += (r.indexed || 0) - (r.embedded || 0);
                 uz.add(label);
             } catch (e) { err++; if (err <= 5) log(`❌ ${label}: ${e.message}`); }
