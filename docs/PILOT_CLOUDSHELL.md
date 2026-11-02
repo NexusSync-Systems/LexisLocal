@@ -45,6 +45,8 @@ bash pilot-cloudshell.sh klic --zkratka novak
 - `--strop` = **tvrdý strop v AWS**: po vyčerpání (USD za Clauda/Bedrock v měsíci, počítá celý účet) AWS Budgets
   uživateli automaticky zakáže Bedrock — platí i pro případ odcizeného klíče. `stav` ukáže, zda je strop vyčerpaný;
   odblokování: AWS Budgets → rozpočet `…-claude-strop` → Actions → Reverse.
+- Pilotní uživatel smí volat **jen jeden model** (parametr šablony `ModelId`, výchozí `eu.anthropic.claude-sonnet-4-6`)
+  a rerankery — s odcizeným klíčem tak nejde volat dražší model mimo strop.
 - `klic` vytvoří přístupový klíč a **jednou** ho zobrazí ve tvaru pro `~/.aws/credentials`. Opsat rovnou na Mac
   advokáta (krok C2), nefotit, neposílat. Po Enteru se obrazovka vymaže.
 - Kdykoli: `bash pilot-cloudshell.sh stav --zkratka novak` — stav stacku, klíče (jen ID a stav), poslední použití,

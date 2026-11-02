@@ -47,9 +47,15 @@ router.post('/debate', async (req, res) => {
     // Pravidla cloudu (lib/cloud_policy.js) — viz routes/agent.js.
     const cloudPolicy = require('../lib/cloud_policy');
     cloudPolicy.declare({ dataClass: req.body.dataClass });
-    if (req.body.spisId) cloudPolicy.noteSpis(String(req.body.spisId));
+    if (req.body.spisId) {
+        // Spis, ke kterému volající nemá přístup, nesmí „propůjčit“ souhlas klienta (revize 2. 11. 2026).
+        const sp = require('../lib/spisy').getSpis(String(req.body.spisId));
+        if (sp && !require('../lib/access').canAccess(sp, req.principal, 'read')) return res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
+        cloudPolicy.noteSpis(String(req.body.spisId));
+    }
     if (req.body.caseNumber) cloudPolicy.noteCase(String(req.body.caseNumber));
-    if (context && !req.body.spisId && !req.body.caseNumber) cloudPolicy.noteUnknown('kontext dokumentu bez spisu');
+    if (context && req.body.contextFileName) cloudPolicy.noteFile(String(req.body.contextFileName));
+    else if (context && !req.body.spisId && !req.body.caseNumber) cloudPolicy.noteUnknown('kontext dokumentu bez spisu');
 
     const selectedModel = model || CHAT_MODEL;
     console.log(`🤖 Spouštím Swarm Debatu: Tvůrce [${agent1.name}] & Oponent [${agent2.name}] s modelem [${selectedModel}]`);
@@ -246,9 +252,14 @@ router.post('/orchestrate', async (req, res) => {
     // Pravidla cloudu (lib/cloud_policy.js) — viz routes/agent.js.
     const cloudPolicy = require('../lib/cloud_policy');
     cloudPolicy.declare({ dataClass: req.body.dataClass });
-    if (spisId) cloudPolicy.noteSpis(String(spisId));
+    if (spisId) {
+        const sp = require('../lib/spisy').getSpis(String(spisId));
+        if (sp && !require('../lib/access').canAccess(sp, req.principal, 'read')) return res.status(403).json({ error: 'Přístup ke spisu odepřen.' });
+        cloudPolicy.noteSpis(String(spisId));
+    }
     if (req.body.caseNumber) cloudPolicy.noteCase(String(req.body.caseNumber));
-    if (context && !spisId && !req.body.caseNumber) cloudPolicy.noteUnknown('kontext dokumentu bez spisu');
+    if (context && req.body.contextFileName) cloudPolicy.noteFile(String(req.body.contextFileName));
+    else if (context && !spisId && !req.body.caseNumber) cloudPolicy.noteUnknown('kontext dokumentu bez spisu');
 
     const selectedModel = model || CHAT_MODEL;
     console.log(`🧠 Express Server: Spouštím Chief Orchestrator pro: "${prompt.substring(0, 50)}..."`);

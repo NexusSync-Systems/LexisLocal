@@ -82,5 +82,15 @@ test('kontrola smlouvy z dokumentu spisu: spis podle contextFileName, ne „nezn
 
 test('kontext bez spisu zůstává neznámého původu (bez souhlasu nikam)', async () => {
     const r = await H(request(app).post('/api/agent/kontrolor')).send({ prompt: 'Zkontroluj smlouvu.', context: 'Smlouva o dílo …', contextFileName: 'neexistuje.pdf' });
-    expect(JSON.stringify(r.body) + JSON.stringify(decisions)).toMatch(/není zařazený ve spisu/);
+    expect(JSON.stringify(r.body) + JSON.stringify(decisions)).toMatch(/není zařazený ve spisu|dokument mimo spis/);
+});
+
+test('revize 2. 11. 2026: dokument z jiného spisu se nepropašuje „pod“ deklarovaným spisem se souhlasem', async () => {
+    const P = require('../lib/cloud_policy');
+    P.udelSouhlas(sB.id, { typ: 'spis', principal: { userId: 'u1', name: 'JUDr. A', kind: 'user', scopes: ['read', 'write', 'approve'] }, poznamka: 'písemně' });
+    // spis 12 C 2/2026 má souhlas, ale kontext je dokument spisu 7 C 7/2026 (bez souhlasu)
+    const r = await H(request(app).post('/api/agent/kontrolor')).send({ prompt: 'Zkontroluj smlouvu.', caseNumber: '12 C 2/2026', context: 'Text cizího spisu', contextFileName: 'cizi_spis.pdf' });
+    const d = decisions[0] || (r.body && r.body.cloudPolicy) || {};
+    expect(d.allowed).not.toBe(true);
+    expect(JSON.stringify(r.body) + JSON.stringify(decisions)).toMatch(/7 C 7\/2026/);
 });

@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   LexisLocal — přístup ke Claude přes Amazon Bedrock JEN v EU (vlastní účet AWS kanceláře).
   Vytvoří IAM uživatele bez klíče (klíč si správce vytvoří v konzoli), politiku jen na volání
-  modelů Anthropic přes EU inference profily (+ reranker výsledků v EU) a explicitní zákaz Bedrocku mimo eu-* regiony,
+  jednoho modelu Claude přes EU inference profil (parametr ModelId; + reranker výsledků v EU) a explicitní zákaz Bedrocku mimo eu-* regiony,
   plus měsíční rozpočet s upozorněním e-mailem. Spouštějte v regionu eu-central-1.
 
 Parameters:
@@ -34,6 +34,17 @@ Parameters:
     Description: >
       „ano“ = při vyčerpání StropClaudeUSD AWS uživateli automaticky zakáže Bedrock (AWS Budgets action) — skutečný
       strop i pro případ odcizeného klíče. Počítá útratu za Clauda v celém účtu (Budgets neumí rozlišit uživatele).
+  ModelId:
+    Type: String
+    Default: eu.anthropic.claude-sonnet-4-6
+    AllowedPattern: '^eu\.anthropic\.[a-z0-9.-]+$'
+    Description: >
+      Jediný model Claude (EU inference profil), který uživatel smí volat — revize 2. 11. 2026: s odcizeným klíčem
+      nejde volat dražší model mimo strop rozpočtu.
+  SluzbaVeVyuctovani:
+    Type: String
+    Default: 'Claude Sonnet 4.6 (Amazon Bedrock Edition)'
+    Description: Název služby, pod kterým AWS účtuje zvolený model (Cost Explorer) — pro tvrdý strop.
   StropClaudeUSD:
     Type: Number
     Default: 50
@@ -58,8 +69,8 @@ Resources:
               - bedrock:InvokeModel
               - bedrock:InvokeModelWithResponseStream
             Resource:
-              - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.anthropic.*'
-              - 'arn:aws:bedrock:eu-*::foundation-model/anthropic.*'
+              - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/${ModelId}'
+              - !Sub ['arn:aws:bedrock:eu-*::foundation-model/${Zaklad}*', { Zaklad: !Select [1, !Split ['eu.', !Ref ModelId]] }]
             Condition:
               StringLike:
                 aws:RequestedRegion: 'eu-*'
@@ -91,7 +102,7 @@ Resources:
             Action:
               - bedrock:GetInferenceProfile
             Resource:
-              - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.anthropic.*'
+              - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/${ModelId}'
             Condition:
               StringLike:
                 aws:RequestedRegion: 'eu-*'
@@ -128,8 +139,8 @@ Resources:
               - bedrock:InvokeModel
               - bedrock:InvokeModelWithResponseStream
             NotResource:
-              - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.anthropic.*'
-              - 'arn:aws:bedrock:eu-*::foundation-model/anthropic.*'
+              - !Sub 'arn:aws:bedrock:eu-*:${AWS::AccountId}:inference-profile/${ModelId}'
+              - !Sub ['arn:aws:bedrock:eu-*::foundation-model/${Zaklad}*', { Zaklad: !Select [1, !Split ['eu.', !Ref ModelId]] }]
               - 'arn:aws:bedrock:eu-*::foundation-model/cohere.rerank-*'
               - 'arn:aws:bedrock:eu-*::foundation-model/amazon.rerank-*'
 
@@ -217,7 +228,7 @@ Resources:
         # Názvy služeb, pod kterými AWS účtuje Clauda (ověřeno ve vyúčtování 10/2026) a Bedrock.
         CostFilters:
           Service:
-            - 'Claude Sonnet 4.6 (Amazon Bedrock Edition)'
+            - !Ref SluzbaVeVyuctovani
             - 'Amazon Bedrock'
       NotificationsWithSubscribers:
         - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE }

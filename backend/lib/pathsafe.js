@@ -11,7 +11,8 @@
 'use strict';
 
 const path = require('path');
-const { WATCH_DIR } = require('./config');
+const fs = require('fs');
+const { getIngestDir } = require('./config');
 
 function safePathInWatchDir(fileName) {
     const raw = String(fileName == null ? '' : fileName);
@@ -22,7 +23,11 @@ function safePathInWatchDir(fileName) {
     if (!base || base === '.' || base === '..') {
         throw new Error('Neplatný název souboru.');
     }
-    const root = path.resolve(WATCH_DIR);
+    // Soubory začínající tečkou jsou interní data aplikace (.lexis.db, .audit_log.json, .rag_index.json…) —
+    // uživatelský soubor se tak jmenovat nesmí (revize 2. 11. 2026: upload je mohl přepsat).
+    if (base.startsWith('.')) throw new Error('Název souboru nesmí začínat tečkou.');
+    // Živá spisovna (volba za běhu), ne hodnota z doby načtení modulu.
+    const root = path.resolve(getIngestDir());
     const resolved = path.resolve(root, base);
     const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
     if (resolved !== root && !resolved.startsWith(rootWithSep)) {
@@ -40,4 +45,18 @@ function sanitizeFileName(name) {
     return String(name == null ? '' : name).replace(/[^a-zA-Z0-9_á-žÁ-Ž]/g, '_').substring(0, 100);
 }
 
-module.exports = { safePathInWatchDir, sanitizeFileName };
+/**
+ * Nová, dosud neexistující cesta: když `filePath` existuje, přidá „ (2)“, „ (3)“… před příponu.
+ * Zápis pak s flag 'wx' (selže, kdyby soubor mezitím vznikl) — nahrání nikdy nepřepíše cizí dokument.
+ */
+function volnaCesta(filePath) {
+    if (!fs.existsSync(filePath)) return filePath;
+    const dir = path.dirname(filePath), ext = path.extname(filePath), stem = path.basename(filePath, ext);
+    for (let i = 2; i < 1000; i++) {
+        const p = path.join(dir, `${stem} (${i})${ext}`);
+        if (!fs.existsSync(p)) return p;
+    }
+    throw new Error('Nelze najít volný název souboru.');
+}
+
+module.exports = { safePathInWatchDir, sanitizeFileName, volnaCesta };

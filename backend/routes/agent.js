@@ -147,11 +147,12 @@ router.post('/:agentId', async (req, res) => {
     // Dotaz ke spisu jen přes ragFilters (asistent „Ke spisu“, starší klienti API): spis je tentýž.
     const ragCase = req.body.ragFilters && req.body.ragFilters.caseNumber;
     if (ragCase && !req.body.caseNumber) { cloudPolicy.noteCase(String(ragCase)); cloudSpisKnown = true; }
-    // Kontext z dokumentu kanceláře (kontrola smlouvy, odpověď na e-mail): spis podle souboru, jinak neznámý původ.
-    if (context && !cloudSpisKnown && req.body.contextFileName) {
-        let sp = null;
-        try { sp = require('../lib/file_acl').spisForFileName(String(req.body.contextFileName)); } catch (e) { sp = null; }
-        if (sp) { cloudPolicy.noteSpis(sp.id); cloudSpisKnown = true; }
+    // Kontext z dokumentu kanceláře (kontrola smlouvy, odpověď na e-mail): spis podle SOUBORU — vždy, i když požadavek
+    // deklaruje jiný spis (revize 2. 11. 2026: dokument ze spisu stupně A „pod“ spisem se souhlasem). Soubor bez spisu
+    // = neznámý původ (noteFile).
+    if (context && req.body.contextFileName) {
+        cloudPolicy.noteFile(String(req.body.contextFileName));
+        cloudSpisKnown = true;
     }
     if (context && !cloudSpisKnown) cloudPolicy.noteUnknown(req.body.contextFileName ? 'dokument není zařazený ve spisu' : 'kontext dokumentu bez spisu');
 

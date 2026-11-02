@@ -71,3 +71,10 @@ backend/eval/lawyer_review/
 # Ukázky z --probe (fetch-esbirka.js, fetch-ns-sbirka.js)
 esbirka_probe_*.json
 ns_sbirka_probe.html
+
+# Zálohy a pracovní soubory — nikdy do veřejného repa (záloha obsahuje klíč k databázi; revize 2. 11. 2026)
+zalohy/
+scratch/
+*.tar.gz
+lexis.key
+api_token

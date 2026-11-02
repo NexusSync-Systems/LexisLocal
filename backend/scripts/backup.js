@@ -106,7 +106,12 @@ function extract(file) {
 
 function backup() {
     const d = dirs();
-    const outDir = path.resolve(arg('--out') || 'zalohy');
+    // Výchozí cíl MIMO projekt (revize 2. 11. 2026: ./zalohy v klonu veřejného repa by šlo omylem pushnout i s klíčem).
+    const outDir = path.resolve(arg('--out') || path.join(os.homedir(), 'LexisLocal-zalohy'));
+    const repoRoot = path.resolve(__dirname, '..', '..');
+    if ((outDir + path.sep).startsWith(repoRoot + path.sep) && !has('--povolit-v-projektu')) {
+        throw new Error(`Záloha obsahuje klíč k databázi — neukládejte ji do složky projektu (${outDir}). Zvolte --out na šifrovaném disku.`);
+    }
     const withIngest = !has('--bez-spisovny');
     const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16);
     const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'lexis-zaloha-'));

@@ -19,7 +19,7 @@ async function stampUploader(req, keys) {
     for (const k of keys || []) { try { await upsertInboxFile(k, { uploadedBy: p.userId }, true); } catch (e) { /* best-effort */ } }
 }
 const { deleteDocumentIndex } = require('../lib/rag');
-const { safePathInWatchDir } = require('../lib/pathsafe');
+const { safePathInWatchDir, volnaCesta } = require('../lib/pathsafe');
 const { loadAuditLogs } = require('../lib/audit');
 const HearingsWatcher = require('../lib/hearings');
 const db = require('../lib/database');
@@ -246,7 +246,7 @@ router.post('/upload', async (req, res) => {
 
     let filePath;
     try {
-        filePath = safePathInWatchDir(fileName);
+        filePath = volnaCesta(safePathInWatchDir(fileName)); // existující dokument se nepřepisuje (revize 2. 11. 2026)
     } catch (e) {
         return res.status(400).json({ error: e.message });
     }
@@ -256,7 +256,12 @@ router.post('/upload', async (req, res) => {
         const base64Data = base64.replace(/^data:.*?;base64,/, "");
 
         const buffer = Buffer.from(base64Data, 'base64');
-        await fs.promises.writeFile(filePath, buffer);
+        try { await fs.promises.writeFile(filePath, buffer, { flag: 'wx' }); }
+        catch (e) {
+            if (e.code !== 'EEXIST') throw e;
+            filePath = volnaCesta(filePath);
+            await fs.promises.writeFile(filePath, buffer, { flag: 'wx' });
+        }
         console.log(`📥 Nahraný soubor uložen na disk: ${filePath}`);
 
         // Uložené jméno (po sanitizaci) — dřív odpověď opakovala surový vstup, např. „../../x“.

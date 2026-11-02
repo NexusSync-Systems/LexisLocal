@@ -64,12 +64,16 @@ const TOOLS = {
             properties: { fileName: { type: 'string', description: 'Název souboru vč. přípony (např. zaloba.pdf).' } },
             required: ['fileName']
         },
-        impl: async (args) => {
+        impl: async (args, ctx) => {
             const fileName = String(args.fileName == null ? '' : args.fileName).trim();
             if (!fileName) return { error: 'Chybí název souboru.' };
             const inbox = await watcher().loadInbox();
             const fileData = inbox && inbox.files && inbox.files[fileName];
             if (!fileData) return { error: 'Soubor nenalezen ve schránce.' };
+            // Revize 2. 11. 2026: dřív bez kontroly přístupu (cizí spis ve firemním režimu, agent bez přístupu ke spisům).
+            const filters = (ctx && ctx.ragFilters) || null;
+            if (filters && filters.clientAccess === false) return { error: 'Tento asistent nemá přístup k dokumentům spisů.' };
+            if (!require('./file_acl').canAccessFile(fileData, (ctx && ctx.principal) || null, 'read')) return { error: 'K dokumentu nemáte přístup.' };
             require('./cloud_policy').noteFile(fileName); // pravidla cloudu: dokument → spis (jinak neznámý původ)
             const filePath = fileData.filePath;
             if (!filePath || !fs.existsSync(filePath)) return { error: 'Fyzický soubor na disku neexistuje.' };
@@ -81,7 +85,9 @@ const TOOLS = {
                 content = await fs.promises.readFile(filePath, 'utf-8');
             }
             // Ořez, ať malý model nezahltíme celým spisem (kontext + rychlost).
-            return { fileName, content: String(content || '').slice(0, 8000) };
+            content = String(content || '').slice(0, 8000);
+            if (filters && filters.redactClient) content = require('./anonymizer').anonymizeText(content); // úroveň „redacted“
+            return { fileName, content };
         }
     },
     list_drafts: {

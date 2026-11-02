@@ -267,6 +267,13 @@ router.post('/send', async (req, res) => {
                 return res.status(403).json({ success: false, error: 'Přístup ke spisu odepřen.' });
             }
         }
+        // Přílohy jen z evidovaných dokumentů ve spisovně, ke kterým má odesílatel přístup (revize 2. 11. 2026).
+        let prilohy = [];
+        try { prilohy = await require('../lib/email_attachments').overPrilohy(b.attachmentPaths, req.principal); }
+        catch (e) {
+            logEvent('E-mail', 'Odeslání ZAMÍTNUTO — nepovolená příloha', b.clientName || to, { caseNumber: b.caseNumber || null });
+            return res.status(e.status || 400).json({ success: false, error: e.message, code: e.code || 'ATTACHMENT' });
+        }
         // SMTP nastavení z lokální DB
         const settingsList = db.get('email_settings') || [];
         const settings = settingsList.length > 0 ? settingsList[0] : {};
@@ -280,7 +287,7 @@ router.post('/send', async (req, res) => {
                 to,
                 subject: b.subject || '',
                 body: b.body || '',
-                attachmentPaths: Array.isArray(b.attachmentPaths) ? b.attachmentPaths : [],
+                attachmentPaths: prilohy,
                 confirmedByLawyer: true
             });
         } catch (e) {
