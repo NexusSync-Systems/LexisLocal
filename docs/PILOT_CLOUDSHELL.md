@@ -108,8 +108,8 @@ node backend/scripts/kb-balicek.js --instaluj ~/Downloads/lexis-baze-*.tar.gz
 ```bash
 node backend/scripts/bedrock-check.js --volat      # nastavení + 1 syntetický dotaz (zlomek centu)
 node backend/scripts/aws-pilot-test.js --bez-ce    # celý test proti AWS (bez Cost Exploreru), protokol v scratch/aws-test-<datum>.md
-npm start                                          # server; vyhledávací model se při 1. startu stáhne (~2,2 GB)
-node backend/scripts/readiness.js                  # v druhém okně Terminálu
+bash scripts/mac/lexislocal-sluzba.sh instaluj     # služba macOS: start po přihlášení, restart po pádu, odkaz na ploše
+node backend/scripts/readiness.js                  # vyhledávací model se při 1. startu stáhne (~2,2 GB)
 ```
 
 `aws-pilot-test.js` musí projít včetně: povolený dotaz → Bedrock, spis stupně A / bez souhlasu → nic neodejde,
@@ -121,6 +121,21 @@ volání mimo EU → odepřeno v AWS (F), přeřazení přes Bedrock (R1) a u sp
 2. Manažerský přehled → **Náklady na cloudovou AI** → měsíční rozpočet 30 USD, **tvrdý strop zapnutý**.
 3. Prvních 14 dní jen **☁️ Obecný dotaz** (rešerše bez klientských údajů); spisy až po souhlasech klientů
    (spis → panel ☁️ Cloudová AI → stupeň a souhlas).
+
+**C8. Služba a aktualizace**
+
+```bash
+bash scripts/mac/lexislocal-sluzba.sh stav          # běží? poslední řádky logu (~/Library/Logs/LexisLocal/server.log)
+bash scripts/mac/lexislocal-sluzba.sh restart       # po změně .env
+bash scripts/mac/lexis-aktualizuj.sh --kontrola     # co je nového na GitHubu (nic nemění)
+bash scripts/mac/lexis-aktualizuj.sh                # zastaví službu, stáhne, otestuje, spustí; když testy neprojdou, vrátí předchozí verzi
+```
+
+Aktualizovat mimo pracovní dobu (server je ~3–6 min nedostupný). `.env`, data, báze a klíče se aktualizací nemění.
+
+**Balíček báze:** `scratch/kb-balicek/lexis-baze-2026-10-26.tar.gz` (1,4 GB; 30 003 dokumentů, 297 163 pasáží s hotovými
+vektory; zkušební instalace 26. 10. bez chyb za ~5 min) — na šifrovaný USB disk, na Macu do `~/Downloads`. Stejná báze
+jako v měřeních vyhledávání a v generálce.
 
 ## D. Konec pilotu (CloudShell)
 
