@@ -1,6 +1,6 @@
 {
   "name": "lexis-local",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Privacy-focused, local-first AI Legal Ecosystem for Modern Law Firms",
   "main": "electron/main.js",
   "scripts": {
@@ -72,11 +72,7 @@
       ],
       "icon": "assets/icon.png",
       "darkModeSupport": true,
-      "minimumSystemVersion": "12.0",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "minimumSystemVersion": "12.0"
     },
     "dmg": {
       "title": "LexisLocal ${version}",
