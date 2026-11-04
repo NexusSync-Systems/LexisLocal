@@ -9,6 +9,9 @@
     "nájemní\\w* smlouv\\w*",
     "EV-NS-03",
     "\\bsmlouv\\w*"
+   ],
+   "zkratky": [
+    "NS"
    ]
   },
   "VYPOVED": {
@@ -23,6 +26,9 @@
    "aliasy": [
     "podklad\\w* klienta",
     "poznám\\w* z porady"
+   ],
+   "zkratky": [
+    "PK"
    ]
   }
  }

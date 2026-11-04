@@ -57,7 +57,9 @@ function nactiSpisy(dir) {
         const docs = {};
         for (const [kod, d] of Object.entries(meta.dokumenty)) {
             const text = fs.readFileSync(path.join(dir, id, kod + '.txt'), 'utf8');
-            docs[kod] = Object.assign({ kod, text, kotvy: rozeberDokument(text), aliasRe: d.aliasy.map(a => new RegExp(a, 'giu')) }, d);
+            // Zkratky (KS, PP, SOD …) jen velkými písmeny a jako celé slovo — „ks“ (kusy) se nepočítá.
+            const zk = (d.zkratky || []).map(z => new RegExp('(?<![A-Za-zÁ-ž0-9-])' + z + '(?![A-Za-zÁ-ž0-9])', 'gu'));
+            docs[kod] = Object.assign({ kod, text, kotvy: rozeberDokument(text), aliasRe: d.aliasy.map(a => new RegExp(a, 'giu')).concat(zk) }, d);
         }
         out[id] = Object.assign({ id, docs }, meta);
     }
@@ -87,13 +89,13 @@ function hodnoty(text) {
     const out = [];
     let m;
     const reKc = /(\d{1,3}(?: \d{3})+|\d{2,3})(?:,\d+)?\s*Kč/g;
-    while ((m = reKc.exec(t))) out.push({ druh: 'kc', v: m[1].replace(/ /g, '') });
+    while ((m = reKc.exec(t))) out.push({ druh: 'kc', v: m[1].replace(/ /g, ''), i: m.index });
     const reD = /\b(\d{1,2})\. (\d{1,2})\. (\d{4})\b/g;
-    while ((m = reD.exec(t))) out.push({ druh: 'datum', v: `${m[1]}.${m[2]}.${m[3]}` });
+    while ((m = reD.exec(t))) out.push({ druh: 'datum', v: `${m[1]}.${m[2]}.${m[3]}`, i: m.index });
     const reKm = /(\d{1,3}(?: \d{3})+) km/g;
-    while ((m = reKm.exec(t))) out.push({ druh: 'km', v: m[1].replace(/ /g, '') });
+    while ((m = reKm.exec(t))) out.push({ druh: 'km', v: m[1].replace(/ /g, ''), i: m.index });
     const reP = /\b(\d+(?:,\d+)?) %/g;
-    while ((m = reP.exec(t))) out.push({ druh: 'pct', v: m[1] });
+    while ((m = reP.exec(t))) out.push({ druh: 'pct', v: m[1], i: m.index });
     return out;
 }
 
@@ -108,18 +110,48 @@ function textModelu(odpoved) {
     const znacky = ['\n---\n⚠️ Automatická kontrola', '📅 Doplněno programem', '⚖️ Doplněno programem', '📅 Jen pro advokáta', '⚖️ Jen pro advokáta', '\n\n⚠️ KONTROLA ZDŮVODNĚNÍ'];
     let konec = t.length;
     for (const z of znacky) { const i = t.indexOf(z); if (i >= 0 && i < konec) konec = i; }
-    return t.slice(0, konec);
+    // Markdown (tučné, kód, nadpisy, citace) nemění význam — pryč, ať nepřekáží regulárním výrazům.
+    return t.slice(0, konec).replace(/\*\*|__|`/g, '').replace(/^\s*#{1,6}\s*/gm, '').replace(/^\s*>\s?/gm, '');
 }
 
-const RE_CITACE = /(?:čl(?:\.|ánk\w*|ánek)\s*([IVX]+|\d+)(?:\s*,?\s*odst\.\s*(\d+))?|odst\.\s*(\d+)\s*čl\.\s*([IVX]+|\d+)|bod(?:u|ě|em|y)?\s+(\d+)(?:\s*(?:a|,)\s*(\d+))?)/giu;
+const RE_CITACE = /(?:čl(?:\.|ánk\w*|ánek)\s*([IVX]+|\d+)(?:\s*,?\s*(?:odst\.|bod)\s*(?:\((\d+)\)|(\d+))|\/(\d+)(?!\d*\/))?|odst\.\s*(\d+)\s*čl\.\s*([IVX]+|\d+)|bod(?:u|ě|em|y)?\s+(\d+)(?:\s*(?:a|,)\s*(\d+))?)/giu;
 const GENERICKE = /(rozsud\w*|usnesen\w*|reklamac\w*|objednáv\w*|dodatk\w* č\. ?[2-9]|plná moc|plné moci|smlouv\w* o půjčce|nájemní\w* smlouv\w*|kupní\w* smlouv\w*|smlouv\w* o dílo|protokol\w*|faktur\w*|posud\w*|žalob\w*|výpově\w*|vyjádření|výpis\w*|e-mail\w*)/giu;
+
+function _zkratkyOdpovedi(t, spis) {
+    const out = {};
+    const re = /\((?:dále\s+(?:jen|také)\s+)?[„"']?([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][A-Za-zÁ-ž0-9-]{0,7})[“"']?\)/gu;
+    let m;
+    while ((m = re.exec(t))) {
+        const pred = t.slice(Math.max(0, m.index - 60), m.index);
+        let nej = null;
+        for (const d of Object.values(spis.docs)) for (const a of d.aliasRe) { a.lastIndex = 0; let x; while ((x = a.exec(pred))) if (!nej || x.index > nej.i) nej = { kod: d.kod, i: x.index }; }
+        if (nej) out[m[1]] = nej.kod;
+    }
+    return out;
+}
 
 function citace(odpoved, spis, docsPripadu) {
     const t = textModelu(odpoved);
+    // Zkratky, které si odpověď sama zavedla, přidat k aliasům (kopie spisu, originál se nemění).
+    const def = _zkratkyOdpovedi(t, spis);
+    if (Object.keys(def).length) {
+        const docs = {};
+        for (const [k, d] of Object.entries(spis.docs)) docs[k] = Object.assign({}, d, { aliasRe: d.aliasRe.concat(Object.entries(def).filter(([, kod]) => kod === k).map(([z]) => new RegExp('(?<![A-Za-zÁ-ž0-9-])' + z + '(?![A-Za-zÁ-ž0-9])', 'gu'))) });
+        spis = Object.assign({}, spis, { docs });
+    }
     const out = [];
     const radky = t.split(/\r?\n/);
     let posun = 0;
-    for (const radek of radky) {
+    const hlavickaSloupce = (ri, sloupec) => {
+        let h = ri;
+        while (h > 0 && /^\s*\|/.test(radky[h - 1])) h--;
+        if (h === ri) return null;
+        const bunka = (radky[h].split('|')[sloupec] || '') + ' ' + (radky[ri].split('|')[1] || '');   // hlavička sloupce + první buňka řádku
+        for (const d of Object.values(spis.docs)) for (const re of d.aliasRe) { re.lastIndex = 0; if (re.test(bunka)) return d.kod; }
+        return null;
+    };
+    for (let ri = 0; ri < radky.length; ri++) {
+        const radek = radky[ri];
         RE_CITACE.lastIndex = 0;
         let m, predchoziKonec = 0;
         while ((m = RE_CITACE.exec(radek))) {
@@ -127,17 +159,22 @@ function citace(odpoved, spis, docsPripadu) {
             const pred = radek.slice(Math.max(0, m.index - 4), m.index);
             const za = radek.slice(m.index + m[0].length, m.index + m[0].length + 18);
             if (/§\s*$/.test(pred) || /^\s*(zákona|zák\.|Listiny|Úmluvy|nařízení|směrnice|o\. ?s\. ?ř|OZ\b)/i.test(za)) continue;
-            const bod = m[5] ? +m[5] : null;
-            const cl = m[1] ? _cislo(m[1]) : (m[4] ? _cislo(m[4]) : null);
-            const odst = m[2] ? +m[2] : (m[3] ? +m[3] : null);
+            if (/(?:viz|srov\.|dle|v)\s*$/i.test(radek.slice(Math.max(0, m.index - 6), m.index)) && /^\s*(výše|níže|této|tohoto|odpovědi|rozboru)/i.test(za) || /viz\s*$/i.test(radek.slice(Math.max(0, m.index - 5), m.index))) continue;
+            const bod = m[7] ? +m[7] : null;
+            const cl = m[1] ? _cislo(m[1]) : (m[6] ? _cislo(m[6]) : null);
+            const odst = m[2] ? +m[2] : (m[3] ? +m[3] : (m[4] ? +m[4] : (m[5] ? +m[5] : null)));
             let zac = predchoziKonec;
             const usek = radek.slice(predchoziKonec, m.index);
-            const re = /(?:(?<!\b(?:č|odst|čl|zák|písm|tzv|např|resp|nar|r|o|s|ř|Sb|Kč|ul|str|tj))\.\s+(?=[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ])|\s\d+\)\s+|^\s*[-•*]\s+)/gu;
+            const re = /(?:;\s+|\|\s*| vs\.? | × |(?<!\b(?:č|odst|čl|zák|písm|tzv|např|resp|nar|r|o|s|ř|Sb|Kč|ul|str|tj))\.\s+(?=[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ])|\s\d+\)\s+|^\s*[-•*]\s+)/gu;
             let x; while ((x = re.exec(usek))) zac = predchoziKonec + x.index + x[0].length;
             const tvrzeni = radek.slice(zac, m.index + m[0].length);
             const okno = radek.slice(Math.max(0, m.index - 90), Math.min(radek.length, m.index + m[0].length + 40));
             const stred = Math.min(90, m.index);
             let urc = _urciDokument(okno, stred, spis, docsPripadu);
+            if (!urc.doc && !urc.ciziDokument && /^\s*\|/.test(radek)) {
+                const kod = hlavickaSloupce(ri, radek.slice(0, m.index).split('|').length - 1);
+                if (kod) urc = { doc: kod, tabulka: true };
+            }
             const predchozi = out.length && out[out.length - 1].radek === posun ? out[out.length - 1] : null;
             if (!urc.doc && !urc.ciziDokument && predchozi && predchozi.doc) urc = { doc: predchozi.doc, pokracovani: true };   // „(čl. 3 odst. 1), zálohy … (čl. 3 odst. 2)“
             out.push(Object.assign({ raw: m[0], cl, odst, bod, tvrzeni, pozice: posun + m.index, radek: posun }, urc));
@@ -155,10 +192,12 @@ function citace(odpoved, spis, docsPripadu) {
 function _urciDokument(okno, stred, spis, docsPripadu) {
     const docs = docsPripadu && docsPripadu.length ? docsPripadu : Object.keys(spis.docs);
     const pred = okno.slice(0, stred);
-    const hranice = Math.max(pred.lastIndexOf(';'), pred.lastIndexOf(')'));
+    const hranice = Math.max(pred.lastIndexOf(';'), pred.lastIndexOf(')'), pred.lastIndexOf('|'));
     const predSeg = pred.slice(hranice + 1);
     const posunSeg = hranice + 1;
-    const za = okno.slice(stred).replace(new RegExp(RE_CITACE.source, "giu"), m => ' '.repeat(m.length)).slice(0, 40).split(/[;()]/)[0];
+    const za0 = okno.slice(stred).replace(new RegExp(RE_CITACE.source, "giu"), m => ' '.repeat(m.length)).slice(0, 60).split(/[;()|]/)[0];
+    const lead = (za0.match(/^\s*/) || [''])[0].length;
+    const za = za0.slice(lead);
     let predNej = null, zaNej = null;
     const zkus = (re, kod, cizi) => {
         for (const [seg, pos, jePred] of [[predSeg, posunSeg, true], [za, stred, false]]) {
@@ -170,7 +209,7 @@ function _urciDokument(okno, stred, spis, docsPripadu) {
                     const konec = pos + m.index + m[0].length;
                     if (cizi && !/^[\s,(]*$/.test(okno.slice(konec, stred))) continue;   // cizí dokument jen těsně před citací
                     if (!predNej || konec > predNej.konec) predNej = { doc: kod, cizi, slovo: m[0], konec };
-                } else if (!cizi && (!zaNej || m.index < zaNej.i) && m.index <= 30) zaNej = { doc: kod, i: m.index };
+                } else if (!cizi && (!zaNej || m.index < zaNej.i) && m.index <= 30 && !/[.!?]\s/.test(seg.slice(0, m.index))) zaNej = { doc: kod, i: m.index };
             }
         }
     };
@@ -182,10 +221,12 @@ function _urciDokument(okno, stred, spis, docsPripadu) {
         while ((g = genericke.exec(predSeg))) {
             if (znamy(g[0]) && !/dodatk\w* č\. ?[2-9]/iu.test(g[0])) continue;
             const konec = posunSeg + g.index + g[0].length;
-            if (!/^[\s,(]*$/.test(okno.slice(konec, stred))) continue;
+            if (!/^\s*,?\s*$/.test(okno.slice(konec, stred))) continue;
+            if (predNej && !predNej.cizi && posunSeg + g.index - predNej.konec <= 20) continue;   // „Výzva soudu k vyjádření, bod 3“
             if (!predNej || konec > predNej.konec) predNej = { doc: null, cizi: true, slovo: g[0], konec };
         }
     }
+    if (zaNej && zaNej.i <= 3) return { doc: zaNej.doc };
     if (predNej) return predNej.cizi ? { doc: null, ciziDokument: predNej.slovo } : { doc: predNej.doc };
     if (zaNej) return { doc: zaNej.doc };
     if (docs.length === 1) return { doc: docs[0], implicitni: true };
@@ -224,7 +265,8 @@ function hodnotCitaci(c, spis) {
     const a = [..._kmeny(tvrzeni)].filter(w => !STOP.has(w));
     const b = _kmeny(text);
     const spol = a.filter(w => b.has(w)).length;
-    c.podpora = (spol >= 2 || (a.length && spol / a.length >= 0.3)) ? 'ano' : (spol === 0 && a.length >= 3 ? 'ne' : 'nejiste');
+    const obsah = a.filter(w => !Object.values(spis.docs).some(x => x.aliasRe.some(re => { re.lastIndex = 0; return re.test(w); })));
+    c.podpora = (spol >= 2 || (a.length && spol / a.length >= 0.3)) ? 'ano' : (spol === 0 && obsah.length >= 4 ? 'ne' : 'nejiste');
     return c;
 }
 
@@ -238,24 +280,36 @@ function odvozene(korpus) {
     const kc = [...new Set(hv.filter(h => h.druh === 'kc').map(h => +h.v))];
     const pct = [...new Set(hv.filter(h => h.druh === 'pct').map(h => parseFloat(h.v.replace(',', '.'))))];
     const ok = new Set();
+    const km = [...new Set(hv.filter(h => h.druh === 'km').map(h => +h.v))];
+    for (const a of km) for (const b of km) { ok.add('km:' + Math.abs(a - b)); for (const c of km) if (c) ok.add('pct:' + String(Math.round(100 * Math.abs(a - b) / c))); }
+    for (const p of pct) { ok.add('pct:' + String(100 - p).replace('.', ',')); for (const q of pct) ok.add('pct:' + String(Math.round(p / (q || 1)))); }
     for (const a of kc) {
-        for (const b of kc) { ok.add('kc:' + (a + b)); ok.add('kc:' + Math.abs(a - b)); }
+        for (const b of kc) {
+            ok.add('kc:' + (a + b)); ok.add('kc:' + Math.abs(a - b));
+            for (let n = 2; n <= 12; n++) ok.add('kc:' + (a + b) * n);
+            if (b) ok.add('pct:' + String(Math.round(100 * a / b)));
+        }
+        for (const p of pct) for (const q of [p, 100 - p]) { const v = Math.round(a * q / 100); ok.add('kc:' + v); ok.add('kc:' + (a - v)); for (let n = 1; n <= 120; n++) ok.add('kc:' + v * n); }
         for (const p of pct) { const v = Math.round(a * p / 100); ok.add('kc:' + v); for (let n = 1; n <= 120; n++) ok.add('kc:' + v * n); }
         for (let n = 2; n <= 3; n++) ok.add('kc:' + a * n);
     }
     const dny = [...new Set([7, 10, 14, 15, 30].concat((kanon(korpus).match(/(\d+) dn/g) || []).map(s => parseInt(s, 10))))];
-    const mesice = [...new Set([3, 24].concat((kanon(korpus).match(/(\d+) měsíc/g) || []).map(s => parseInt(s, 10))))];
+    const mesice = [...new Set([1, 2, 3, 6, 12, 24].concat((kanon(korpus).match(/(\d+) měsíc/g) || []).map(s => parseInt(s, 10))))];
     for (const h of hv.filter(x => x.druh === 'datum')) {
         const [d, m, y] = h.v.split('.').map(Number);
         const base = Date.UTC(y, m - 1, d);
         for (const n of [-1, 0, 1]) ok.add('datum:' + _fmt(new Date(base + n * 864e5)));
-        for (const n of dny) { ok.add('datum:' + _fmt(new Date(base + n * 864e5))); ok.add('datum:' + _fmt(_pracovni(base + n * 864e5))); }
+        for (const n of dny) for (const d0 of [0, 1, 2, 3]) { ok.add('datum:' + _fmt(new Date(base + (n + d0) * 864e5))); ok.add('datum:' + _fmt(_pracovni(base + (n + d0) * 864e5))); }
         for (const n of mesice) {
             ok.add('datum:' + _fmt(new Date(Date.UTC(y, m - 1 + n, d))));
             ok.add('datum:' + _fmt(new Date(Date.UTC(y, m + n, 0))));      // konec měsíce
             ok.add('datum:' + _fmt(new Date(Date.UTC(y, m, 1))));          // 1. den následujícího měsíce
         }
     }
+    // „splatné vždy do 5. dne měsíce“ → 5. den kteréhokoli měsíce v okolí dat spisu
+    const dnyMesice = (kanon(korpus).match(/do (\d{1,2})\. dne/g) || []).map(x => parseInt(x.slice(3), 10));
+    const roky = [...new Set(hv.filter(x => x.druh === 'datum').map(x => +x.v.split('.')[2]))];
+    for (const den of dnyMesice) for (const y of roky) for (let m = 1; m <= 12; m++) { ok.add(`datum:${den}.${m}.${y}`); ok.add(`datum:${den}.${m}.${y + 1}`); }
     return ok;
 }
 
@@ -272,7 +326,7 @@ function vymysleneParagrafy(text) {
         .map(c => `§ ${c.paragraph} (zák. č. ${c.law} Sb. má jen ${MAX_PAR[c.law]} §)`);
 }
 
-const RE_NEDOSTATEK = /nedostatek podklad|(?:spis|podklady|dokumenty|posudek|smlouva)[^.]{0,40}(?:neobsahuj|neuvád|nezmiňuj|nejsou|není)|(?:není|nejsou|chybí)[^.]{0,30}(?:ve spisu|v podkladech|v dokumentech|uveden)|nelze (?:z podkladů|ze spisu|z dokumentů)?\s*(?:určit|zjistit)|ve spisu (?:není|nenacház|chybí)|nemám (?:k dispozici|informac)/iu;
+const RE_NEDOSTATEK = /nedostatek podklad|(?:uveden|obsažen|zmíněn|doložen)\w*\s+(?:není|nejsou|nebyl\w*)|(?:není|nejsou|nebyl\w*)\s+(?:\S+\s+){0,3}(?:uveden|obsažen|zmíněn|doložen)|nehovoří|nenacház|neobsahuj|(?:spis|podklady|dokumenty|posudek|smlouva)[^.]{0,40}(?:neobsahuj|neuvád|nezmiňuj|nejsou|není)|(?:není|nejsou|chybí)[^.]{0,30}(?:ve spisu|v podkladech|v dokumentech|uveden)|nelze (?:z podkladů|ze spisu|z dokumentů)?\s*(?:určit|zjistit)|ve spisu (?:není|nenacház|chybí)|nemám (?:k dispozici|informac)/iu;
 const RE_ROZPOR = /rozpor|nesoulad|neshod|liší|odlišn|neodpovídá|nesedí|protiřeč|v rozporu|kdežto|zatímco|ale |avšak/iu;
 
 // ---------------------------------------------------------------------------------------------------
@@ -349,10 +403,15 @@ function vyhodnot(pripad, odpoved, spisy, opts) {
     const korpus = docsPripadu.map(k => spis.docs[k].text).join('\n') + '\n' + Object.values(spis.docs).map(d => d.text).join('\n') + '\n' + pripad.prompt;
     const vKorpusu = new Set(hodnoty(korpus).map(h => h.druh + ':' + h.v));
     const povolene = odvozene(korpus);
+    const kModel = kanon(model);
+    const dnes = new Date(o.dnes || Date.now());
+    const kolemDnes = new Set([-3, -2, -1, 0, 1, 2, 3].map(n => 'datum:' + _fmt(new Date(Date.UTC(dnes.getUTCFullYear(), dnes.getUTCMonth(), dnes.getUTCDate() + n)))));
     for (const h of hodnoty(model)) {
         const k = h.druh + ':' + h.v;
-        if (vKorpusu.has(k) || povolene.has(k)) continue;
-        if (h.druh === 'pct' && ['50', '100'].includes(h.v)) continue;
+        if (vKorpusu.has(k) || povolene.has(k) || kolemDnes.has(k)) continue;      // datum dopisu = dnešek
+        const pred = kModel.slice(Math.max(0, h.i - 18), h.i);
+        if (/(?:cca|přibližně|zhruba|asi|přes|řádově|okolo|kolem|např\.|například|odhadem|nejméně|maximálně|alespoň)\s*$/i.test(pred)) continue;   // odhad, návrh, příklad
+        if (h.druh === 'pct' && (['50', '100'].includes(h.v) || pripad.typ === 'kontrola_smlouvy')) continue;   // v kontrole smlouvy jsou % návrhy úprav
         chyba('halucinace', `${h.druh === 'kc' ? h.v + ' Kč' : h.druh === 'pct' ? h.v + ' %' : h.v}`);
     }
     const osoby = (model.match(/\b(?:Mgr|Ing|JUDr|MUDr|PhDr|Bc|doc|prof)\.\s+[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][a-záčďéěíňóřšťúůýž]+\s+[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][a-záčďéěíňóřšťúůýž]+/gu) || []);

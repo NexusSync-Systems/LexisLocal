@@ -131,3 +131,41 @@ describe('LLM-judge: dvojice a kalibrace', () => {
         expect(nactiOznaceni(tmp)).toEqual({ J01: 'ANO', J02: 'NE' });
     });
 });
+
+describe('opravy z prvního běhu na Claudovi (4. 11. 2026)', () => {
+    test('dopis protistraně: číslo smlouvy a sp. zn. nejsou účet, skutečný účet ano', () => {
+        const { redactForOpponent } = require('../lib/agent_outlines');
+        const src = 'NÁJEMNÍ SMLOUVA č. EV-NS-03/2026, účet pronajímatele č. 1234567890/0000, sp. zn. 12 C 101/2026.';
+        const r = redactForOpponent('Smlouva č. EV-NS-03/2026, sp. zn. 12 C 101/2026, platba na 1234567890/0000.', src);
+        expect(r.text).toMatch(/EV-NS-03\/2026/);
+        expect(r.text).toMatch(/12 C 101\/2026/);
+        expect(r.text).not.toMatch(/1234567890/);
+    });
+    test('kontrola opory: nadpis, popis ustanovení a „údaj ve spisu není“ nejsou doporučení', () => {
+        const LB = require('../lib/legal_basis');
+        const t = 'Doporučení pro klienta\n**Co ustanovení říká:** Nájemce je povinen složit jistotu 55 500 Kč.\nČíslo účtu ve spisu uvedeno není, je třeba si ho vyžádat.';
+        expect(LB.kontrolaOpory(t).bezOpory).toEqual([]);
+    });
+    test('citace v tabulce, zkratky dokumentů, zápis čl. 2/2 a „viz bod 7“', () => {
+        const t = '| | Dokument A | Dokument B |\n|---|---|---|\n| km | KS čl. 2/2 | PP bod 2 |\nRozdíl viz bod 7.';
+        const c = C.citace(t, S.S2, null);
+        expect(c.map(x => [x.doc, x.cl, x.odst, x.bod])).toEqual([['KS', 2, 2, null], ['PREDAVACI', null, null, 2]]);
+    });
+});
+
+describe('osnovy z evalu: rozpory a návrhy úprav', () => {
+    const { taskProfile } = require('../lib/agent_outlines');
+    test('„najdi rozpory“ dostane vlastní osnovu s citací u každé hodnoty', () => {
+        const p = taskProfile({ agentId: 'kontrolor', prompt: 'Najdi všechny rozpory mezi dokumenty ve spisu.' });
+        expect(p.kind).toBe('contradictions');
+        expect(p.outline).toMatch(/VLASTNÍ citaci s celým názvem dokumentu/);
+        expect(p.outline).toMatch(/Sjednaná změna \(dodatek\) není rozpor/);
+    });
+    test('kontrola smlouvy chce oporu i u návrhu úpravy; dopis protistraně zůstává dopisem', () => {
+        expect(taskProfile({ agentId: 'kontrolor', prompt: 'Zkontroluj smlouvu a vypiš rizika.', context: 'smlouva' }).outline).toMatch(/Návrh úpravy[^\n]*i návrh má oporu/);
+        expect(taskProfile({ agentId: 'spisovatel', prompt: 'Napiš dopis protistraně, že ve výpočtu dluhu je rozpor.' }).kind).toBe('opponent_letter');
+    });
+    test('pravidlo zdůvodnění chce u citace spisu název dokumentu', () => {
+        expect(require('../lib/legal_basis').PRAVIDLO).toMatch(/s názvem dokumentu i místem/);
+    });
+});

@@ -10,12 +10,23 @@
     "\\bSOD\\b",
     "EV-SOD-01",
     "\\bsmlouv\\w*"
+   ],
+   "zkratky": [
+    "SOD",
+    "SoD",
+    "SD"
    ]
   },
   "DODATEK": {
    "nazev": "Dodatek č. 1 ke smlouvě o dílo",
    "aliasy": [
     "dodat\\w*"
+   ],
+   "zkratky": [
+    "DOD",
+    "DOD-1",
+    "D1",
+    "D-1"
    ]
   },
   "PROTOKOL": {
@@ -23,12 +34,18 @@
    "aliasy": [
     "předávací\\w* protokol\\w*",
     "protokol\\w*"
+   ],
+   "zkratky": [
+    "PP"
    ]
   },
   "FAKTURA": {
    "nazev": "Konečná faktura č. EV-2026-0915",
    "aliasy": [
     "faktur\\w*"
+   ],
+   "zkratky": [
+    "KF"
    ]
   },
   "EMAIL": {

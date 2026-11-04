@@ -21,7 +21,8 @@ const PRAVIDLO =
     'V rozboru a v doporučeních pro advokáta piš u každého bodu: „Doporučení: … — Opora: … — Proč: …“. ' +
     'V dokumentu pro soud nebo protistranu uveď právní důvod přímo v textu (bez těchto štítků).\n' +
     'Ustanovení ber jen z podkladů nebo tehdy, když si jsi jistý číslem i předpisem. Když oporu nemáš, NEVYMÝŠLEJ ji — ' +
-    'napiš u bodu „Opora: nenalezena v podkladech — ověřit“.';
+    'napiš u bodu „Opora: nenalezena v podkladech — ověřit“.\n' +
+    'Podklady ze spisu cituj vždy s názvem dokumentu i místem („nájemní smlouva, čl. 3 odst. 1“, „předávací protokol, bod 2“) — samotné „čl. 3“ je ve spisu s více dokumenty nejednoznačné.';
 
 /** Platí pravidlo pro tohoto agenta? Vypnout jde u vlastního agenta polem zduvodneni:false. */
 function jePravniAgent(agent) {
@@ -50,7 +51,8 @@ const RE_BEZ_OPORY = /opora\s*:\s*(nenalezen|chybí|není|neuveden)/i;
 function _jednotky(text) {
     const out = [];
     let sekce = '';
-    for (const radek of String(text || '').split(/\r?\n/)) {
+    for (const radek0 of String(text || '').split(/\r?\n/)) {
+        const radek = radek0.replace(/\*\*|__|`/g, '').replace(/^\s*>\s?/, '');
         const r = radek.trim();
         if (!r) continue;
         if (/^#{1,6}\s/.test(r) || /^(\d+\.|[IVX]+\.)?\s*[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][^.!?]{0,60}:$/.test(r)) { sekce = r.toLowerCase(); continue; }
@@ -74,6 +76,10 @@ function kontrolaOpory(text) {
         if (u.text.length < 25 || /\[Doplnit/i.test(u.text) && u.text.length < 60) continue;
         if (/ověřit|co ještě|otázk|chybí v podkladech|upozornění|⚠|📅|⚖️/i.test(u.sekce) || /^[⚠📅⚖️🔎]/u.test(u.text)) continue;
         if (/\?\s*$/.test(u.text)) continue;
+        if (/^\s*([-•*]|\d+[.)])?\s*(doporučení|návrh|varianta|shrnutí)\b[^.:;]{0,45}$/i.test(u.text)) continue;   // nadpis („Doporučení pro klienta“)
+        // Popis ustanovení, upozornění a přiznání, že podklady údaj neobsahují, nejsou doporučení (eval 4. 11. 2026).
+        if (/^\s*([-•*]|\d+[.)])?\s*(co (?:ustanovení|smlouva|článek) (?:říká|stanoví)|znění|text ustanovení|upozornění|poznámka|pozn\.)\s*:/i.test(u.text)) continue;
+        if (/nedostatek podklad|(?:uveden|obsažen)\w*\s+(?:není|nejsou)|(?:není|nejsou)\s+(?:\S+\s+){0,3}(?:uveden|obsažen)|(?:spis|podklady)\S*\s+(?:\S+\s+){0,3}neobsahuj/i.test(u.text)) continue;
         // Hodnocení variant („Pro: …“, „Proti: …“) není samo doporučení — opora patří k variantě / doporučené variantě.
         if (/^\s*([-•*]|\d+[.)])?\s*(pro|proti|výhody|nevýhody|rizika?|náklady|doba)\s*:/i.test(u.text)) continue;
         if (!RE_DOPORUCENI.test(u.text)) continue;

@@ -89,6 +89,24 @@ function hash(s) { return crypto.createHash('sha256').update(s).digest('hex').sl
 function gitCommit() { try { return require('child_process').execSync('git rev-parse --short HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (e) { return null; } }
 
 async function main() {
+    // --prehodnot <běh.json>: znovu vyhodnotí uložené odpovědi aktuálními kontrolami (bez volání modelu, zdarma).
+    if (arg('--prehodnot')) {
+        const src = JSON.parse(fs.readFileSync(arg('--prehodnot'), 'utf8'));
+        const vys = src.vysledky.map(r => {
+            const p = SADA.pripady.find(x => x.id === r.id);
+            return Object.assign({ opakovani: r.opakovani, ms: r.ms, odpoved: r.odpoved, chybaBehu: r.chybaBehu },
+                C.vyhodnot(p, r.odpoved, SPISY, { chyba: r.chybaBehu, dnes: src.meta.datum }), { meta: r.meta });
+        });
+        const out = { meta: Object.assign({}, src.meta, { label: src.meta.label + '-prehodnoceno', prehodnoceno: new Date().toISOString(),
+            sada: Object.assign({}, src.meta.sada, { hash: hash(fs.readFileSync(path.join(EVAL, 'cases.json'))) }) }), souhrn: souhrnBehu(vys), vysledky: vys };
+        const stem = path.join(OUT, path.basename(arg('--prehodnot')).replace(/\.json$/, '') + '_prehodnoceno');
+        fs.mkdirSync(OUT, { recursive: true });
+        fs.writeFileSync(stem + '.json', JSON.stringify(out, null, 1));
+        fs.writeFileSync(stem + '.md', require('./spis_eval_compare').report([src, out]));
+        console.log(require('./spis_eval_compare').tabulka([src, out]));
+        console.log(`\nVýsledek: ${stem}.json\n          ${stem}.md`);
+        return;
+    }
     // Bedrock: přístup k AWS ověřit hned — ne 48× „chyba běhu“ (klíč se nevypisuje).
     if (PROVIDER === 'bedrock') {
         try { const c = await require('../lib/bedrock').credentialsAsync(); if (!c || !c.accessKeyId) throw new Error('bez klíče'); }

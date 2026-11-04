@@ -9,6 +9,9 @@
     "kupní\\w* smlouv\\w*",
     "EV-KS-07",
     "\\bsmlouv\\w*"
+   ],
+   "zkratky": [
+    "KS"
    ]
   },
   "PREDAVACI": {
@@ -16,6 +19,9 @@
    "aliasy": [
     "předávací\\w* protokol\\w*",
     "protokol\\w*"
+   ],
+   "zkratky": [
+    "PP"
    ]
   },
   "POSUDEK": {
@@ -24,6 +30,9 @@
     "posud\\w*",
     "znalec\\w*",
     "znalk\\w*"
+   ],
+   "zkratky": [
+    "ZP"
    ]
   },
   "ODSTOUPENI": {
@@ -37,6 +46,9 @@
    "aliasy": [
     "výzv\\w* soudu",
     "výzv\\w* k vyjádření"
+   ],
+   "zkratky": [
+    "VS"
    ]
   }
  }

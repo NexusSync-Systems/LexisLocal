@@ -1,6 +1,42 @@
-{ "spisZn": "5 C 404/2026", "nazev": "EVAL Testovací / Návrhová trading — zaplacení ceny", "soud": "Okresní soud v Testově",
-  "dokumenty": {
-    "VYZVA": { "nazev": "Předžalobní výzva k úhradě", "aliasy": ["předžalobní\\w* výzv\\w*", "výzv\\w* k úhradě"] },
-    "VYPIS": { "nazev": "Výpis z bankovního účtu věřitele", "aliasy": ["výpis\\w*"] },
-    "ZALOBA": { "nazev": "Žaloba o zaplacení 64 300 Kč", "aliasy": ["žalob\\w*"] },
-    "VYJADRENI": { "nazev": "Vyjádření žalované k žalobě", "aliasy": ["vyjádření"] } } }
+{
+ "spisZn": "5 C 404/2026",
+ "nazev": "EVAL Testovací / Návrhová trading — zaplacení ceny",
+ "soud": "Okresní soud v Testově",
+ "dokumenty": {
+  "VYZVA": {
+   "nazev": "Předžalobní výzva k úhradě",
+   "aliasy": [
+    "předžalobní\\w* výzv\\w*",
+    "výzv\\w* k úhradě"
+   ],
+   "zkratky": [
+    "PV",
+    "PŽV"
+   ]
+  },
+  "VYPIS": {
+   "nazev": "Výpis z bankovního účtu věřitele",
+   "aliasy": [
+    "výpis\\w*"
+   ],
+   "zkratky": [
+    "VÚ"
+   ]
+  },
+  "ZALOBA": {
+   "nazev": "Žaloba o zaplacení 64 300 Kč",
+   "aliasy": [
+    "žalob\\w*"
+   ]
+  },
+  "VYJADRENI": {
+   "nazev": "Vyjádření žalované k žalobě",
+   "aliasy": [
+    "vyjádření"
+   ],
+   "zkratky": [
+    "VŽ"
+   ]
+  }
+ }
+}

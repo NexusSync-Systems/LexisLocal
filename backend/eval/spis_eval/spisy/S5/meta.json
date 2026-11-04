@@ -1,6 +1,41 @@
-{ "spisZn": "7 C 505/2026", "nazev": "EVAL Cvičný / Ukázková výroba — výpověď z pracovního poměru", "soud": "Okresní soud v Horní Zkušebné",
-  "dokumenty": {
-    "PS": { "nazev": "Pracovní smlouva č. EV-PS-19/2026", "aliasy": ["pracovní\\w* smlouv\\w*", "\\bsmlouv\\w*", "EV-PS-19"] },
-    "VYPOVED_ZAM": { "nazev": "Výpověď z pracovního poměru", "aliasy": ["výpověď(?![a-záčďéěíňóřšťúůýž])", "výpovědi(?![a-záčďéěíňóřšťúůýž])"] },
-    "MZDOVY_LIST": { "nazev": "Mzdový list (výňatek)", "aliasy": ["mzdov\\w* list\\w*"] },
-    "EMAIL_ZAM": { "nazev": "E-mail zaměstnance ze dne 20. 9. 2026", "aliasy": ["e-mail\\w*", "email\\w*"] } } }
+{
+ "spisZn": "7 C 505/2026",
+ "nazev": "EVAL Cvičný / Ukázková výroba — výpověď z pracovního poměru",
+ "soud": "Okresní soud v Horní Zkušebné",
+ "dokumenty": {
+  "PS": {
+   "nazev": "Pracovní smlouva č. EV-PS-19/2026",
+   "aliasy": [
+    "pracovní\\w* smlouv\\w*",
+    "\\bsmlouv\\w*",
+    "EV-PS-19"
+   ],
+   "zkratky": [
+    "PS"
+   ]
+  },
+  "VYPOVED_ZAM": {
+   "nazev": "Výpověď z pracovního poměru",
+   "aliasy": [
+    "výpověď(?![a-záčďéěíňóřšťúůýž])",
+    "výpovědi(?![a-záčďéěíňóřšťúůýž])"
+   ]
+  },
+  "MZDOVY_LIST": {
+   "nazev": "Mzdový list (výňatek)",
+   "aliasy": [
+    "mzdov\\w* list\\w*"
+   ],
+   "zkratky": [
+    "ML"
+   ]
+  },
+  "EMAIL_ZAM": {
+   "nazev": "E-mail zaměstnance ze dne 20. 9. 2026",
+   "aliasy": [
+    "e-mail\\w*",
+    "email\\w*"
+   ]
+  }
+ }
+}
