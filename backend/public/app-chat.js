@@ -724,7 +724,7 @@ Object.assign(LexisLocalApp.prototype, {
                 if (res.ok && data.success && data.processed === false) {
                     ui.st.textContent = '⚠️'; ui.msg.textContent = data.warning || 'uloženo, ale zpracování selhalo'; warn++;
                 } else if (res.ok && data.success) {
-                    ui.st.textContent = '✅'; ui.msg.textContent = data.dmID ? data.message : 'nahráno a zanalyzováno'; ok++;
+                    ui.st.textContent = '✅'; ui.msg.textContent = data.dmID ? data.message + (data.pravost && !data.pravost.vystavitelOveren ? ' ⚠️ Datum doručení ověřte v Datovce.' : '') : 'nahráno a zanalyzováno'; ok++;
                 } else {
                     ui.st.textContent = '❌'; ui.msg.textContent = data.error || `chyba serveru (HTTP ${res.status})`; fail++;
                 }

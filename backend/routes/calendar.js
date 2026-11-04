@@ -6,6 +6,7 @@
 'use strict';
 
 const express = require('express');
+const { buildIcs } = require('../lib/ics');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
@@ -36,56 +37,16 @@ router.post('/add', async (req, res) => {
             fs.mkdirSync(CALENDAR_DIR, { recursive: true });
         }
 
-        const cleanId = id || 'dl_' + Date.now();
-        const dtstamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-        const startDate = dueDate.replace(/-/g, '');
-
-        let startLine, endLine;
-        if (time) {
-            const timeClean = time.replace(/:/g, '').substring(0, 4) + '00';
-            startLine = `DTSTART;TZID=Europe/Prague:${startDate}T${timeClean}`;
-
-            // Assume 1 hour
-            const [h, m] = time.split(':');
-            const startD = new Date(`${dueDate}T${h}:${m}:00`);
-            const endD = new Date(startD.getTime() + 60 * 60 * 1000);
-            const endDateStr = endD.toISOString().split('T')[0].replace(/-/g, '');
-            const endTimeClean = endD.toTimeString().split(' ')[0].replace(/:/g, '');
-            endLine = `DTEND;TZID=Europe/Prague:${endDateStr}T${endTimeClean}`;
-        } else {
-            startLine = `DTSTART;VALUE=DATE:${startDate}`;
-            const endD = new Date(dueDate);
-            endD.setDate(endD.getDate() + 1);
-            const endDateStr = endD.toISOString().split('T')[0].replace(/-/g, '');
-            endLine = `DTEND;VALUE=DATE:${endDateStr}`;
-        }
-
+        const cleanId = String(id || 'dl_' + Date.now());
         const prefix = isHearing ? '⚖️ JEDNÁNÍ' : '⚠️ LHŮTA';
         const cleanTitle = `${prefix}: ${title}`;
-        const cleanDesc = context ? context.replace(/\r?\n/g, ' ') : `Detekovaná událost v systému Lexis.`;
-
-        const lines = [
-            'BEGIN:VCALENDAR',
-            'VERSION:2.0',
-            'PRODID:-//LexisLocal//NONSGML iCalendar Generator//CS',
-            'CALSCALE:GREGORIAN',
-            'BEGIN:VEVENT',
-            `UID:${cleanId}@lexislocal`,
-            `DTSTAMP:${dtstamp}`,
-            startLine,
-            endLine,
-            `SUMMARY:${cleanTitle}`,
-            `DESCRIPTION:${cleanDesc}`
-        ];
-
-        if (location) {
-            lines.push(`LOCATION:${location}`);
+        const cleanDesc = context ? String(context).replace(/\r?\n/g, ' ') : 'Detekovaná událost v systému Lexis.';
+        let icsContent;
+        try {
+            icsContent = buildIcs({ id: cleanId, title: cleanTitle, date: String(dueDate), time: time || null, location: location || '', description: cleanDesc });
+        } catch (e) {
+            return res.status(400).json({ error: e.message });
         }
-
-        lines.push('END:VEVENT');
-        lines.push('END:VCALENDAR');
-
-        const icsContent = lines.join('\r\n');
 
         const safeName = sanitizeFileName(title);
         const filePath = path.join(CALENDAR_DIR, `${safeName}.ics`);
@@ -138,6 +99,7 @@ router.post('/add', async (req, res) => {
             const list = (db.get('calendar_events') || []).filter(e => e.id !== cleanId);
             list.push({ id: cleanId, type: isHearing ? 'hearing' : 'deadline', title: cleanTitle, date: dueDate,
                 time: time || '', status: 'scheduled', description: cleanDesc, location: location || '',
+                spisZn: spisovaZnacka ? (typeof spisovaZnacka === 'string' ? spisovaZnacka : `${spisovaZnacka.cisloSenatu} ${spisovaZnacka.druhVeci} ${spisovaZnacka.bcVec}/${spisovaZnacka.rocnik}`) : undefined,
                 createdAt: new Date().toISOString() });
             db.set('calendar_events', list);
         } catch (dbErr) { console.warn('⚠️ Kalendář: uložení události do DB selhalo:', dbErr.message); }
@@ -150,6 +112,12 @@ router.post('/add', async (req, res) => {
 });
 
 // GET /api/calendar/events - Retrieve all events (deadlines & hearings) for dashboard calendar
+function _vazbyAlertu(a) {
+    let p = {};
+    try { p = a.payloadDetails ? JSON.parse(a.payloadDetails) : {}; } catch (e) { p = {}; }
+    return { spisIds: [a.spisId, p.spisId].filter(Boolean), spisZn: [a.caseNumber, p.spisZn, p.caseNumber].filter(Boolean) };
+}
+
 router.get('/events', async (req, res) => {
     try {
         const alerts = db.get('alerts') || [];
@@ -176,7 +144,8 @@ router.get('/events', async (req, res) => {
                 time: timeVal,
                 status: alert.status,
                 description: alert.triggerRule || 'Procesní lhůta',
-                location: ''
+                location: '',
+                _vazby: _vazbyAlertu(alert)
             });
         });
 
@@ -194,14 +163,15 @@ router.get('/events', async (req, res) => {
                 time: hearing.time || '',
                 status: hearing.status,
                 description: `Soudní jednání - sp. zn. ${hearing.spisovaZnacka ? (hearing.spisovaZnacka.cisloSenatu + ' ' + hearing.spisovaZnacka.druhVeci + ' ' + hearing.spisovaZnacka.bcVec + '/' + hearing.spisovaZnacka.rocnik) : ''}`,
-                location: hearing.location || ''
+                location: hearing.location || '',
+                _vazby: { spisZn: hearing.spisovaZnacka ? `${hearing.spisovaZnacka.cisloSenatu} ${hearing.spisovaZnacka.druhVeci} ${hearing.spisovaZnacka.bcVec}/${hearing.spisovaZnacka.rocnik}` : hearing.spisZn }
             });
         });
 
         // Události přidané přes /add (lhůty a jednání zadané ručně / z inboxu)
         const seen = new Set(events.map(e => e.id));
         (db.get('calendar_events') || []).forEach(e => {
-            if (!seen.has(e.id)) events.push(Object.assign({}, e));
+            if (!seen.has(e.id)) events.push(Object.assign({}, e, { _vazby: { spisZn: e.spisZn } }));
         });
 
         // Rezervované schůzky
@@ -209,7 +179,8 @@ router.get('/events', async (req, res) => {
             events.push({ id: m.id, type: 'meeting', title: m.title, date: m.date, time: m.time || '', status: m.status || 'scheduled', description: m.description || 'Schůzka', location: m.location || '' });
         });
 
-        res.json({ success: true, events });
+        // Firemní režim: lhůty a jednání cizích spisů nevidí kolega bez přístupu (review 2, skupina 2).
+        res.json({ success: true, events: require('../lib/file_acl').viditelneZaznamy(events, req.principal, e => e._vazby || {}).map(e => { const o = Object.assign({}, e); delete o._vazby; return o; }) });
     } catch (err) {
         res.status(500).json({ error: `Nelze načíst kalendářní události: ${err.message}` });
     }

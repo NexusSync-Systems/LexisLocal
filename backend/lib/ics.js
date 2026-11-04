@@ -38,16 +38,21 @@ function icsStamp(date) {
  * @param {Date}   [o.stamp]       DTSTAMP (default teď) — předává se kvůli testovatelnosti
  */
 function buildIcs(o) {
-    const cleanId = o.id || 'lexis_' + Date.now();
+    // Datum, čas a UID jdou do ICS bez escapování → musí mít pevný tvar (jinak by šlo vložit další řádky).
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(o.date || ''))) throw new Error('Datum musí být ve tvaru RRRR-MM-DD.');
+    if (o.time != null && o.time !== '' && !/^\d{1,2}:\d{2}$/.test(String(o.time))) throw new Error('Čas musí být ve tvaru HH:MM.');
+    if (o.time === '') o = Object.assign({}, o, { time: null });
+    if (o.alarmTrigger && !/^-?P(T?\d+[WDHMS])+$/.test(String(o.alarmTrigger))) throw new Error('Neplatné připomenutí.');
+    const cleanId = String(o.id || 'lexis_' + Date.now()).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 120);
     const dtstamp = icsStamp(o.stamp || new Date());
     const startDate = String(o.date).replace(/-/g, '');
 
     let startLine, endLine;
     if (o.time) {
-        const timeClean = o.time.replace(/:/g, '').substring(0, 4) + '00';
+        const [hh, mm] = String(o.time).split(':');
+        const timeClean = hh.padStart(2, '0') + mm + '00';
         startLine = `DTSTART;TZID=Europe/Prague:${startDate}T${timeClean}`;
-        const [h, m] = o.time.split(':');
-        const startD = new Date(`${o.date}T${h}:${m}:00`);
+        const startD = new Date(`${o.date}T${hh.padStart(2, '0')}:${mm}:00`);
         const endD = new Date(startD.getTime() + 60 * 60 * 1000);
         const endDateStr = endD.toISOString().split('T')[0].replace(/-/g, '');
         const endTimeClean = endD.toTimeString().split(' ')[0].replace(/:/g, '');

@@ -108,6 +108,13 @@ router.post('/config', (req, res) => {
 // Datová schránka — příjem doručených zpráv (lib/isds_inbox.js).
 router.get('/isds/inbox', (req, res) => res.json(require('../lib/isds_inbox').status()));
 router.post('/isds/inbox/poll', async (req, res) => {
+    // Stažení zprávy z datové schránky = doručení (fikce doručení přihlášením) → začnou běžet lhůty.
+    // Ve firemním režimu jen advokát (scope approve), správce nebo podatelna (asistent/ka) — ne koncipient
+    // ani „jen čtení“ (review 2, skupina 2).
+    const p = req.principal;
+    if (require('../lib/access').isFirmMode() && p && p.kind === 'user' && !require('../lib/principal').hasScope(p, 'approve') && p.role !== 'asistent') {
+        return res.status(403).json({ error: 'Stáhnout zprávy z datové schránky (= doručení) smí jen advokát, podatelna nebo správce.' });
+    }
     // Ruční „Stáhnout teď“ je výslovný pokyn — stáhne i při vypnutém automatickém stahování
     // (test 5. 10. 2026: hlásilo „stahování je vypnuté“, i když uživatel klikl sám).
     const r = await require('../lib/isds_inbox').pollOnce({ force: true });
@@ -121,8 +128,11 @@ router.get('/isds/messages', async (req, res) => {
     try {
         const inbox = await require('../lib/watcher').loadInbox();
         const byId = new Map();
+        // Firemní režim: jen zprávy, jejichž dokumenty volající smí číst (review 2, skupina 2).
+        const fileAcl = require('../lib/file_acl');
         Object.values(inbox.files || {}).forEach(f => {
             if (!f || !f.isds || !f.isds.dmID) return;
+            if (!fileAcl.canAccessFile(f, req.principal, 'read')) return;
             const id = String(f.isds.dmID);
             const m = byId.get(id) || { dmID: id, sender: f.isds.sender || null, annotation: f.isds.annotation || null,
                 senderRefNumber: f.isds.senderRefNumber || null, deliveryDate: f.isds.deliveryDate || null,

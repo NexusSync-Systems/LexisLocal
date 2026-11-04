@@ -124,4 +124,29 @@ function logChunkReads(matches, operation) {
     } catch (e) { /* audit čtení nesmí shodit odpověď */ }
 }
 
-module.exports = { unfiledVisible, spisForFileName, logChunkReads, spisForFile, canAccessFile, filterFiles, readableFileNames, filterChunks, canReadChunkFile };
+/**
+ * Souhrnné přehledy (upozornění, kalendář, zprávy z datové schránky) ve firemním režimu: záznam, který se
+ * váže ke spisu, uvidí jen ten, kdo smí spis číst (review 2, skupina 2). `vazby(item)` vrací
+ * { spisIds?, spisZn?, files? }. Záznam bez vazby na spis zůstává (obecné upozornění kanceláře).
+ */
+function viditelneZaznamy(items, principal, vazby) {
+    principal = _principal(principal);
+    if (_unrestricted(principal)) return items || [];
+    const S = require('./spisy');
+    return (items || []).filter(it => {
+        let v = {};
+        try { v = vazby(it) || {}; } catch (e) { v = {}; }
+        const spisy = [];
+        for (const id of [].concat(v.spisIds || [])) { const sp = id && S.getSpis(id); if (sp) spisy.push(sp); }
+        for (const zn of [].concat(v.spisZn || [])) { const sp = zn && S.findByCase(zn); if (sp) spisy.push(sp); }
+        const soubory = [].concat(v.files || []).filter(Boolean);
+        if (spisy.some(sp => !access.canAccess(sp, principal, 'read'))) return false;
+        if (soubory.length) {
+            const smi = readableFileNames(principal);
+            if (smi && soubory.some(n => !smi.has(_norm(n)))) return false;
+        }
+        return true;
+    });
+}
+
+module.exports = { unfiledVisible, spisForFileName, logChunkReads, spisForFile, canAccessFile, filterFiles, readableFileNames, filterChunks, canReadChunkFile, viditelneZaznamy };

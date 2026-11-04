@@ -1,14 +1,12 @@
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
+
+// Texty události (název, popis, místo) mohou pocházet z e-mailu nebo od agenta. Do skriptu se proto
+// NEVKLÁDAJÍ — AppleScript je dostane jako argumenty (argv), PowerShell jako proměnné prostředí
+// (review 2, skupina 5: vložení kódu přes název události, např. typografickým apostrofem v PowerShellu).
+const MAX_TEXT = 4000;
+function _txt(v) { return String(v == null ? '' : v).replace(/\u0000/g, '').slice(0, MAX_TEXT); }
 const path = require('path');
 const fs = require('fs');
-
-/**
- * Helper to escape quotes in AppleScript strings
- */
-function escapeAppleScriptString(str) {
-    if (!str) return '';
-    return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
 
 /**
  * Helper to format a Date for AppleScript
@@ -38,14 +36,14 @@ set time of ${dateVarName} to (${hours} * 3600 + ${minutes} * 60 + ${seconds})
  */
 function syncMacCalendar({ title, startDate, endDate, description, location }) {
     return new Promise((resolve, reject) => {
-        const escTitle = escapeAppleScriptString(title);
-        const escDesc = escapeAppleScriptString(description || '');
-        const escLoc = escapeAppleScriptString(location || '');
-        
         const startScript = generateAppleScriptDate('startDate', startDate);
         const endScript = generateAppleScriptDate('endDate', endDate);
-        
+
         const appleScript = `
+on run argv
+set evTitle to item 1 of argv
+set evDesc to item 2 of argv
+set evLoc to item 3 of argv
 ${startScript}
 ${endScript}
 
@@ -55,8 +53,8 @@ tell application "Calendar"
         create calendar with name calName
     end if
     set targetCal to calendar calName
-    
-    set matchedEvents to (events of targetCal whose summary is "${escTitle}")
+
+    set matchedEvents to (events of targetCal whose summary is evTitle)
     set duplicateFound to false
     repeat with ev in matchedEvents
         if (start date of ev) is equal to startDate then
@@ -64,25 +62,25 @@ tell application "Calendar"
             exit repeat
         end if
     end repeat
-    
+
     if not duplicateFound then
-        make new event at end of events of targetCal with properties {summary:"${escTitle}", start date:startDate, end date:endDate, description:"${escDesc}", location:"${escLoc}"}
+        make new event at end of events of targetCal with properties {summary:evTitle, start date:startDate, end date:endDate, description:evDesc, location:evLoc}
         return "created"
     else
         return "duplicate"
     end if
 end tell
+end run
         `;
-        
-        const proc = exec('osascript', (error, stdout, stderr) => {
+
+        const proc = execFile('osascript', ['-', _txt(title), _txt(description), _txt(location)], (error, stdout, stderr) => {
             if (error) {
                 console.error("❌ AppleScript Error:", stderr);
                 return reject(error);
             }
-            const result = stdout.trim();
-            resolve(result);
+            resolve(String(stdout).trim());
         });
-        
+
         proc.stdin.write(appleScript);
         proc.stdin.end();
     });
@@ -102,22 +100,18 @@ function syncWinCalendar({ title, startDate, endDate, description, location }) {
         
         const psStart = formatForPS(startDate);
         const psEnd = formatForPS(endDate);
-        const escTitle = (title || '').replace(/'/g, "''");
-        const escDesc = (description || '').replace(/'/g, "''");
-        const escLoc = (location || '').replace(/'/g, "''");
-        
-        // PowerShell script using Outlook COM object
+        // PowerShell čte texty z proměnných prostředí — do skriptu se nevkládají.
         const psScript = `
 $outlook = New-Object -ComObject Outlook.Application
 $namespace = $outlook.GetNameSpace("MAPI")
 $calendar = $namespace.GetDefaultFolder(9) # olFolderCalendar
 
-$subj = '${escTitle}'
+$subj = $env:LEXIS_CAL_TITLE
 $start = [DateTime]::Parse('${psStart}')
 $end = [DateTime]::Parse('${psEnd}')
 
-# Query events matching Subject and Start time
-$filter = "[Subject] = '$subj'"
+# Query events matching Subject and Start time (apostrof ve filtru zdvojit)
+$filter = "[Subject] = '" + ($subj -replace "'", "''") + "'"
 $items = $calendar.Items.Restrict($filter)
 $duplicate = $false
 
@@ -133,24 +127,24 @@ if (-not $duplicate) {
     $event.Subject = $subj
     $event.Start = $start
     $event.End = $end
-    $event.Body = '${escDesc}'
-    $event.Location = '${escLoc}'
+    $event.Body = $env:LEXIS_CAL_DESC
+    $event.Location = $env:LEXIS_CAL_LOC
     $event.Save()
     Write-Output "created"
 } else {
     Write-Output "duplicate"
 }
         `;
-        
-        // Execute Powershell script
-        const proc = exec('powershell -Command -', (error, stdout, stderr) => {
+
+        const env = Object.assign({}, process.env, { LEXIS_CAL_TITLE: _txt(title), LEXIS_CAL_DESC: _txt(description), LEXIS_CAL_LOC: _txt(location) });
+        const proc = execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', '-'], { env }, (error, stdout, stderr) => {
             if (error) {
                 console.error("❌ PowerShell Error:", stderr);
                 return reject(error);
             }
-            resolve(stdout.trim());
+            resolve(String(stdout).trim());
         });
-        
+
         proc.stdin.write(psScript);
         proc.stdin.end();
     });

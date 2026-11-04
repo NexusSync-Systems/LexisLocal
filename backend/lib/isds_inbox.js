@@ -277,7 +277,9 @@ async function storeMessage({ record, files, zfo }, opts = {}) {
             recipientRefNumber: record.recipientRefNumber || null, toHands: record.toHands || null,
             deliveryDate: delivery.date, deliveryHow: delivery.how, deliveryExact: delivery.exact,
             statusText: STATUS[delivery.status] || null, mainFile: f.metaType === 'main', receivedAt: new Date().toISOString(),
-            systemMessage: isSystemMessage(record)
+            systemMessage: isSystemMessage(record),
+            // Ruční import .zfo: podpis sedí, vystavitel neověřen (viz overZfoPodpis). Stažené přes ISDS = bez pole.
+            pravost: opts.pravost || undefined
         };
         try { db.insert('isds_files', meta); } catch (e) { /* bez metadat se lhůta počítá z textu */ }
         fs.writeFileSync(path.join(dir, rel), Buffer.from(f.base64, 'base64'));
@@ -292,9 +294,45 @@ async function storeMessage({ record, files, zfo }, opts = {}) {
     return { dmID: record.dmID, folder: folderRel, delivery, files: stored };
 }
 
+/**
+ * Podpis ručně nahraného .zfo (review 2, skupina 5): dřív se nekontroloval vůbec — prošel i obyčejný XML
+ * soubor přejmenovaný na .zfo, a z něj se počítá LHŮTA od doručení. Teď musí sedět kryptografický podpis
+ * (soubor nebyl změněn) a XML se bere jen z podepsaného obsahu. Důvěryhodnost vystavitele (certifikát ISDS
+ * vůči důvěryhodným autoritám) se offline neověřuje — výsledek to říká a advokát datum ověří v Datovce.
+ * → { ok, xml?, podepsal?, reason? }
+ */
+function overZfoPodpis(buffer) {
+    let v;
+    try { v = require('./pdf-signature').verifyCms(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || '')); }
+    catch (e) { return { ok: false, reason: 'Soubor .zfo není podepsaná datová zpráva (chybí elektronický podpis).' }; }
+    // CMS bez podepsaných atributů: podpis je přímo nad obsahem (verifyCms takový podpis neumí, ověříme zde).
+    if (v.cms.eContent && v.cert && !v.si.signedAttrs) {
+        const crypto = require('crypto');
+        const hash = { '2.16.840.1.101.3.4.2.1': 'sha256', '2.16.840.1.101.3.4.2.2': 'sha384', '2.16.840.1.101.3.4.2.3': 'sha512', '1.3.14.3.2.26': 'sha1' }[v.si.digestAlg] || 'sha256';
+        let ok = false;
+        try { ok = crypto.verify(hash, v.cms.eContent, v.cert.x.publicKey, v.si.signature); } catch (e) { ok = false; }
+        v.integrity = ok; v.signatureValid = ok;
+    }
+    if (!v.integrity || !v.signatureValid || !v.cms.eContent) {
+        return { ok: false, reason: 'Podpis souboru .zfo nesedí — soubor byl po podepsání změněn nebo není z datové schránky. Stáhněte ho znovu z Datovky / webu ISDS.' };
+    }
+    const xml = v.cms.eContent.toString('utf8');
+    if (!/dmDm|isds\.czechpoint\.cz/.test(xml)) return { ok: false, reason: 'Podepsaný obsah .zfo není datová zpráva.' };
+    let podepsal = null;
+    try { const m = /CN=([^\n,]+)/.exec(v.cert.x.subject); podepsal = m ? m[1].trim() : v.cert.x.subject; } catch (e) { podepsal = null; }
+    return { ok: true, xml, podepsal };
+}
+
 /** Import ručně staženého .zfo (Datovka, web ISDS). */
 async function importZfo(buffer, opts = {}) {
-    const xml = extractZfoXml(buffer);
+    const podpis = overZfoPodpis(buffer);
+    if (!podpis.ok) {
+        // Doručenka bez příloh má vlastní vysvětlení (kontrola níž) — ostatní chyby podpisu rovnou.
+        const raw = extractZfoXml(buffer);
+        if (!raw) return { ok: false, reason: 'Soubor .zfo se nepodařilo rozbalit (není to datová zpráva?).' };
+        if (!(/DeliveryInfo|dmEvents/.test(raw) && !/dmFile/.test(raw))) return { ok: false, reason: podpis.reason };
+    }
+    const xml = podpis.ok ? podpis.xml : extractZfoXml(buffer);
     if (!xml) return { ok: false, reason: 'Soubor .zfo se nepodařilo rozbalit (není to datová zpráva?).' };
     if (/DeliveryInfo|dmEvents/.test(xml) && !/dmFile/.test(xml)) {
         return { ok: false, reason: 'Toto je doručenka (bez příloh). Nahrajte .zfo samotné zprávy.' };
@@ -304,10 +342,12 @@ async function importZfo(buffer, opts = {}) {
     if (!msg.record.dmID) msg.record.dmID = 'zfo' + Date.now();
     const done = _processedSet();
     if (done.has(String(msg.record.dmID)) && !opts.force) return { ok: true, duplicate: true, dmID: msg.record.dmID };
-    const r = await storeMessage({ record: msg.record, files: msg.files, zfo: buffer }, opts);
+    const pravost = { podpisPlatny: true, podepsal: podpis.podepsal, vystavitelOveren: false };
+    const r = await storeMessage({ record: msg.record, files: msg.files, zfo: buffer }, Object.assign({}, opts, { pravost }));
     _markProcessed(msg.record.dmID);
-    try { require('./audit').logEvent('Datová schránka', 'Import .zfo', msg.record.dmID, { sender: msg.record.sender, files: r.files.length, delivery: r.delivery.date }); } catch (e) {}
-    return Object.assign({ ok: true }, r);
+    try { require('./audit').logEvent('Datová schránka', 'Import .zfo', msg.record.dmID, { sender: msg.record.sender, files: r.files.length, delivery: r.delivery.date, podepsal: podpis.podepsal }); } catch (e) {}
+    return Object.assign({ ok: true, pravost,
+        upozorneni: 'Ručně nahraná zpráva: podpis souboru sedí, vystavitel certifikátu se ale neověřuje. Datum doručení (a od něj lhůtu) ověřte v Datovce.' }, r);
 }
 
 function _processedSet() {
@@ -386,6 +426,7 @@ function setEnabled(on) {
 }
 
 module.exports = {
+    overZfoPodpis,
     isSystemMessage,
     config, isConfigured, status, setEnabled, pollOnce, importZfo, storeMessage, metaForFile,
     buildListRequest, buildDownloadRequest, parseList, parseMessage, parseSigned, extractZfoXml, deliveryOf, pragueDate, STATUS

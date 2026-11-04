@@ -92,7 +92,10 @@ describe('task-runner — schválené úlohy', () => {
         expect(val('--instance-initiated-shutdown-behavior')).toBe('terminate');
         expect(val('--user-data')).toBe('file://scripts/aws/bootstrap-judikatura.sh');
         expect(JSON.parse(val('--block-device-mappings'))[0].Ebs.VolumeSize).toBe(200);
+        expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { ami: 'ami-0123456789abcdef0' } })).toThrow(/schválenými/);
+        process.env.LEXIS_RUNNER_AMI = 'ami-0123456789abcdef0';
         expect(R.sestav({ uloha: 'aws_spust_test', parametry: { ami: 'ami-0123456789abcdef0' } }).args).toContain('ami-0123456789abcdef0');
+        delete process.env.LEXIS_RUNNER_AMI;
         for (const zle of ['ami-x; rm', 'i-123', '--dry-run', 'ami-0123 --count 5']) {
             expect(() => R.sestav({ uloha: 'aws_spust_test', parametry: { ami: zle } })).toThrow(/AMI/);
         }

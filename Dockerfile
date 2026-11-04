@@ -11,6 +11,10 @@ RUN npm ci --only=production
 
 COPY backend/ ./backend/
 
+# Bez roota: proces v kontejneru nemá práva správce (review 2, skupina 5).
+RUN chown -R node:node /app
+USER node
+
 ENV PORT=4000
 EXPOSE 4000
 

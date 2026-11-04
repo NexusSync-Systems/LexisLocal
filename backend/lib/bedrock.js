@@ -33,15 +33,26 @@ function region() {
 function modelId() {
     const m = String(process.env.BEDROCK_MODEL_ID || '').trim();
     if (!m) throw new Error('Bedrock: chybí BEDROCK_MODEL_ID (EU inference profile, např. „eu.anthropic.claude-…“ z konzole Bedrock).');
-    if (/^arn:aws:bedrock:/.test(m)) {
-        if (!/^arn:aws:bedrock:eu-[a-z]+-\d:/.test(m)) throw new Error(`Bedrock: ARN modelu „${m}" není v EU regionu.`);
-        return m;
-    }
     // Modely, u kterých AWS ukládá VEŠKERÝ provoz až 30 dní (odhalování zneužití, možná ruční
     // kontrola AWS) — Claude Fable 5 / 5.1 (dokumentace Bedrock „Abuse detection“, 10/2026).
     // Pro advokátní mlčenlivost je odmítneme, pokud kancelář výslovně nepovolí BEDROCK_POVOLIT_UKLADANI=1.
+    // (Platí i pro ARN — dřív se kontrola u ARN přeskočila.)
     if (/fable[-_.]?5/i.test(m) && process.env.BEDROCK_POVOLIT_UKLADANI !== '1') {
         throw new Error(`Bedrock: model „${m}" AWS ukládá až 30 dní (odhalování zneužití) — pro spisy zvolte model Claude, který umožňuje nulové ukládání (data retention „none“), nebo vědomě nastavte BEDROCK_POVOLIT_UKLADANI=1.`);
+    }
+    if (/^arn:aws:bedrock:/.test(m)) {
+        if (!/^arn:aws:bedrock:eu-[a-z]+-\d:/.test(m)) throw new Error(`Bedrock: ARN modelu „${m}" není v EU regionu.`);
+        // EU region v ARN nestačí: ARN systémového profilu „global.…“ / „us.…“ v eu-central-1 směruje mimo EU.
+        const zdroj = m.split(':').slice(5).join(':');           // foundation-model/… | inference-profile/… | application-inference-profile/…
+        if (/^inference-profile\//.test(zdroj) && !/^inference-profile\/eu\./.test(zdroj)) {
+            throw new Error(`Bedrock: ARN „${m}" je profil mimo EU — použij EU profil („eu.…“).`);
+        }
+        // Profil aplikace může obalovat i globální profil a z ARN se to nepozná → jen s výslovným povolením
+        // (kancelář si ho ověří: aws bedrock get-inference-profile, všechny cílové regiony eu-*).
+        if (/^application-inference-profile\//.test(zdroj) && process.env.BEDROCK_POVOLIT_PROFIL_APLIKACE !== '1') {
+            throw new Error(`Bedrock: profil aplikace „${m}" může směrovat mimo EU. Ověřte jeho cílové regiony (aws bedrock get-inference-profile) a pak nastavte BEDROCK_POVOLIT_PROFIL_APLIKACE=1, nebo použijte EU profil („eu.…“).`);
+        }
+        return m;
     }
     if (/^eu\.[a-z0-9-]+\./.test(m)) return m;
     if (/^[a-z]{2,6}\./.test(m) && !/^(anthropic|amazon|meta|mistral|cohere|ai21|deepseek|openai|qwen|writer)\./.test(m)) {

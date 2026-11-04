@@ -1,3 +1,5 @@
+# Akce připnuté na commit (SHA), instalace z lockfile (npm ci), token jen pro čtení, kde nejde o vydání
+# (review 2, skupina 3 — dodavatelský řetězec). Novou verzi akce: git ls-remote --tags <repo> → SHA.
 name: CI
 
 # Testy po každém pushi do main i release-prep a u každého PR.
@@ -11,6 +13,10 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+# Výchozí bez oprávnění; job si vyžádá jen to, co potřebuje.
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -26,13 +32,15 @@ jobs:
       # Testy si zakládají vlastní dočasné složky; síť k AI poskytovatelům mockují.
       AI_PROVIDER: ollama
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
           cache: 'npm'
       - name: Install dependencies
-        run: npm install --legacy-peer-deps --no-audit --no-fund
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
       - name: Syntax check (server + libs + routes + dashboard)
         run: node -e "const cp=require('child_process');const fs=require('fs');const g=(d)=>fs.readdirSync(d).filter(f=>f.endsWith('.js')).map(f=>d+'/'+f);['backend/server.js',...g('backend/lib'),...g('backend/routes'),...g('backend/public')].forEach(f=>cp.execSync('node --check '+f));console.log('node --check OK')"
       - name: Run tests

@@ -27,8 +27,9 @@ services:
     depends_on:
       - broker
       - db
+    # Jen localhost: Paperless ani backend nesmí být vidět z LAN / Wi-Fi (review 2, skupina 5).
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./docker/paperless/data:/usr/src/paperless/data
       - ./docker/paperless/media:/usr/src/paperless/media
@@ -58,12 +59,15 @@ services:
     container_name: lexis-backend
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     volumes:
       - ~/Desktop/LexisSpisy:/app/LexisSpisy
     environment:
       - WATCH_DIR=/app/LexisSpisy
       - PORT=4000
+      # Uvnitř kontejneru musí server poslouchat na všech rozhraních kontejneru, jinak mapování portu nefunguje.
+      # Ven je vidět jen přes 127.0.0.1 hostitele (ports výše); API chrání token (vynucený ve výchozím stavu).
+      - BIND_HOST=0.0.0.0
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

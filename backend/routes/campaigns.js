@@ -6,6 +6,7 @@
 'use strict';
 
 const express = require('express');
+const { buildIcs } = require('../lib/ics');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
@@ -67,6 +68,13 @@ router.post('/send', async (req, res) => {
     }
     // BEZPEČNOSTNÍ INVARIANT: nic se neodešle bez výslovného souhlasu advokáta.
     // Agent ani automatizace tento příznak nenastaví — musí přijít z potvrzené akce.
+    // Příznak souhlasu nastaví kdokoli s právem zápisu — ve firemním režimu proto musí odesílat sám advokát
+    // (scope approve) nebo správce (review 2, skupina 2).
+    const p = req.principal;
+    if (require('../lib/access').isFirmMode() && p && p.kind === 'user' && !require('../lib/principal').hasScope(p, 'approve')) {
+        logEvent('Kampaně', 'Odeslání ZAMÍTNUTO — role bez schvalování', clientName || 'kampaň', { caseNumber: caseNumber || null, uzivatel: p.name || p.userId });
+        return res.status(403).json({ error: 'Odeslání smí potvrdit jen advokát nebo správce.' });
+    }
     if (confirmedByLawyer !== true) {
         logEvent('Kampaně', 'Odeslání ZAMÍTNUTO — chybí souhlas advokáta', clientName || 'kampaň', { caseNumber: caseNumber || null, recipients: recipients.length });
         return res.status(403).json({ error: 'Odeslání odepřeno: chybí výslovný souhlas advokáta (confirmedByLawyer).' });
@@ -117,36 +125,13 @@ router.post('/send', async (req, res) => {
             });
 
             // 3. Generate ICS calendar file in Kalendar directory
-            const cleanId = 'camp_dl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-            const dtstamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-            const startDate = deadlineDate.toISOString().split('T')[0].replace(/-/g, '');
-
-            const endD = new Date(deadlineDate);
-            endD.setDate(endD.getDate() + 1);
-            const endDate = endD.toISOString().split('T')[0].replace(/-/g, '');
-
-            const cleanTitle = `⚠️ LHŮTA: ${alertTitle}`;
-
-            const icsContent = [
-                'BEGIN:VCALENDAR',
-                'VERSION:2.0',
-                'PRODID:-//LexisLocal//NONSGML iCalendar Generator//CS',
-                'CALSCALE:GREGORIAN',
-                'BEGIN:VEVENT',
-                `UID:${cleanId}@lexislocal`,
-                `DTSTAMP:${dtstamp}`,
-                `DTSTART;VALUE=DATE:${startDate}`,
-                `DTEND;VALUE=DATE:${endDate}`,
-                `SUMMARY:${cleanTitle}`,
-                `DESCRIPTION:${alertDetails}`,
-                'BEGIN:VALARM',
-                'TRIGGER:-P1D', // Alert 1 day before
-                'ACTION:DISPLAY',
-                'DESCRIPTION:Připomenutí blížící se lhůty Lexis',
-                'END:VALARM',
-                'END:VEVENT',
-                'END:VCALENDAR'
-            ].join('\r\n');
+            const icsContent = buildIcs({
+                id: 'camp_dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                title: `⚠️ LHŮTA: ${alertTitle}`,
+                date: deadlineDate.toISOString().split('T')[0],
+                description: alertDetails,
+                alarm: true
+            });
 
             const safeName = sanitizeFileName(alertTitle);
             const filePath = path.join(CALENDAR_DIR, `${safeName}.ics`);

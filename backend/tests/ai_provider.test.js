@@ -125,7 +125,10 @@ describe('ai_provider — OpenAI', () => {
             json: async () => ({ data: [{ embedding: [1, 2, 3] }] })
         });
         const ai = freshProvider({ AI_EMBED_PROVIDER: 'openai', LEXIS_POVOLIT_PRIME_API: '1' });
-        const out = await ai.embeddings({ prompt: 'věta' });
+        // indexace mimo veřejný dotaz (dokumenty spisu) ven nesmí ani s přepínačem
+        await expect(ai.embeddings({ prompt: 'věta' })).rejects.toThrow(/zakázané/);
+        expect(fetchMock).not.toHaveBeenCalled();
+        const out = await publicCall(() => ai.embeddings({ prompt: 'věta' }));
         expect(out.embedding).toEqual([1, 2, 3]);
         const [url, opts] = fetchMock.mock.calls[0];
         expect(url).toBe('https://api.openai.com/v1/embeddings');

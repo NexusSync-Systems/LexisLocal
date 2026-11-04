@@ -13,7 +13,8 @@ router.get('/', async (req, res) => {
     try {
         const inbox = await loadInbox();
         const activeAlerts = (inbox.alerts || []).filter(a => a.status === 'active');
-        res.json({ alerts: activeAlerts });
+        const vazby = a => ({ spisZn: a.caseNumber, files: a.citedFiles });
+        res.json({ alerts: require('../lib/file_acl').viditelneZaznamy(activeAlerts, req.principal, vazby) });
     } catch (err) {
         res.status(500).json({ error: `Nepodařilo se získat upozornění: ${err.message}` });
     }

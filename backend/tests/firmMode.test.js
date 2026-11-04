@@ -127,3 +127,29 @@ describe('review 2 / skupina 2: sp. zn. a přeřazení dokumentu', () => {
         expect(db.get('inbox_files').find(f => f.id === 'fx1').caseNumber).toBe('21 C 77/2026');
     });
 });
+
+describe('review 2 / skupina 2: souhrnné přehledy a role', () => {
+    beforeAll(() => access.setFirmMode(true));
+    afterAll(() => access.setFirmMode(null));
+    test('kalendář: lhůta cizího spisu se kolegovi bez přístupu nezobrazí', async () => {
+        const db = require('../lib/database');
+        await request(app).post('/api/spisy').set(as(A.token)).send({ spisZn: '30 C 3/2026', nazev: 'Anna kalendář' });
+        db.set('calendar_events', [
+            { id: 'ev_cizi', type: 'deadline', title: 'Lhůta Anny', date: '2026-12-01', spisZn: '30 C 3/2026' },
+            { id: 'ev_obecna', type: 'deadline', title: 'Porada kanceláře', date: '2026-12-02' }
+        ]);
+        const b = (await request(app).get('/api/calendar/events').set(as(B.token))).body.events.map(e => e.id);
+        expect(b).toContain('ev_obecna');
+        expect(b).not.toContain('ev_cizi');
+        const a = (await request(app).get('/api/calendar/events').set(as(A.token))).body.events;
+        expect(a.map(e => e.id)).toContain('ev_cizi');
+        expect(a[0]._vazby).toBeUndefined();
+    });
+    test('koncipient nestáhne datovou schránku ani neodešle kampaň', async () => {
+        expect((await request(app).post('/api/registries/isds/inbox/poll').set(as(B.token))).statusCode).toBe(403);
+        const r = await request(app).post('/api/campaigns/send').set(as(B.token)).send({ recipients: [{ ico: '1' }], confirmedByLawyer: true });
+        expect(r.statusCode).toBe(403);
+        expect(r.body.error).toMatch(/advokát/);
+    });
+});
+

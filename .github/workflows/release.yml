@@ -1,3 +1,5 @@
+# Akce připnuté na commit (SHA), instalace z lockfile (npm ci), token jen pro čtení, kde nejde o vydání
+# (review 2, skupina 3 — dodavatelský řetězec). Novou verzi akce: git ls-remote --tags <repo> → SHA.
 name: Build/Release LexisLocal
 
 # Podepsaný + notarizovaný release. Spouští se JEN z tagu v* (jeden běh, žádné duplicity)
@@ -7,6 +9,8 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+
+permissions: {}
 
 jobs:
   release:
@@ -18,18 +22,19 @@ jobs:
         os: [macos-15, windows-latest]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
 
       - name: Generate release notes
         shell: bash

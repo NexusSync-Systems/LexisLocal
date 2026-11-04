@@ -165,6 +165,10 @@ const ULOHY = {
     aws_spust_test: p => {
         const ami = String(p.ami || AWS_TEST_AMI);
         if (!/^ami-[0-9a-f]{8,17}$/.test(ami)) throw new Error(`nepovolené AMI „${ami}"`);
+        // Jen schválená AMI (review 2, skupina 3): cizí veřejné AMI by běželo s rolí lexis-bench-ec2 (S3, Bedrock).
+        // Novou verzi Deep Learning AMI přidá Zdeněk na Macu: LEXIS_RUNNER_AMI=ami-…,ami-… (nebo sem do kódu).
+        const povolena = new Set([AWS_TEST_AMI].concat(String(process.env.LEXIS_RUNNER_AMI || '').split(',').map(x => x.trim()).filter(Boolean)));
+        if (!povolena.has(ami)) throw new Error(`nepovolené AMI „${ami}" — není mezi schválenými (LEXIS_RUNNER_AMI)`);
         // Zóna dostupnosti (26. 10. 2026: „InsufficientInstanceCapacity“ pro g6.xlarge ve výchozí zóně).
         const az = oneOf(p.az, ['a', 'b', 'c'], null);
         // Profil: judikatura = serverový test 1.2.0, kancelar = simulace dne v kanceláři (office_day.js, ~10 h).

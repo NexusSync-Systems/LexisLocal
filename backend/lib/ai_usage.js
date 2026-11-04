@@ -158,9 +158,17 @@ function souhrn(mesic, now) {
 
     const odhadDen = {};
     let bezCeniku = 0;
+    // Model bez řádku ceníku se dřív počítal za 0 USD → tvrdý strop šel obejít modelem mimo ceník.
+    // Teď se odhadne podle NEJDRAŽŠÍHO řádku ceníku (horní odhad); večerní sync s AWS to zpřesní.
+    const nejdrazsi = n.cenik.length ? [n.cenik.reduce((a, c) => (c.vstup + c.vystup > a.vstup + a.vystup ? c : a))] : null;
+    const castkaZaznamu = (r) => {
+        if (r.odhadUsd != null) return r.odhadUsd;
+        if (!nejdrazsi) return 0;
+        return odhadCeny(nejdrazsi[0].vzor, r, nejdrazsi) || 0;
+    };
     for (const r of zaznamy) {
-        if (r.odhadUsd == null) { bezCeniku++; continue; }
-        odhadDen[r.den] = (odhadDen[r.den] || 0) + r.odhadUsd;
+        if (r.odhadUsd == null) bezCeniku++;
+        odhadDen[r.den] = (odhadDen[r.den] || 0) + castkaZaznamu(r);
     }
     // Opravný poměr z poslední synchronizace (AWS / odhad za stejné dny), jen v rozumných mezích.
     let korekce = 1;
@@ -193,7 +201,7 @@ function souhrn(mesic, now) {
         for (const r of zaznamy) {
             for (const k of keyFn(r)) {
                 const cur = m.get(k) || { klic: k, dotazu: 0, inputTokens: 0, outputTokens: 0, odhadUsd: 0 };
-                cur.dotazu++; cur.inputTokens += r.inputTokens || 0; cur.outputTokens += r.outputTokens || 0; cur.odhadUsd += r.odhadUsd || 0;
+                cur.dotazu++; cur.inputTokens += r.inputTokens || 0; cur.outputTokens += r.outputTokens || 0; cur.odhadUsd += castkaZaznamu(r);
                 m.set(k, cur);
             }
         }

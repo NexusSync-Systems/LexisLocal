@@ -232,8 +232,10 @@ async function embeddings(params) {
     _guardLocalOnly('embed', p);
     if (p === 'openai') {
         // Embeddingy počítáme z textu klientských dokumentů — veřejné API (bez EU regionu a smlouvy
-        // kanceláře) jen s výslovným LEXIS_POVOLIT_PRIME_API=1 (testy se syntetickými daty).
-        if (require('./cloud_policy').druhPoskytovatele('openai') !== 'lokalni' && !_truthy(process.env.LEXIS_POVOLIT_PRIME_API)) {
+        // kanceláře) jen se stejným pravidlem jako chat: LEXIS_POVOLIT_PRIME_API=1 A dotaz výslovně veřejný,
+        // bez spisu. Dřív stačil přepínač a indexace dokumentů spisu by odešla ven (review 2, skupina 5).
+        const pol = require('./cloud_policy');
+        if (pol.druhPoskytovatele('openai') !== 'lokalni' && !pol.rozhodni('openai').allowed) {
             throw new Error('Embeddingy přes veřejné OpenAI API jsou zakázané — text klientských dokumentů nesmí odejít mimo kancelář. Použijte lokální model (AI_EMBED_PROVIDER=ollama) nebo OpenAI-kompatibilní server v síti kanceláře (OPENAI_BASE_URL).');
         }
         return _openaiEmbeddings(params.prompt != null ? params.prompt : params.input);

@@ -237,7 +237,8 @@ router.post('/upload', async (req, res) => {
             return res.status(failed.length ? 202 : 200).json({
                 success: true, processed: !failed.length, dmID: r.dmID, delivery: r.delivery, files: r.files,
                 message: `Datová zpráva ${r.dmID}: ${r.files.length} příloh, doručeno ${r.delivery.date || '?'} (${r.delivery.how}).`,
-                warning: failed.length ? `Nepodařilo se zpracovat: ${failed.map(f => f.file).join(', ')}` : undefined
+                pravost: r.pravost,
+                warning: [r.upozorneni, failed.length ? `Nepodařilo se zpracovat: ${failed.map(f => f.file).join(', ')}` : null].filter(Boolean).join(' ') || undefined
             });
         } catch (e) {
             return res.status(500).json({ error: `Import datové zprávy selhal: ${e.message}` });

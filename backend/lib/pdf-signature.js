@@ -226,9 +226,16 @@ function verifyPdfSignatures(pdf) {
         if (!r.timestamp.present) r.warnings.push('Bez časového razítka — čas podpisu je jen z hodin počítače podepisujícího a po vypršení certifikátu nepůjde podpis ověřit.');
         else if (!r.timestamp.valid) r.warnings.push('Časové razítko je neplatné.');
         r.valid = !!(r.integrity && r.signatureValid);
+        // Úroveň jen PODLE ÚDAJŮ V CERTIFIKÁTU: značky QC si může dát do certifikátu kdokoli, rozhoduje až
+        // vystavitel na EU Trusted List (offline neověřujeme). Proto „deklaruje“ a QES jen s oběma značkami
+        // (kvalifikovaný certifikát + kvalifikovaný prostředek) — dřív stačila jedna (review 2, skupina 5).
+        r.trustChecked = false;
+        if (r.valid && (r.qualifiedCertificate || r.qualifiedDevice) && !r.chainIncluded) {
+            r.warnings.push('V podpisu chybí certifikát vystavitele — kvalifikovanost podpisu nelze ani předběžně posoudit; ověřte v Acrobat Readeru.');
+        }
         r.level = !r.valid ? 'neplatný'
-            : r.qualifiedDevice ? 'kvalifikovaný (QES) — dle údajů v certifikátu'
-            : r.qualifiedCertificate ? 'uznávaný (zaručený s kvalifikovaným certifikátem)'
+            : r.qualifiedCertificate && r.qualifiedDevice ? 'deklaruje kvalifikovaný podpis (QES) — vystavitel neověřen'
+            : r.qualifiedCertificate ? 'deklaruje uznávaný podpis (kvalifikovaný certifikát) — vystavitel neověřen'
             : 'zaručený (AdES)';
         return r;
     });

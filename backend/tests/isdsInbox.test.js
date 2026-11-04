@@ -164,6 +164,23 @@ describe('nahrání .zfo → doručená pošta, lhůta od doručení do schránk
         expect(item.deliveryConflict).toBe(false);
         expect(item.summary).toMatch(/jiné datum doručení \(2026-09-20\)/);
     });
+    test('XML přejmenované na .zfo (bez podpisu) se nenačte — nezaloží lhůtu', async () => {
+        const r = await H(request(app).post('/api/inbox/upload')).send({ fileName: 'podvrh.zfo', base64: Buffer.from(messageXml({ dmID: '7301' })).toString('base64') });
+        expect(r.status).toBe(400);
+        expect(r.body.error).toMatch(/podpis/i);
+    });
+    test('upravené .zfo (jiné datum doručení po podpisu) se nenačte', async () => {
+        const zfo = zfoOf(messageXml({ dmID: '7302' }));
+        const bin = zfo.toString('binary').replace('2026-09-30T14:00', '2026-12-30T14:00');
+        const r = await H(request(app).post('/api/inbox/upload')).send({ fileName: 'upraveno.zfo', base64: Buffer.from(bin, 'binary').toString('base64') });
+        expect(r.status).toBe(400);
+        expect(r.body.error).toMatch(/nesedí/);
+    });
+    test('platné .zfo: upozornění, že vystavitel se neověřuje', async () => {
+        const r = await H(request(app).post('/api/inbox/upload')).send({ fileName: 'DZ_7303.zfo', base64: zfoOf(messageXml({ dmID: '7303' })).toString('base64') });
+        expect(r.body.pravost).toMatchObject({ podpisPlatny: true, vystavitelOveren: false, podepsal: 'ISDS test' });
+        expect(r.body.warning).toMatch(/ověřte v Datovce/);
+    });
     test('neplatné .zfo → 400 s vysvětlením', async () => {
         const r = await H(request(app).post('/api/inbox/upload')).send({ fileName: 'x.zfo', base64: b64('není to zpráva') });
         expect(r.status).toBe(400);

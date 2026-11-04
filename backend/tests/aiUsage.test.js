@@ -114,3 +114,15 @@ test('nastavení: validace a jen pro správce (authz)', () => {
     const authz = require('../lib/authz');
     expect(authz.authorize({ kind: 'user', scopes: ['read', 'write', 'approve'] }, 'GET', '/api/ai-usage/summary').allowed).toBe(false);
 });
+
+describe('model bez ceníku (review 2, skupina 5)', () => {
+    test('počítá se podle nejdražšího řádku a tvrdý strop zabere', () => {
+        U.ulozNastaveni({ mesicniRozpocetUsd: 1, tvrdyStrop: true });
+        U.zaznamenej({ provider: 'bedrock', model: 'eu.neznamy.model-x', usage: { inputTokens: 100000, outputTokens: 20000 } });
+        const s = U.souhrn();
+        expect(s.bezCeniku).toBe(1);
+        // opus: 0,1 × 5,50 + 0,02 × 27,50 = 1,10 USD
+        expect(s.celkem).toBeCloseTo(1.1, 2);
+        expect(U.kontrolaRozpoctu().ok).toBe(false);
+    });
+});
