@@ -346,7 +346,7 @@ function vymysleneParagrafy(text) {
         .map(c => `§ ${c.paragraph} (zák. č. ${c.law} Sb. má jen ${MAX_PAR[c.law]} §)`);
 }
 
-const RE_NEDOSTATEK = /nedostatek podklad|(?:uveden|obsažen|zmíněn|doložen)\w*\s+(?:není|nejsou|nebyl\w*)|(?:není|nejsou|nebyl\w*)\s+(?:\S+\s+){0,3}(?:uveden|obsažen|zmíněn|doložen)|nehovoří|nenacház|neobsahuj|(?:spis|podklady|dokumenty|posudek|smlouva)[^.]{0,40}(?:neobsahuj|neuvád|nezmiňuj|nejsou|není)|(?:není|nejsou|chybí)[^.]{0,30}(?:ve spisu|v podkladech|v dokumentech|uveden)|nelze (?:z podkladů|ze spisu|z dokumentů)?\s*(?:určit|zjistit)|ve spisu (?:není|nenacház|chybí)|nemám (?:k dispozici|informac)/iu;
+const RE_NEDOSTATEK = /nedostatek podklad|(?:uveden|obsažen|zmíněn|doložen)\w*\s+(?:není|nejsou|nebyl\w*)|(?:není|nejsou|nebyl\w*)\s+(?:\S+\s+){0,3}(?:uveden|obsažen|zmíněn|doložen)|nehovoří|nenacház|neobsahuj|(?:spis|podklady|dokumenty|posudek|smlouva)[^.]{0,60}(?:neobsahuj|neuvád|nezmiňuj|nejsou|není)|(?:není|nejsou|chybí)[^.]{0,30}(?:ve spisu|v podkladech|v dokumentech|uveden)|nelze (?:z podkladů|ze spisu|z dokumentů)?\s*(?:určit|zjistit)|ve spisu (?:není|nenacház|chybí)|nemám (?:k dispozici|informac)/iu;
 const RE_ROZPOR = /rozpor|nesoulad|neshod|liší|odlišn|neodpovídá|nesedí|protiřeč|v rozporu|kdežto|zatímco|ale |avšak/iu;
 
 // ---------------------------------------------------------------------------------------------------
@@ -394,7 +394,8 @@ function vyhodnot(pripad, odpoved, spisy, opts) {
 
     // Mimo spis (negativní případy)
     if (pripad.odpovedetelne === false) {
-        if (!RE_NEDOSTATEK.test(model)) chyba('mimo_spis', 'nepřiznal, že spis údaj neobsahuje');
+        // „posudek č. EV-ZP-112/2026 cenu neuvádí“ — tečka zkratky není konec věty (eval 4. 11. 2026, M2)
+        if (!RE_NEDOSTATEK.test(model.replace(/(?<![A-Za-zÁ-ž])(č|odst|čl|zn|sp)\.\s*/giu, '$1 '))) chyba('mimo_spis', 'nepřiznal, že spis údaj neobsahuje');
         for (const p of pripad.pasti || []) if (najdi(p, model)) chyba('mimo_spis', 'uvádí údaj, který ve spisu není: ' + p);
     } else {
         // Pasti: zavádějící hodnota uvedena, a zároveň chybí správná

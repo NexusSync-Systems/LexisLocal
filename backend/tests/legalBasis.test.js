@@ -112,3 +112,9 @@ describe('kb_case_index: judikatura jen z ověřených zdrojů', () => {
         } finally { delete process.env.LEXIS_NEOVERENE_JUDIKATY; }
     });
 });
+
+test('navržené znění klauzule v uvozovkách není doporučení bez opory (eval 4. 11. 2026, K6)', () => {
+    const LB = require('../lib/legal_basis');
+    const k = LB.kontrolaOpory('Doporučená náhrada: *„Prodávající prohlašuje, že kupující je povinna zaplatit pokutu.“*\n*„Při prodlení je kupující povinna zaplatit smluvní pokutu 0,05 % denně.“*\nDoporučuji podat odvolání proti rozsudku soudu.');
+    expect(k.bezOpory).toEqual(['Doporučuji podat odvolání proti rozsudku soudu.']);
+});

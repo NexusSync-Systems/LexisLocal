@@ -167,7 +167,10 @@ router.post('/:agentId', async (req, res) => {
     if (isEmbeddingModel(selectedModel)) {
         return res.status(400).json({ error: `Model „${selectedModel}“ je vyhledávací (embedding) model a neumí odpovídat. Zvolte chatovací model.` });
     }
-    console.log(`🤖 Volám agenta [${agent.name}] s modelem [${selectedModel}]`);
+    // Při cloudu ukázat i model v cloudu — „qwen2.5:3b“ ve výpisu mátlo, když odpovídal Claude (eval 4. 11. 2026).
+    { let cl = '';
+      try { const st = require('../lib/cloud_policy').stavKancelare(); if (st.cloudAktivni) cl = ` · cloud: ${cloudModelLabel(st.provider).nazev}${st.jenCloud ? '' : ' (podle pravidel spisu, jinak lokálně)'}`; } catch (e) { /* jen výpis */ }
+      console.log(`🤖 Volám agenta [${agent.name}] · lokální model [${selectedModel}]${cl}`); }
 
     // systemPromptText musí být viditelný i ve větvi catch (fallback loguje jeho hash).
     // Právní agenti: povinné zdůvodnění každého doporučení (§ a předpis, lib/legal_basis.js).

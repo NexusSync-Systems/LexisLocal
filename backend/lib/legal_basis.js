@@ -82,7 +82,14 @@ function kontrolaOpory(text) {
         if (/nedostatek podklad|(?:uveden|obsažen)\w*\s+(?:není|nejsou)|(?:není|nejsou)\s+(?:\S+\s+){0,3}(?:uveden|obsažen)|(?:spis|podklady)\S*\s+(?:\S+\s+){0,3}neobsahuj/i.test(u.text)) continue;
         // Hodnocení variant („Pro: …“, „Proti: …“) není samo doporučení — opora patří k variantě / doporučené variantě.
         if (/^\s*([-•*]|\d+[.)])?\s*(pro|proti|výhody|nevýhody|rizika?|náklady|doba)\s*:/i.test(u.text)) continue;
-        if (!RE_DOPORUCENI.test(u.text)) continue;
+        // Navržené znění klauzule („Doporučená náhrada: „…““, řádek začínající uvozovkou) je text smlouvy;
+        // opora patří k riziku, ke kterému se znění navrhuje.
+        if (/^\s*([-•*]|\d+[.)])?\s*\*?\s*(?:doporučen\S*|navrhovan\S*|navržen\S*|nov[éáý])\s+(?:náhrad\S*|znění|formulac\S*|text\S*|ustanovení|klauzul\S*)\s*:/i.test(u.text)
+            || /^\s*([-•*]|\d+[.)])?\s*\*?\s*[„"]/.test(u.text)) continue;
+        // Navržené / citované znění v uvozovkách („Prodávající je povinen …“) je text smlouvy, ne doporučení agenta
+        // (eval 4. 11. 2026, K6: tři „bez opory“ jen za navržené klauzule).
+        const bezCitaci = u.text.replace(/„[^“”"]{12,}[“”"]|"[^"]{12,}"/g, ' ');
+        if (!RE_DOPORUCENI.test(bezCitaci)) continue;
         doporuceni++;
         const kratce = u.text.replace(/^\s*([-•*]|\d+[.)])\s+/, '').slice(0, 160);
         // Opora může být i na následujícím řádku („— Opora: § …“, „Opora: …“).

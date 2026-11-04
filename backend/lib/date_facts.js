@@ -113,7 +113,9 @@ function buildDateFacts(text, { maxFacts = 8, question = null } = {}) {
         const f0 = facts.find(f => f.base === delivery.all[0]);
         if (f0) conflictEnd = f0.end;
     }
-    return { facts, deliveryConflict: delivery.conflict, deliveryDates: delivery.all, conflictEnd, limitation, text: textOut };
+    // Ptá se zadání na lhůty / doručení / termíny? (null = volající otázku nepředal → chování jako dřív)
+    const otazkaNaCas = question == null ? null : /lh[uů]t|doru[čc]|do kdy|termín|kdy\s|promlč|odvolán|odpor|vyjádř|how long|deadline|time limit/i.test(String(question));
+    return { facts, deliveryConflict: delivery.conflict, deliveryDates: delivery.all, conflictEnd, limitation, otazkaNaCas, text: textOut };
 }
 
 // ── Promlčení práva na náhradu škody (§ 619, § 620, § 629, § 636 OZ) ──────────
@@ -247,7 +249,9 @@ function dateFactsAppendix(response, df) {
     if (!df) return '';
     const r = String(response || '');
     const out = [];
-    if (df.deliveryConflict && !/rozpor|nesoulad|r[uů]zn[aáé]\s+dat|dv[eě]\s+(r[uů]zn[aá]\s+)?dat|odli[šs]n/i.test(r)) {
+    // Rozpor dat doručení jen u otázky na lhůty / doručení — pod dotazem „kolik stála oprava“ je to šum
+    // (eval 4. 11. 2026, M2: doručení odstoupení a výzvy soudu = dvě různé písemnosti, ne rozpor).
+    if (df.deliveryConflict && df.otazkaNaCas !== false && !/rozpor|nesoulad|r[uů]zn[aáé]\s+dat|dv[eě]\s+(r[uů]zn[aá]\s+)?dat|odli[šs]n/i.test(r)) {
         out.push(`⚠️ Podklady uvádějí RŮZNÁ data doručení (${(df.deliveryDates || []).map(_fmt).join(', ')}). ` +
             (df.conflictEnd ? `Konzervativně počítáno od nejdřívějšího: konec lhůty ${_fmt(df.conflictEnd)}. ` : '') +
             'Ověřte skutečné datum doručení (datová schránka / doručenka).');

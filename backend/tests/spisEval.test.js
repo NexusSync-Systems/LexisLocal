@@ -191,3 +191,7 @@ describe('určení dokumentu citace (běh review2 4. 11. 2026)', () => {
         expect(C.hodnotCitaci(d, S.S4).podpora).not.toBe('ne');
     });
 });
+
+test('mimo spis: „posudek č. … cenu neuvádí“ je přiznání (M2, 4. 11. 2026)', () => {
+    expect(typy('M2', 'Znalecký posudek č. EV-ZP-112/2026 cenu opravy vozidla po nehodě neuvádí.')).not.toContain('mimo_spis');
+});
