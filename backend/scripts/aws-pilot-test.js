@@ -121,9 +121,11 @@ async function main() {
     await krok('D3', 'Spis B se souhlasem → Bedrock', async () => {
         P.udelSouhlas(sB.id, { typ: 'spis', principal: ADV, poznamka: 'test' });
         const n0 = sit.length;
-        await ask({}, () => P.noteSpis(sB.id));
+        const { sh } = await ask({}, () => P.noteSpis(sB.id));
         if (!sit.slice(n0).some(u => u.includes('bedrock-runtime'))) throw new Error('dotaz neodešel');
-        return { detail: 'odesláno, zapsáno do deníku spisu' };
+        // Odesláno nestačí — Bedrock musí i odpovědět (4. 11. 2026: model nepovolený v účtu → 403, test přesto prošel).
+        if (!sh || !sh.cloud) throw new Error('Bedrock neodpověděl: ' + JSON.stringify(sh && sh.duvody || sh).slice(0, 300));
+        return { detail: 'odesláno a zodpovězeno v cloudu, zapsáno do deníku spisu' };
     });
 
     const RS = require('../lib/rerank_service');
