@@ -76,7 +76,7 @@ function kontrolaOpory(text) {
         if (u.text.length < 25 || /\[Doplnit/i.test(u.text) && u.text.length < 60) continue;
         if (/ověřit|co ještě|otázk|chybí v podkladech|upozornění|⚠|📅|⚖️/i.test(u.sekce) || /^[⚠📅⚖️🔎]/u.test(u.text)) continue;
         if (/\?\s*$/.test(u.text)) continue;
-        if (/^\s*([-•*]|\d+[.)])?\s*(doporučení|návrh|varianta|shrnutí)\b[^.:;]{0,45}$/i.test(u.text)) continue;   // nadpis („Doporučení pro klienta“)
+        if (/^\s*([-•*]|\d+[.)])?\s*(doporučení|návrh|varianta|shrnutí)(?![a-záčďéěíňóřšťúůýž])[^.:;]{0,45}$/i.test(u.text)) continue;   // nadpis („Doporučení pro klienta“)
         // Popis ustanovení, upozornění a přiznání, že podklady údaj neobsahují, nejsou doporučení (eval 4. 11. 2026).
         if (/^\s*([-•*]|\d+[.)])?\s*(co (?:ustanovení|smlouva|článek) (?:říká|stanoví)|znění|text ustanovení|upozornění|poznámka|pozn\.)\s*:/i.test(u.text)) continue;
         if (/nedostatek podklad|(?:uveden|obsažen)\w*\s+(?:není|nejsou)|(?:není|nejsou)\s+(?:\S+\s+){0,3}(?:uveden|obsažen)|(?:spis|podklady)\S*\s+(?:\S+\s+){0,3}neobsahuj/i.test(u.text)) continue;

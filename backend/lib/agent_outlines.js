@@ -33,7 +33,7 @@ const OUTLINES = {
     contract_review:
         'OSNOVA ODPOVĚDI (dodrž):\n' +
         '1. Celkové hodnocení jednou větou (u spotřebitele/nájemce uveď, že jde o slabší stranu).\n' +
-        '2. Rizika — pro KAŽDÉ: „Čl. X — co ustanovení říká → proč je to riziko pro klienta → Opora: § a předpis → Návrh úpravy (úprava/škrt) — i návrh má oporu: § a předpis, podle kterého je úprava potřebná nebo přípustná“.\n' +
+        '2. Rizika — pro KAŽDÉ: „Čl. X — co ustanovení říká → proč je to riziko pro klienta → § zákona → co navrhnout (úprava/škrt)“.\n' +
         '   Uveď konkrétní hodnoty ze smlouvy (procenta, částky, lhůty, počty měsíců/let).\n' +
         '3. Možnosti klienta — podepsat / vyjednat úpravy / nepodepsat: u každé Pro a Proti.\n' +
         '4. Doporučení pro klienta — kterou možnost a proč, s oporou (§ a předpis).\n' +

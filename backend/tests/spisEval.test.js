@@ -143,6 +143,7 @@ describe('opravy z prvního běhu na Claudovi (4. 11. 2026)', () => {
     });
     test('kontrola opory: nadpis, popis ustanovení a „údaj ve spisu není“ nejsou doporučení', () => {
         const LB = require('../lib/legal_basis');
+        expect(LB.kontrolaOpory('DOPORUČENÍ PRO KLIENTA\nDoporučení pro klienta (pronajímatele)').bezOpory).toEqual([]);
         const t = 'Doporučení pro klienta\n**Co ustanovení říká:** Nájemce je povinen složit jistotu 55 500 Kč.\nČíslo účtu ve spisu uvedeno není, je třeba si ho vyžádat.';
         expect(LB.kontrolaOpory(t).bezOpory).toEqual([]);
     });
@@ -161,8 +162,9 @@ describe('osnovy z evalu: rozpory a návrhy úprav', () => {
         expect(p.outline).toMatch(/VLASTNÍ citaci s celým názvem dokumentu/);
         expect(p.outline).toMatch(/Sjednaná změna \(dodatek\) není rozpor/);
     });
-    test('kontrola smlouvy chce oporu i u návrhu úpravy; dopis protistraně zůstává dopisem', () => {
-        expect(taskProfile({ agentId: 'kontrolor', prompt: 'Zkontroluj smlouvu a vypiš rizika.', context: 'smlouva' }).outline).toMatch(/Návrh úpravy[^\n]*i návrh má oporu/);
+    test('kontrola smlouvy má původní osnovu; dopis protistraně zůstává dopisem', () => {
+        // Opora i u návrhu úpravy (osnovy-v2) zhoršila kontrolu smlouvy 96 → 80 (6/6 → 3/6) — vráceno na původní znění.
+        expect(taskProfile({ agentId: 'kontrolor', prompt: 'Zkontroluj smlouvu a vypiš rizika.', context: 'smlouva' }).outline).toMatch(/→ § zákona → co navrhnout \(úprava\/škrt\)/);
         expect(taskProfile({ agentId: 'spisovatel', prompt: 'Napiš dopis protistraně, že ve výpočtu dluhu je rozpor.' }).kind).toBe('opponent_letter');
     });
     test('pravidlo zdůvodnění chce u citace spisu název dokumentu', () => {
