@@ -205,7 +205,9 @@ async function chat(params) {
                 const fail = Object.assign({}, decision, { allowed: false, code: 'chyba_cloudu', duvody: ['Cloudový model je nedostupný (' + String(cloudErr.message).slice(0, 160) + ').'] });
                 policy.zaznamenej(fail, { provider: p, model: cloudModel, fallback: false });
                 _countRequest('odepreno');
-                throw Object.assign(new Error('Cloudový model je teď nedostupný a kancelář nemá lokální model — zkuste dotaz za chvíli znovu.'), { code: 'CLOUD_DOWN', status: 503, decision: fail });
+                // Příčina do zprávy (bez obsahu dotazu): odliší výpadek sítě / spánek Macu od omezení AWS nebo chyby přístupu.
+                const pricina = String(cloudErr.message || cloudErr.name || '').replace(/\s+/g, ' ').slice(0, 120);
+                throw Object.assign(new Error('Cloudový model je teď nedostupný a kancelář nemá lokální model — zkuste dotaz za chvíli znovu. (Příčina: ' + pricina + ')'), { code: 'CLOUD_DOWN', status: 503, decision: fail, pricina });
             }
             if (policy.rezimOdepreni() !== 'lokalne' || !vypadek) throw cloudErr;
             const fail = Object.assign({}, decision, { allowed: false, code: 'chyba_cloudu', duvody: ['Cloudový model je nedostupný (' + String(cloudErr.message).slice(0, 160) + ') — odpověděl lokální model.'] });

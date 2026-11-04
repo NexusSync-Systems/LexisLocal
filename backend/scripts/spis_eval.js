@@ -141,6 +141,11 @@ async function main() {
 
     const vysledky = [];
     let naklady = 0, tokIn = 0, tokOut = 0;
+    // Běh 4. 11. 2026: Mac uprostřed usnul / ztratil síť → 24 případů „chyba běhu“ a skóre 43 místo ~90.
+    // Po 3 výpadcích cloudu / sítě za sebou se běh přeruší a uloží jen hotové případy (meta.prerusen).
+    let vypadkuZaSebou = 0, prerusen = null;
+    const jeVypadek = t => /HTTP 503|nedostupn|fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|socket|aborted/i.test(String(t || ''));
+    vnejsi:
     for (let o = 1; o <= OPAK; o++) {
         for (const p of pripady) {
             aktualni = p;
@@ -182,14 +187,24 @@ async function main() {
             const v = C.vyhodnot(p, odpoved, SPISY, { chyba: chybaBehu });
             if (JUDGE && !chybaBehu) await posudNejiste(v, p, ai, P);
             vysledky.push(Object.assign({ opakovani: o, ms, odpoved, chybaBehu }, v, { meta }));
-            console.log(`${v.prosel ? '✅' : '❌'} ${p.id.padEnd(3)} ${p.typ.padEnd(17)} ${String(v.skore).padStart(3)}  ${(ms / 1000).toFixed(1)} s  ${v.chyby.map(c => c.typ).join(', ')}`);
+            console.log(`${v.prosel ? '✅' : '❌'} ${p.id.padEnd(3)} ${p.typ.padEnd(17)} ${String(v.skore).padStart(3)}  ${(ms / 1000).toFixed(1)} s  ${v.chyby.map(c => c.typ).join(', ')}${chybaBehu ? '  ← ' + chybaBehu.slice(0, 140) : ''}`);
+            // Případ trval mnohem déle než časový limit → proces stál (spánek Macu); hodiny běžely dál.
+            if (ms > TIMEOUT * 1.5) console.log(`   ⚠️  ${Math.round(ms / 1000)} s > limit ${TIMEOUT / 1000} s — Mac nejspíš usnul. Spouštějte přes „caffeinate -i node …“.`);
+            vypadkuZaSebou = chybaBehu && jeVypadek(chybaBehu) ? vypadkuZaSebou + 1 : 0;
+            if (vypadkuZaSebou >= 3) {
+                prerusen = `3 výpadky cloudu / sítě za sebou (poslední: ${chybaBehu.slice(0, 160)})`;
+                // tyto 3 případy nejsou vypovídající — do výsledku nepatří
+                vysledky.splice(vysledky.length - 3, 3);
+                console.log(`\n🛑 Běh přerušen: ${prerusen}.\n   Uloží se jen hotové případy. Zkontrolujte síť / spánek Macu a pusťte zbytek: --typy … nebo --pripady …`);
+                break vnejsi;
+            }
         }
     }
     if (server) server.close();
 
     const souhrn = souhrnBehu(vysledky);
     const vystup = {
-        meta: { datum: new Date().toISOString(), label, provider: PROVIDER, model: modelNazev, rezim: REZIM, opakovani: OPAK, judge: JUDGE,
+        meta: { datum: new Date().toISOString(), label, provider: PROVIDER, model: modelNazev, rezim: REZIM, opakovani: OPAK, judge: JUDGE, prerusen,
             commit: gitCommit(), sada: { verze: SADA.verze, hash: hash(fs.readFileSync(path.join(EVAL, 'cases.json'))), pripadu: pripady.length },
             prompty: hash(JSON.stringify(agents) + fs.readFileSync(path.join(__dirname, '..', 'lib', 'agent_outlines.js'), 'utf8') + fs.readFileSync(path.join(__dirname, '..', 'lib', 'legal_basis.js'), 'utf8')),
             naklady: { odhadUsd: Math.round(naklady * 1e4) / 1e4, inputTokens: tokIn, outputTokens: tokOut } },

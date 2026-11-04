@@ -163,11 +163,30 @@ async function chat(messages, options = {}) {
     if (options && options.temperature != null) inferenceConfig.temperature = options.temperature;
     const body = JSON.stringify(Object.assign({ messages: conv.messages, inferenceConfig }, conv.system.length ? { system: conv.system } : {}));
     const s = sign({ method: 'POST', host, pathSegments: ['model', model, 'converse'], headers: { 'content-type': 'application/json' }, body, service: SERVICE, region: reg, creds });
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), parseInt(process.env.BEDROCK_TIMEOUT_MS || '120000', 10));
+    // Krátké výpadky (omezení rychlosti 429, 5xx AWS, přerušené spojení) se zkusí znovu — nejvýš 2× s čekáním.
+    // Časový limit (abort) se neopakuje: dotaz by trval dvojnásob. Podpis platí 5 min, opakování je v něm.
+    const POKUSY = Math.max(1, Math.min(4, parseInt(process.env.BEDROCK_POKUSY || '3', 10) || 3));
+    const pauza = ms => new Promise(r => setTimeout(r, ms));
     let res;
-    try { res = await fetch(`https://${host}${s.path}`, { method: 'POST', headers: s.headers, body, signal: ctl.signal }); }
-    finally { clearTimeout(t); }
+    for (let pokus = 1; ; pokus++) {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), parseInt(process.env.BEDROCK_TIMEOUT_MS || '120000', 10));
+        try {
+            res = await fetch(`https://${host}${s.path}`, { method: 'POST', headers: s.headers, body, signal: ctl.signal });
+        } catch (e) {
+            clearTimeout(t);
+            const sit = !/abort/i.test(String(e.name) + String(e.message));
+            if (sit && pokus < POKUSY) { await pauza(pokus * 2000); continue; }
+            throw e;
+        }
+        clearTimeout(t);
+        if ((res.status === 429 || res.status >= 500) && pokus < POKUSY) {
+            try { await res.text(); } catch (e) { /* uvolnit spojení */ }
+            await pauza(pokus * 3000);
+            continue;
+        }
+        break;
+    }
     if (!res.ok) throw new Error(`Bedrock ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const data = await res.json();
     const content = ((data.output && data.output.message && data.output.message.content) || []).map(b => b.text || '').join('');

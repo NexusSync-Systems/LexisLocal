@@ -122,7 +122,11 @@ function _zkratkyOdpovedi(t, spis) {
     const re = /\((?:dále\s+(?:jen|také)\s+)?[„"']?([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][A-Za-zÁ-ž0-9-]{0,7})[“"']?\)/gu;
     let m;
     while ((m = re.exec(t))) {
-        const pred = t.slice(Math.max(0, m.index - 60), m.index);
+        // Jen „Smlouva o dílo (SOD)“: zkratka nesmí být sama názvem dokumentu („Verze B (Dodatek)“) a mezi názvem
+        // a závorkou nesmí být hranice buňky tabulky ani věty (běh review2 4. 11. 2026: „Dodatek“ = smlouva o dílo).
+        if (Object.values(spis.docs).some(d => d.aliasRe.some(a => { a.lastIndex = 0; return a.test(m[1]); }))) continue;
+        const pred0 = t.slice(Math.max(0, m.index - 60), m.index);
+        const pred = pred0.slice(Math.max(pred0.lastIndexOf('|'), pred0.lastIndexOf('\n'), pred0.lastIndexOf(';')) + 1);
         let nej = null;
         for (const d of Object.values(spis.docs)) for (const a of d.aliasRe) { a.lastIndex = 0; let x; while ((x = a.exec(pred))) if (!nej || x.index > nej.i) nej = { kod: d.kod, i: x.index }; }
         if (nej) out[m[1]] = nej.kod;
@@ -205,6 +209,9 @@ function _urciDokument(okno, stred, spis, docsPripadu) {
             let m;
             while ((m = re.exec(seg))) {
                 if (/smlouv/i.test(m[0]) && /(?:^|\s)(?:ke?|od)\s+(?:\S+\s+)?$/i.test(seg.slice(Math.max(0, m.index - 14), m.index))) continue;
+                // „Vyjádření žalované k žalobě, bod 2“, „odpověď na výzvu, bod 1“: dokument po předložce je předmět
+                // jiného dokumentu, ne citovaný dokument (běh review2 4. 11. 2026: bod 2 vyjádření připsán žalobě).
+                if (jePred && /(?:^|\s)(?:ke?|na|proti)\s+$/i.test(seg.slice(Math.max(0, m.index - 6), m.index))) continue;
                 if (jePred) {
                     const konec = pos + m.index + m[0].length;
                     if (cizi && !/^[\s,(]*$/.test(okno.slice(konec, stred))) continue;   // cizí dokument jen těsně před citací
@@ -226,7 +233,9 @@ function _urciDokument(okno, stred, spis, docsPripadu) {
             if (!predNej || konec > predNej.konec) predNej = { doc: null, cizi: true, slovo: g[0], konec };
         }
     }
-    if (zaNej && zaNej.i <= 3) return { doc: zaNej.doc };
+    // Dokument ZA citací jen těsně („čl. 6 odst. 1 smlouvy“), ne přes spojku či čárku
+    // („čl. 5 odst. 2 a předávací protokol, bod 4“ — čl. 5 patří předchozímu dokumentu; běh review2 4. 11. 2026).
+    if (zaNej && zaNej.i <= 3 && !/(?:^|\s)(?:a|i|nebo|či|ani)(?:\s|$)|,/i.test(za.slice(0, zaNej.i))) return { doc: zaNej.doc };
     if (predNej) return predNej.cizi ? { doc: null, ciziDokument: predNej.slovo } : { doc: predNej.doc };
     if (zaNej) return { doc: zaNej.doc };
     if (docs.length === 1) return { doc: docs[0], implicitni: true };
@@ -251,7 +260,16 @@ function hodnotCitaci(c, spis) {
     if (!text) return Object.assign(c, { platna: false, kotva: c.doc + ':' + k, duvod: `${d.nazev}: ${k} neexistuje`, podpora: 'ne' });
     c.platna = true; c.kotva = c.doc + ':' + k; c.textKotvy = text;
     // Podpora: hodnoty z tvrzení (bez čísel samotné citace) musí být v citovaném místě.
-    const tvrzeni = c.tvrzeni.replace(RE_CITACE, ' ').replace(/č\.\s*[A-Z0-9-/]+/g, ' ');
+    let tvrzeni = c.tvrzeni.replace(RE_CITACE, ' ').replace(/č\.\s*[A-Z0-9-/]+/g, ' ');
+    // Název dokumentu není tvrzení: „Žaloba o zaplacení 64 300 Kč, čl. II odst. 3“, „E-mail objednatele ze dne 2. 10. 2026, bod 1“
+    // — částka / datum z názvu se v citovaném místě hledat nemají (běh review2 4. 11. 2026).
+    for (const x of Object.values(spis.docs)) {
+        const slova = String(x.nazev || '').split(/\s+/).filter(Boolean);
+        if (slova.length < 2) continue;
+        const prvni = slova[0].replace(/[^A-Za-zÁ-ž-]/g, '');
+        const zbytek = slova.slice(1).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+');
+        tvrzeni = tvrzeni.replace(new RegExp(prvni.slice(0, Math.max(4, prvni.length - 2)) + '[A-Za-zÁ-ž]*\\s+' + zbytek, 'giu'), ' ');
+    }
     const vSpisu = new Set(hodnoty(Object.values(spis.docs).map(x => x.text).join('\n')).map(h => h.druh + ':' + h.v));
     const hv = hodnoty(tvrzeni).filter(h => vSpisu.has(h.druh + ':' + h.v));
     const kt = kanon(text);
@@ -266,7 +284,9 @@ function hodnotCitaci(c, spis) {
     const b = _kmeny(text);
     const spol = a.filter(w => b.has(w)).length;
     const obsah = a.filter(w => !Object.values(spis.docs).some(x => x.aliasRe.some(re => { re.lastIndex = 0; return re.test(w); })));
-    c.podpora = (spol >= 2 || (a.length && spol / a.length >= 0.3)) ? 'ano' : (spol === 0 && obsah.length >= 4 ? 'ne' : 'nejiste');
+    // Doporučení / opora nejsou skutková tvrzení o obsahu místa — bez čísel je program neposoudí.
+    const doporuceni = /doporuč|navrhuj|opora\s*:|je třeba|měl[aiy]? by/i.test(tvrzeni);
+    c.podpora = (spol >= 2 || (a.length && spol / a.length >= 0.3)) ? 'ano' : (spol === 0 && obsah.length >= 4 && !doporuceni ? 'ne' : 'nejiste');
     return c;
 }
 

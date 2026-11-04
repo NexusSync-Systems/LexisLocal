@@ -171,3 +171,23 @@ describe('osnovy z evalu: rozpory a návrhy úprav', () => {
         expect(require('../lib/legal_basis').PRAVIDLO).toMatch(/s názvem dokumentu i místem/);
     });
 });
+
+describe('určení dokumentu citace (běh review2 4. 11. 2026)', () => {
+    const doc = (t, spis, docs) => C.citace(t, S[spis], docs).map(c => c.doc);
+    test('„čl. 5 odst. 2 a předávací protokol, bod 4“: čl. 5 patří smlouvě', () => {
+        expect(doc('Lhůta (smlouva o dílo, čl. 5 odst. 2 a předávací protokol, bod 4) běží od předání.', 'S1')).toEqual(['SOD', 'PROTOKOL']);
+    });
+    test('„Vyjádření žalované k žalobě, bod 2“: bod 2 patří vyjádření', () => {
+        expect(doc('Žalovaná platbu přiznává (Vyjádření žalované k žalobě, bod 2).', 'S4')).toEqual(['VYJADRENI']);
+    });
+    test('záhlaví tabulky „Verze B (Dodatek)“ není zkratka pro smlouvu', () => {
+        const t = '| # | Předmět | Verze A (SOD) | Verze B (Dodatek) |\n|---|---|---|---|\n| 1 | Termín | 30. 6. 2026 (čl. 3/1) | 31. 8. 2026 (čl. 1/1) |';
+        expect(doc(t, 'S1', ['SOD', 'DODATEK'])).toEqual(['SOD', 'DODATEK']);
+    });
+    test('částka v názvu dokumentu není tvrzení; doporučení bez čísel je nejisté', () => {
+        const [c] = C.citace('Žaloba uvádí „žalovaná dosud nic neuhradila“ (Žaloba o zaplacení 64 300 Kč, čl. II odst. 3).', S.S4);
+        expect(C.hodnotCitaci(c, S.S4).podpora).toBe('ano');
+        const [d] = C.citace('Doporučení pro advokáta: rozporovat skutková tvrzení v čl. II odst. 3 žaloby.', S.S4);
+        expect(C.hodnotCitaci(d, S.S4).podpora).not.toBe('ne');
+    });
+});

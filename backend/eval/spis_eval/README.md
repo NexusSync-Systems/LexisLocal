@@ -33,6 +33,8 @@ node backend/scripts/spis_eval_compare.js scratch/spis-eval/A.json scratch/spis-
   pravidla cloudu) nad dočasnou databází; dokumenty spisu jdou do kontextu (vyhledávání v bázi se v evalu nepoužívá).
 - `--rezim model`: jen model s dokumenty v kontextu — čisté porovnání modelů nebo verzí promptu.
 - `--opakovani 3` při malých rozdílech (rozptyl), `--typy`, `--pripady`, `--judge` (nejisté citace posoudí model).
+- Na Macu spouštět přes `caffeinate -i node backend/scripts/spis_eval.js …` — když Mac usne, případy „trvají“ desítky minut
+  a skončí chybou běhu. Po 3 výpadcích cloudu / sítě za sebou se běh sám přeruší a uloží jen hotové případy.
 - Bedrock: 48 případů ≈ 1–3 USD (podle délky odpovědí a oprav); skript na konci vypíše skutečný odhad.
 
 ## Skóre a metriky

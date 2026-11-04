@@ -91,7 +91,7 @@ function report(behy) {
     const s = [];
     s.push(`# Spis eval — ${behy.map(b => b.meta.label).join(' vs. ')}`);
     s.push('');
-    for (const b of behy) s.push(`- **${b.meta.label}**: ${b.meta.provider} · ${b.meta.model} · režim ${b.meta.rezim} · ${b.meta.datum.slice(0, 16).replace('T', ' ')} · commit ${b.meta.commit || '?'} · sada v${b.meta.sada.verze} (${b.meta.sada.pripadu} případů × ${b.meta.opakovani}) · prompty ${b.meta.prompty} · náklady ${b.meta.naklady.odhadUsd} USD`);
+    for (const b of behy) s.push(`- **${b.meta.label}**: ${b.meta.provider} · ${b.meta.model} · režim ${b.meta.rezim} · ${b.meta.datum.slice(0, 16).replace('T', ' ')} · commit ${b.meta.commit || '?'} · sada v${b.meta.sada.verze} (${b.meta.sada.pripadu} případů × ${b.meta.opakovani}) · prompty ${b.meta.prompty} · náklady ${b.meta.naklady.odhadUsd} USD${b.meta.prerusen ? ` · ⚠️ PŘERUŠENO (${b.meta.prerusen}) — hodnocené jen hotové případy` : ''}`);
     s.push('');
     if (behy.length > 1) {
         for (const b of behy.slice(1)) {
