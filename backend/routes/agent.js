@@ -303,6 +303,10 @@ router.post('/:agentId', async (req, res) => {
         let procFacts = null;
         try { procFacts = proceduralFacts({ prompt, context }); } catch (pfErr) { procFacts = null; }
         if (procFacts) messages.push({ role: 'system', content: procFacts.text });
+        // Soudní poplatek z peněžitého plnění spočítá program (lib/court_fees.js; eval 4. 11. 2026: „4 %“ místo 5 %).
+        let feeFacts = null;
+        try { feeFacts = require('../lib/court_fees').buildFeeFacts({ prompt, context }); } catch (ffErr) { feeFacts = null; }
+        if (feeFacts) messages.push({ role: 'system', content: feeFacts.text });
 
         // Rizikové doložky ve smlouvě najde program (lib/clause_scan.js) — model je jen vysvětlí.
         // Poznámka pro model nese jen článek, typ a § (žádné osobní údaje z textu).
@@ -392,7 +396,7 @@ router.post('/:agentId', async (req, res) => {
         if (demand) {
             // Výpočty lhůt a procesní fakta jsou pro advokáta, ne pro dopis protistraně — model
             // je pak psal do skutkového stavu (server test 5. 10. 2026). Pro JSON dopis je vynecháme.
-            const internal = new Set([dateFacts && dateFacts.text, procFacts && procFacts.text].filter(Boolean));
+            const internal = new Set([dateFacts && dateFacts.text, procFacts && procFacts.text, feeFacts && feeFacts.text].filter(Boolean));
             letterMsgs = messages.filter(m => !(m.role === 'system' && internal.has(m.content)));
             try {
                 letter = await callLetter(letterMsgs);
@@ -595,7 +599,9 @@ router.post('/:agentId', async (req, res) => {
             // U dopisu protistraně je výpočet lhůt jen pro advokáta — ať ho nikdo nezkopíruje do dopisu.
             const dateApxOut = letter && dateApx ? dateApx.replace('📅 Doplněno programem (výpočet lhůt):', '📅 Jen pro advokáta — do dopisu nevkládat (výpočet lhůt programem):') : dateApx;
             const procApxOut = letter && procApx ? procApx.replace('⚖️ Doplněno programem (procesní lhůty a příslušnost podle zákona):', '⚖️ Jen pro advokáta — do dopisu nevkládat (procesní lhůty a příslušnost):') : procApx;
-            const body = mainText + clauseApx.text + dateApxOut + procApxOut;
+            const feeApx = require('../lib/court_fees').feeAppendix(lf.text, feeFacts);
+            const feeApxOut = letter && feeApx ? feeApx.replace('⚖️ Doplněno programem (soudní poplatek', '⚖️ Jen pro advokáta — do dopisu nevkládat (soudní poplatek') : feeApx;
+            const body = mainText + clauseApx.text + dateApxOut + procApxOut + feeApxOut;
             const dwLine = dw.fixed ? `• Opraveno ${dw.fixed}× „lhůta běží od <konec lhůty>“ → „do“ (datum je konec lhůty, spočítal ho program).` : '';
             const oppLine = oppRedacted.length ? `• Z dopisu protistraně odstraněno: ${oppRedacted.join(', ')} (protistrana je nepotřebuje).` : '';
             const scLines = selfCheck ? [
