@@ -65,6 +65,10 @@ router.post('/:agentId', async (req, res) => {
     const { prompt, model } = req.body;
     let { context } = req.body;
     const startTime = Date.now();
+    let _pilotKind = null;   // typ úlohy pro měření pilotu (lib/pilot_metriky.js) — známý až po taskProfile
+    const _pilot = (vysledek, extra) => {
+        try { require('../lib/pilot_metriky').zaznamenej(Object.assign({ agentId, taskKind: _pilotKind, vysledek, ms: Date.now() - startTime }, extra || {})); } catch (e) { /* best-effort */ }
+    };
 
     const agents = loadAgents();
     const agent = agents[agentId];
@@ -308,6 +312,7 @@ router.post('/:agentId', async (req, res) => {
 
         // Pevná osnova odpovědi a teplota podle typu úkolu (lib/agent_outlines.js).
         const profile = taskProfile({ agentId, prompt, context, hasClauseFindings: clauseFindings.length > 0 });
+        _pilotKind = profile.kind || null;
         if (profile.outline) messages.push({ role: 'system', content: profile.outline });
         // Korektura: jisté chyby (i/y, bě/pě, shoda, čárka před „že“) najde program (lib/cz_proofread.js).
         let proofTarget = null;
@@ -669,6 +674,9 @@ router.post('/:agentId', async (req, res) => {
             }
         }
 
+        { const sh = cloudPolicy.shrnuti();
+          _pilot('ok', { cloud: !!(sh && sh.cloud), citationCheck, opora: outputGuard && outputGuard.opora, selfCheck: outputGuard && outputGuard.selfCheck,
+              judikatyVypusteno: outputGuard && outputGuard.judikatyVypusteno, injection: outputGuard && outputGuard.injection }); }
         res.json({
             agent: agent.name,
             model: selectedModel,
@@ -693,6 +701,7 @@ router.post('/:agentId', async (req, res) => {
         });
 
      } catch (err) {
+        _pilot(err && err.code === 'CLOUD_POLICY' ? 'odepreno' : err && err.code === 'CLOUD_DOWN' ? 'cloud_nedostupny' : 'chyba');
         if (err && err.code === 'CLOUD_POLICY') {
             return res.status(403).json({ error: err.message, code: 'cloud_policy', cloudPolicy: err.decision || null });
         }

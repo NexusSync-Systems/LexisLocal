@@ -237,6 +237,7 @@ app.use('/api/campaigns', require('./routes/campaigns'));
 app.use('/api/inbox', require('./routes/inbox'));
 app.use('/api/spisy', require('./routes/spisy'));
 app.use('/api/ai-usage', require('./routes/aiUsage')); // spotřeba a rozpočet cloudové AI (jen správce)
+app.use('/api/pilot-metriky', require('./routes/pilotMetriky')); // měření pilotu: počty chyb po typech úloh, bez obsahu
 app.use('/api/drafts', require('./routes/drafts'));
 app.use('/api/users', require('./routes/users').admin);   // správa uživatelů (jen správce, viz lib/authz.js)
 app.use('/api/me', require('./routes/users').me);         // kdo jsem + moje zařízení // sdílené koncepty (webový LexisEditor Lite)

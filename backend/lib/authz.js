@@ -33,6 +33,8 @@ const ADMIN_RULES = [
     ['*', '/api/managerial'],
     // Náklady a rozpočet cloudové AI (napříč spisy a uživateli) = vedení kanceláře.
     ['*', '/api/ai-usage'],
+    // Měření pilotu (počty bez obsahu) — přehled a export jen správce; hodnocení odpovědi smí každý se zápisem.
+    ['GET', '/api/pilot-metriky'],
     ['GET', '/api/skartace/protokoly'],
     // Báze agentů a oborové báze: co do nich přijde, ovlivní odpovědi celé kanceláře a s „verejne: true“ smí do cloudu
     // (bezpečnostní revize 2. 11. 2026) = jen vedení kanceláře.

@@ -521,7 +521,7 @@ Object.assign(LexisLocalApp.prototype, {
                         <p>${formatted}</p>
                         ${this.draftBadgeHtml(data.draft)}
                         <span class="subtext" style="display:block; margin-top:5px; font-size:0.7rem; color:var(--text-muted);">
-                            ${this.modelBadgeHtml(data)} | ${new Date(data.timestamp).toLocaleTimeString('cs-CZ')}
+                            ${this.modelBadgeHtml(data)} | ${new Date(data.timestamp).toLocaleTimeString('cs-CZ')}${this.pilotRatingHtml ? this.pilotRatingHtml(data, agentId) : ''}
                         </span>
                     </div>
                 </div>
