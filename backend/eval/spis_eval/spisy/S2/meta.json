@@ -1,0 +1,43 @@
+{
+ "spisZn": "8 C 202/2026",
+ "nazev": "EVAL Vzorná / Pokusný — ojeté auto",
+ "soud": "Okresní soud v Dolní Smyšlené",
+ "dokumenty": {
+  "KS": {
+   "nazev": "Kupní smlouva č. EV-KS-07/2026",
+   "aliasy": [
+    "kupní\\w* smlouv\\w*",
+    "EV-KS-07",
+    "\\bsmlouv\\w*"
+   ]
+  },
+  "PREDAVACI": {
+   "nazev": "Předávací protokol k vozidlu",
+   "aliasy": [
+    "předávací\\w* protokol\\w*",
+    "protokol\\w*"
+   ]
+  },
+  "POSUDEK": {
+   "nazev": "Znalecký posudek č. EV-ZP-112/2026",
+   "aliasy": [
+    "posud\\w*",
+    "znalec\\w*",
+    "znalk\\w*"
+   ]
+  },
+  "ODSTOUPENI": {
+   "nazev": "Odstoupení od kupní smlouvy",
+   "aliasy": [
+    "odstoupení"
+   ]
+  },
+  "VYZVA_SOUDU": {
+   "nazev": "Výzva soudu k vyjádření",
+   "aliasy": [
+    "výzv\\w* soudu",
+    "výzv\\w* k vyjádření"
+   ]
+  }
+ }
+}

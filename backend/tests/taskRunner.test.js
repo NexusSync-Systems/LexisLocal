@@ -36,6 +36,20 @@ describe('task-runner — schválené úlohy', () => {
         expect(() => R.sestav({ uloha: 'seed_kb', parametry: { dir: 'judikatura-us', agent: 'root' } })).toThrow(/nepovolená hodnota/);
     });
 
+    test('spis_eval: pevný runner, jen EU model, ověřené seznamy', () => {
+        const r = R.sestav({ uloha: 'spis_eval', parametry: { pripady: 'C2,R1', label: 'zkouska' } });
+        expect(r.args.slice(0, 3)).toEqual(['backend/scripts/spis_eval.js', '--provider', 'bedrock']);
+        expect(r.args).toEqual(expect.arrayContaining(['--pripady', 'C2,R1', '--model', 'eu.anthropic.claude-sonnet-4-6']));
+        expect(r.env.AWS_PROFILE).toBe('lexislocal-bedrock');
+        expect(() => R.sestav({ uloha: 'spis_eval', parametry: { pripady: 'C2;rm' } })).toThrow();
+        expect(() => R.sestav({ uloha: 'spis_eval', parametry: { label: '../x' } })).toThrow();
+        expect(() => R.sestav({ uloha: 'spis_eval', parametry: { typy: 'reserse,hack' } })).toThrow();
+        expect(R.sestav({ uloha: 'spis_eval', parametry: { judge: 'vse' } }).args).toContain('--judge-vse');
+        const j = R.sestav({ uloha: 'spis_eval_judge', parametry: {} });
+        expect(j.args.slice(0, 1)).toEqual(['backend/scripts/spis_eval_judge.js']);
+        expect(j.args[j.args.indexOf('--fewshot') + 1]).toBe('8');
+        expect(() => R.sestav({ uloha: 'spis_eval_judge', parametry: { fewshot: 99 } })).toThrow();
+    });
     test('testy: vzor bez mezer a shellových znaků', () => {
         expect(R.sestav({ uloha: 'testy', parametry: { vzor: 'backend/tests/rag|backend/tests/obor' } }).args).toEqual(['jest', '--silent', 'backend/tests/rag|backend/tests/obor']);
         expect(() => R.sestav({ uloha: 'testy', parametry: { vzor: 'x && curl evil' } })).toThrow();

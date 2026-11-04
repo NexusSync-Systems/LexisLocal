@@ -249,6 +249,35 @@ const ULOHY = {
             env,
         };
     },
+    // Spis eval (backend/eval/spis_eval): 48 syntetických případů, typ úlohy × model, citace jako metrika.
+    // Claude v EU pod profilem lexislocal-bedrock, nad dočasnou databází; ~1–3 USD za celou sadu — jen po souhlasu v chatu.
+    spis_eval: p => {
+        const typy = ['reserse', 'shrnuti', 'rozpory', 'citace', 'kontrola_smlouvy', 'lhuty', 'mimo_spis', 'dopis'];
+        const seznam = (v, re) => { const x = String(v || '').split(',').filter(Boolean); if (x.some(t => !re(t))) throw new Error('nepovolený seznam „' + v + '"'); return x.join(','); };
+        const env = bedrockEnv(p);
+        const label = String(p.label || 'sonnet46');
+        if (!/^[A-Za-z0-9._-]{1,40}$/.test(label)) throw new Error(`nepovolený label „${label}"`);
+        const t = p.typy ? seznam(p.typy, x => typy.includes(x)) : '';
+        const c = p.pripady ? seznam(p.pripady, x => /^[A-Z]\d{1,2}$/.test(x)) : '';
+        const judge = oneOf(p.judge, ['ne', 'nejiste', 'vse'], 'ne');
+        return {
+            cmd: NODE,
+            args: ['backend/scripts/spis_eval.js', '--provider', 'bedrock', '--model', env.BEDROCK_MODEL_ID, '--aws-profile', 'lexislocal-bedrock',
+                '--rezim', oneOf(p.rezim, ['aplikace', 'model'], 'aplikace'), '--label', label, '--opakovani', String(int(p.opakovani, 1, 3, 1)),
+                ...(t ? ['--typy', t] : []), ...(c ? ['--pripady', c] : []), ...(judge === 'nejiste' ? ['--judge'] : judge === 'vse' ? ['--judge-vse'] : []), '--out', 'scratch/spis-eval'],
+            env,
+        };
+    },
+    // Kalibrace LLM-judge (eval/spis_eval/judge): ~35 krátkých dotazů ≈ 0,05–0,15 USD; s ručním označením z pracovního listu.
+    spis_eval_judge: p => {
+        const env = bedrockEnv(p);
+        return {
+            cmd: NODE,
+            args: ['backend/scripts/spis_eval_judge.js', '--provider', 'bedrock', '--model', env.BEDROCK_MODEL_ID, '--aws-profile', 'lexislocal-bedrock',
+                '--fewshot', String(int(p.fewshot, 0, 16, 8)), '--sada', oneOf(p.sada, ['kontrola', 'vse'], 'kontrola'), '--out', 'scratch/spis-eval'],
+            env,
+        };
+    },
     git_stav: () => ({ cmd: 'git', args: ['status', '--short', '--branch'] }),
     git_log: p => ({ cmd: 'git', args: ['log', '--oneline', '-n', String(int(p.n, 1, 50, 10))] }),
 };

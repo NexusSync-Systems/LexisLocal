@@ -1,0 +1,5 @@
+{ "spisZn": "3 C 606/2026", "nazev": "EVAL Návrhová / Pokusník — zápůjčka", "soud": "Okresní soud v Malé Vzorové",
+  "dokumenty": {
+    "ZAPUJCKA": { "nazev": "Smlouva o zápůjčce č. EV-ZA-02/2026", "aliasy": ["smlouv\\w* o zápůjčce", "\\bsmlouv\\w*", "EV-ZA-02"] },
+    "UZNANI": { "nazev": "Uznání dluhu ze dne 10. 8. 2026", "aliasy": ["uznání\\w* dluhu", "uznání"] },
+    "UPOMINKA": { "nazev": "Upomínka ze dne 20. 10. 2026", "aliasy": ["upomín\\w*"] } } }

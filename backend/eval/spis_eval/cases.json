@@ -1,0 +1,1055 @@
+{
+ "_komentar": "Syntetická eval sada LexisLocal — spisy S1–S4 jsou smyšlené (jména, firmy, IČO s chybným kontrolním součtem, r. č. s neplatným měsícem, účet s neexistujícím kódem banky). Nikdy sem nedávat reálné spisy.",
+ "verze": 1,
+ "pripady": [
+  {
+   "id": "R1",
+   "typ": "reserse",
+   "spis": "S1",
+   "agent": "resersnik",
+   "prompt": "Jaká je aktuálně sjednaná cena díla a jaký je termín dokončení? U každého tvrzení uveď, z kterého dokumentu a článku/bodu vychází.",
+   "fakta": [
+    {
+     "re": "1 600 000",
+     "anchor": "DODATEK:2:1"
+    },
+    {
+     "re": "31\\. ?8\\. ?2026",
+     "anchor": "DODATEK:1:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "DODATEK"
+   ],
+   "pasti": [
+    "1 480 000",
+    "30\\. ?6\\. ?2026"
+   ],
+   "reference": "Cena díla činí po dodatku 1 600 000 Kč včetně DPH (Dodatek č. 1, čl. 2 odst. 1); původně 1 480 000 Kč (smlouva o dílo, čl. 4 odst. 1). Termín dokončení je 31. 8. 2026 (Dodatek č. 1, čl. 1 odst. 1)."
+  },
+  {
+   "id": "R2",
+   "typ": "reserse",
+   "spis": "S1",
+   "agent": "resersnik",
+   "prompt": "Jaké vady byly zjištěny při předání a do kdy je má zhotovitel odstranit? U každého tvrzení uveď, z kterého dokumentu a článku/bodu vychází.",
+   "fakta": [
+    {
+     "re": "dlažb",
+     "anchor": "PROTOKOL:b:3"
+    },
+    {
+     "re": "okn",
+     "anchor": "PROTOKOL:b:3"
+    },
+    {
+     "re": "30 dn",
+     "anchor": "PROTOKOL:b:4"
+    }
+   ],
+   "klicove_dokumenty": [
+    "PROTOKOL"
+   ],
+   "reference": "Při předání byly zjištěny vady: prasklá dlažba v koupelně a netěsnící okno v kuchyni (předávací protokol, bod 3). Zhotovitel je má odstranit do 30 dnů od předání (předávací protokol, bod 4; smlouva o dílo, čl. 5 odst. 2)."
+  },
+  {
+   "id": "R3",
+   "typ": "reserse",
+   "spis": "S2",
+   "agent": "resersnik",
+   "prompt": "Co zjistil znalec o nehodovosti vozidla a o skutečném nájezdu? U každého tvrzení uveď, z kterého dokumentu a článku/bodu vychází.",
+   "fakta": [
+    {
+     "re": "nehod",
+     "anchor": "POSUDEK:b:2"
+    },
+    {
+     "re": "150 000",
+     "anchor": "POSUDEK:b:3"
+    }
+   ],
+   "klicove_dokumenty": [
+    "POSUDEK"
+   ],
+   "reference": "Znalec zjistil opravu levého předního blatníku a podélníku po dopravní nehodě, datovanou do roku 2023 (znalecký posudek, bod 2). Skutečný nájezd odhaduje na nejméně 150 000 km (znalecký posudek, bod 3)."
+  },
+  {
+   "id": "R4",
+   "typ": "reserse",
+   "spis": "S3",
+   "agent": "resersnik",
+   "prompt": "Jaké je sjednané nájemné a jak vysoká je jistota? U každého tvrzení uveď, z kterého dokumentu a článku/bodu vychází.",
+   "fakta": [
+    {
+     "re": "18 500",
+     "anchor": "NAJEM:3:1"
+    },
+    {
+     "re": "55 500",
+     "anchor": "NAJEM:4:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "NAJEM"
+   ],
+   "pasti": [
+    "19 500"
+   ],
+   "reference": "Nájemné činí 18 500 Kč měsíčně (nájemní smlouva, čl. 3 odst. 1), zálohy na služby 3 200 Kč (čl. 3 odst. 2). Jistota činí 55 500 Kč (nájemní smlouva, čl. 4 odst. 1)."
+  },
+  {
+   "id": "R5",
+   "typ": "reserse",
+   "spis": "S4",
+   "agent": "resersnik",
+   "prompt": "Kolik žalovaná zaplatila, kdy a co z toho plyne pro žalovanou částku? U každého tvrzení uveď, z kterého dokumentu a článku/bodu vychází.",
+   "fakta": [
+    {
+     "re": "20 000",
+     "anchor": "VYPIS:b:1"
+    },
+    {
+     "re": "1\\. ?2\\. ?2026",
+     "anchor": "VYPIS:b:1"
+    },
+    {
+     "re": "64 300",
+     "anchor": "ZALOBA:III:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "VYPIS",
+    "ZALOBA"
+   ],
+   "reference": "Žalovaná zaplatila 20 000 Kč dne 1. 2. 2026 (výpis z účtu, bod 1; vyjádření žalované, bod 2). Z původní ceny 84 300 Kč (předžalobní výzva, bod 1) tak zbývá 64 300 Kč, což odpovídá petitu žaloby (žaloba, čl. III odst. 1)."
+  },
+  {
+   "id": "R6",
+   "typ": "reserse",
+   "spis": "S2",
+   "agent": "resersnik",
+   "prompt": "Kdy bylo odstoupení od smlouvy doručeno prodávajícímu a co v něm kupující požaduje? U každého tvrzení uveď, z kterého dokumentu a článku/bodu vychází.",
+   "fakta": [
+    {
+     "re": "22\\. ?5\\. ?2026",
+     "anchor": "ODSTOUPENI:b:3"
+    },
+    {
+     "re": "285 000",
+     "anchor": "ODSTOUPENI:b:2"
+    }
+   ],
+   "klicove_dokumenty": [
+    "ODSTOUPENI"
+   ],
+   "pasti": [
+    "20\\. ?5\\. ?2026 (?:bylo )?doručen"
+   ],
+   "reference": "Odstoupení bylo prodávajícímu doručeno dne 22. 5. 2026 (odstoupení od kupní smlouvy, bod 3). Kupující požaduje vrácení kupní ceny 285 000 Kč do 15 dnů (odstoupení, bod 2)."
+  },
+  {
+   "id": "H1",
+   "typ": "shrnuti",
+   "spis": "S1",
+   "agent": "resersnik",
+   "docs": [
+    "SOD"
+   ],
+   "prompt": "Shrň stručně (nejvýš 8 bodů) přiložený dokument pro advokáta. U každého bodu uveď článek nebo bod dokumentu.",
+   "body": [
+    "1 480 000",
+    "30 ?%",
+    "30\\. ?6\\. ?2026",
+    "0,05 ?%",
+    "0,5 ?%",
+    "24 měsíc",
+    "rozhod"
+   ],
+   "klicove_dokumenty": [
+    "SOD"
+   ],
+   "pasti": [],
+   "reference": "Smlouva o dílo: rekonstrukce koupelny a kuchyně (čl. 2 odst. 1); dokončení do 30. 6. 2026 (čl. 3 odst. 1); cena 1 480 000 Kč vč. DPH (čl. 4 odst. 1), záloha 30 % do 10 dnů (čl. 4 odst. 2); vady odstranit do 30 dnů (čl. 5 odst. 2); smluvní pokuta zhotovitele 0,05 % denně (čl. 6 odst. 1), objednatele 0,5 % denně (čl. 6 odst. 2); záruka 24 měsíců (čl. 7 odst. 1); spory rozhodne rozhodce jmenovaný zhotovitelem (čl. 8 odst. 3)."
+  },
+  {
+   "id": "H2",
+   "typ": "shrnuti",
+   "spis": "S2",
+   "agent": "resersnik",
+   "docs": [
+    "KS"
+   ],
+   "prompt": "Shrň stručně (nejvýš 8 bodů) přiložený dokument pro advokáta. U každého bodu uveď článek nebo bod dokumentu.",
+   "body": [
+    "285 000",
+    "98 000",
+    "nehod",
+    "10\\. ?3\\. ?2026"
+   ],
+   "klicove_dokumenty": [
+    "KS"
+   ],
+   "pasti": [
+    "148 000"
+   ],
+   "reference": "Kupní smlouva na vůz Fiktiva Kombi, r. v. 2018 (čl. 2 odst. 1); stav tachometru 98 000 km (čl. 2 odst. 2); prodávající prohlašuje, že vůz nebyl účastníkem nehody a nemá skryté vady (čl. 3 odst. 2); kupní cena 285 000 Kč splatná při podpisu (čl. 4 odst. 1); předání 10. 3. 2026 (čl. 5 odst. 1)."
+  },
+  {
+   "id": "H3",
+   "typ": "shrnuti",
+   "spis": "S3",
+   "agent": "resersnik",
+   "docs": [
+    "NAJEM"
+   ],
+   "prompt": "Shrň stručně (nejvýš 8 bodů) přiložený dokument pro advokáta. U každého bodu uveď článek nebo bod dokumentu.",
+   "body": [
+    "18 500",
+    "3 200",
+    "55 500",
+    "neurčit",
+    "zvířat",
+    "3 měsíc"
+   ],
+   "klicove_dokumenty": [
+    "NAJEM"
+   ],
+   "pasti": [
+    "19 500"
+   ],
+   "reference": "Nájem bytu č. 7, 2+1 (čl. 2 odst. 1); nájemné 18 500 Kč měsíčně splatné do 5. dne měsíce (čl. 3 odst. 1), zálohy na služby 3 200 Kč (čl. 3 odst. 2); jistota 55 500 Kč (čl. 4 odst. 1); nájem na dobu neurčitou od 1. 2. 2026 (čl. 5 odst. 1); zákaz chovu zvířat bez souhlasu (čl. 6 odst. 1); výpovědní doba 3 měsíce od prvního dne měsíce po doručení (čl. 7 odst. 1)."
+  },
+  {
+   "id": "H4",
+   "typ": "shrnuti",
+   "spis": "S4",
+   "agent": "resersnik",
+   "docs": [
+    "ZALOBA"
+   ],
+   "prompt": "Shrň stručně (nejvýš 8 bodů) přiložený dokument pro advokáta. U každého bodu uveď článek nebo bod dokumentu.",
+   "body": [
+    "64 300",
+    "84 300",
+    "30\\. ?11\\. ?2025",
+    "1\\. ?12\\. ?2025",
+    "nic neuhradil"
+   ],
+   "klicove_dokumenty": [
+    "ZALOBA"
+   ],
+   "pasti": [],
+   "reference": "Žaloba o zaplacení 64 300 Kč s úrokem z prodlení od 1. 12. 2025 (čl. III odst. 1); dodávka nábytku podle objednávky EV-OBJ-55 za 84 300 Kč (čl. II odst. 1); faktura splatná 30. 11. 2025 (čl. II odst. 2); žalobce tvrdí, že žalovaná nic neuhradila (čl. II odst. 3)."
+  },
+  {
+   "id": "H5",
+   "typ": "shrnuti",
+   "spis": "S1",
+   "agent": "resersnik",
+   "docs": [
+    "PROTOKOL"
+   ],
+   "prompt": "Shrň stručně (nejvýš 8 bodů) přiložený dokument pro advokáta. U každého bodu uveď článek nebo bod dokumentu.",
+   "body": [
+    "12\\. ?9\\. ?2026",
+    "dlažb",
+    "okn",
+    "30 dn",
+    "výhrad"
+   ],
+   "klicove_dokumenty": [
+    "PROTOKOL"
+   ],
+   "pasti": [],
+   "reference": "Předávací protokol: dílo předáno 12. 9. 2026 (bod 1); cena podle smlouvy 1 480 000 Kč (bod 2); vady: prasklá dlažba v koupelně, netěsnící okno (bod 3); odstranění do 30 dnů (bod 4); převzato s výhradou vad (bod 5)."
+  },
+  {
+   "id": "H6",
+   "typ": "shrnuti",
+   "spis": "S2",
+   "agent": "resersnik",
+   "docs": [
+    "POSUDEK"
+   ],
+   "prompt": "Shrň stručně (nejvýš 8 bodů) přiložený dokument pro advokáta. U každého bodu uveď článek nebo bod dokumentu.",
+   "body": [
+    "5\\. ?5\\. ?2026",
+    "nehod",
+    "150 000",
+    "190 000"
+   ],
+   "klicove_dokumenty": [
+    "POSUDEK"
+   ],
+   "pasti": [],
+   "reference": "Znalecký posudek ze dne 5. 5. 2026 (bod 1): oprava blatníku a podélníku po nehodě z roku 2023 (bod 2); skutečný nájezd nejméně 150 000 km (bod 3); obvyklá cena 190 000 Kč (bod 4)."
+  },
+  {
+   "id": "P1",
+   "typ": "rozpory",
+   "spis": "S1",
+   "agent": "kontrolor",
+   "prompt": "Najdi všechny rozpory mezi dokumenty ve spisu (data, částky, tvrzení). U každého rozporu uveď obě verze a dokumenty a články/body, kde stojí.",
+   "rozpory": [
+    {
+     "a": "12\\. ?9\\. ?2026",
+     "b": "10\\. ?9\\. ?2026"
+    },
+    {
+     "a": "1 480 000",
+     "b": "1 600 000"
+    }
+   ],
+   "klicove_dokumenty": [
+    "PROTOKOL",
+    "FAKTURA",
+    "DODATEK"
+   ],
+   "reference": "Rozpor 1: datum předání — předávací protokol uvádí 12. 9. 2026 (bod 1), konečná faktura 10. 9. 2026 (bod 2). Rozpor 2: cena — předávací protokol uvádí 1 480 000 Kč (bod 2), ale dodatek č. 1 ji zvýšil na 1 600 000 Kč (čl. 2 odst. 1) a faktura účtuje 1 600 000 Kč (bod 3)."
+  },
+  {
+   "id": "P2",
+   "typ": "rozpory",
+   "spis": "S2",
+   "agent": "kontrolor",
+   "prompt": "Najdi všechny rozpory mezi dokumenty ve spisu (data, částky, tvrzení). U každého rozporu uveď obě verze a dokumenty a články/body, kde stojí.",
+   "rozpory": [
+    {
+     "a": "98 000",
+     "b": "148 000"
+    },
+    {
+     "a": "nebylo účastníkem|nehavarovan|nebyl[o]? .{0,20}nehod",
+     "b": "po (dopravní )?nehodě"
+    }
+   ],
+   "klicove_dokumenty": [
+    "KS",
+    "PREDAVACI",
+    "POSUDEK"
+   ],
+   "reference": "Rozpor 1: stav tachometru — kupní smlouva uvádí 98 000 km (čl. 2 odst. 2), předávací protokol 148 000 km (bod 2); znalec odhaduje nejméně 150 000 km (posudek, bod 3). Rozpor 2: nehodovost — prodávající prohlásil, že vozidlo nebylo účastníkem dopravní nehody (kupní smlouva, čl. 3 odst. 2), znalec zjistil opravu po dopravní nehodě (posudek, bod 2)."
+  },
+  {
+   "id": "P3",
+   "typ": "rozpory",
+   "spis": "S3",
+   "agent": "kontrolor",
+   "prompt": "Najdi všechny rozpory mezi dokumenty ve spisu (data, částky, tvrzení). U každého rozporu uveď obě verze a dokumenty a články/body, kde stojí.",
+   "rozpory": [
+    {
+     "a": "18 500",
+     "b": "19 500"
+    }
+   ],
+   "klicove_dokumenty": [
+    "NAJEM",
+    "VYPOVED"
+   ],
+   "reference": "Rozpor: výše nájemného — nájemní smlouva sjednává 18 500 Kč měsíčně (čl. 3 odst. 1), výpověď počítá dluh z 19 500 Kč měsíčně, celkem 58 500 Kč (výpověď, bod 2). Podle smlouvy by tři měsíce činily 55 500 Kč. Dále klient tvrdí, že nájemné hradil v hotovosti (podklady klienta, bod 1), což je v rozporu s tvrzením výpovědi o neuhrazení (výpověď, bod 1)."
+  },
+  {
+   "id": "P4",
+   "typ": "rozpory",
+   "spis": "S4",
+   "agent": "kontrolor",
+   "prompt": "Najdi všechny rozpory mezi dokumenty ve spisu (data, částky, tvrzení). U každého rozporu uveď obě verze a dokumenty a články/body, kde stojí.",
+   "rozpory": [
+    {
+     "a": "nic neuhradil",
+     "b": "20 000"
+    }
+   ],
+   "klicove_dokumenty": [
+    "ZALOBA",
+    "VYPIS"
+   ],
+   "reference": "Rozpor: žaloba tvrdí, že žalovaná nic neuhradila (čl. II odst. 3), ale výpis z účtu dokládá platbu 20 000 Kč dne 1. 2. 2026 (výpis, bod 1) a žalovaná ji potvrzuje (vyjádření, bod 2). Žalovaná částka 64 300 Kč (žaloba, čl. III odst. 1) přitom platbu již zohledňuje (84 300 − 20 000)."
+  },
+  {
+   "id": "P5",
+   "typ": "rozpory",
+   "spis": "S1",
+   "agent": "kontrolor",
+   "docs": [
+    "SOD",
+    "DODATEK"
+   ],
+   "prompt": "Najdi všechny rozpory mezi dokumenty ve spisu (data, částky, tvrzení). U každého rozporu uveď obě verze a dokumenty a články/body, kde stojí.",
+   "rozpory": [
+    {
+     "a": "30\\. ?6\\. ?2026",
+     "b": "31\\. ?8\\. ?2026"
+    },
+    {
+     "a": "1 480 000",
+     "b": "1 600 000"
+    }
+   ],
+   "klicove_dokumenty": [
+    "SOD",
+    "DODATEK"
+   ],
+   "reference": "Dodatek č. 1 mění termín dokončení z 30. 6. 2026 (smlouva o dílo, čl. 3 odst. 1) na 31. 8. 2026 (dodatek, čl. 1 odst. 1) a cenu z 1 480 000 Kč (smlouva, čl. 4 odst. 1) na 1 600 000 Kč (dodatek, čl. 2 odst. 1). Jde o sjednanou změnu, nikoli o skutečný rozpor; platí znění dodatku."
+  },
+  {
+   "id": "P6",
+   "typ": "rozpory",
+   "spis": "S2",
+   "agent": "kontrolor",
+   "docs": [
+    "KS",
+    "PREDAVACI"
+   ],
+   "prompt": "Najdi všechny rozpory mezi dokumenty ve spisu (data, částky, tvrzení). U každého rozporu uveď obě verze a dokumenty a články/body, kde stojí.",
+   "rozpory": [
+    {
+     "a": "98 000",
+     "b": "148 000"
+    }
+   ],
+   "klicove_dokumenty": [
+    "KS",
+    "PREDAVACI"
+   ],
+   "reference": "Rozpor: kupní smlouva uvádí stav tachometru 98 000 km (čl. 2 odst. 2), předávací protokol z následujícího dne 148 000 km (bod 2). Ostatní údaje (cena 285 000 Kč, datum předání 10. 3. 2026) se shodují."
+  },
+  {
+   "id": "C1",
+   "typ": "citace",
+   "spis": "S1",
+   "agent": "resersnik",
+   "prompt": "Jakou smluvní pokutu může objednatel požadovat za prodlení zhotovitele? Odpověz jednou až dvěma větami s přesnou citací článku a odstavce smlouvy.",
+   "fakta": [
+    {
+     "re": "0,05 ?%",
+     "anchor": "SOD:6:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "SOD"
+   ],
+   "pasti": [
+    "0,5 ?% (?:z ceny|za každý den prodlení zhotovitel)"
+   ],
+   "reference": "Objednatel může požadovat smluvní pokutu 0,05 % z ceny díla za každý den prodlení zhotovitele (smlouva o dílo, čl. 6 odst. 1)."
+  },
+  {
+   "id": "C2",
+   "typ": "citace",
+   "spis": "S1",
+   "agent": "resersnik",
+   "prompt": "Jak dlouhou záruku zhotovitel poskytl? Odpověz jednou větou s přesnou citací článku a odstavce.",
+   "fakta": [
+    {
+     "re": "24 měsíc",
+     "anchor": "SOD:7:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "SOD"
+   ],
+   "reference": "Zhotovitel poskytl záruku za jakost v délce 24 měsíců od předání (smlouva o dílo, čl. 7 odst. 1)."
+  },
+  {
+   "id": "C3",
+   "typ": "citace",
+   "spis": "S3",
+   "agent": "resersnik",
+   "prompt": "Smí nájemce chovat v bytě psa? Odpověz s přesnou citací článku smlouvy a bodu podkladů klienta.",
+   "fakta": [
+    {
+     "re": "souhlas",
+     "anchor": "NAJEM:6:1"
+    },
+    {
+     "re": "ústně|ústní",
+     "anchor": "PODKLADY_KLIENTA:b:3"
+    }
+   ],
+   "klicove_dokumenty": [
+    "NAJEM",
+    "PODKLADY_KLIENTA"
+   ],
+   "reference": "Nájemce smí chovat zvíře jen se souhlasem pronajímatele (nájemní smlouva, čl. 6 odst. 1). Podle klienta má psa se souhlasem správce uděleným ústně (podklady klienta, bod 3), což bude třeba prokázat."
+  },
+  {
+   "id": "C4",
+   "typ": "citace",
+   "spis": "S2",
+   "agent": "resersnik",
+   "prompt": "Jaká je podle znalce obvyklá cena vozidla? Odpověz jednou větou s citací bodu posudku.",
+   "fakta": [
+    {
+     "re": "190 000",
+     "anchor": "POSUDEK:b:4"
+    }
+   ],
+   "klicove_dokumenty": [
+    "POSUDEK"
+   ],
+   "pasti": [
+    "285 000 Kč (?:je|činí) obvykl"
+   ],
+   "reference": "Obvyklá cena vozidla v daném stavu ke dni prodeje činí podle znalce 190 000 Kč (znalecký posudek, bod 4)."
+  },
+  {
+   "id": "C5",
+   "typ": "citace",
+   "spis": "S4",
+   "agent": "resersnik",
+   "prompt": "Od kdy žalobce požaduje úrok z prodlení? Odpověz jednou větou s citací článku žaloby.",
+   "fakta": [
+    {
+     "re": "1\\. ?12\\. ?2025",
+     "anchor": "ZALOBA:III:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "ZALOBA"
+   ],
+   "reference": "Žalobce požaduje úrok z prodlení od 1. 12. 2025 do zaplacení (žaloba, čl. III odst. 1)."
+  },
+  {
+   "id": "C6",
+   "typ": "citace",
+   "spis": "S1",
+   "agent": "resersnik",
+   "prompt": "Kdo podle smlouvy rozhoduje spory? Odpověz jednou větou s přesnou citací článku a odstavce.",
+   "fakta": [
+    {
+     "re": "rozhod",
+     "anchor": "SOD:8:3"
+    }
+   ],
+   "klicove_dokumenty": [
+    "SOD"
+   ],
+   "reference": "Spory ze smlouvy rozhoduje s konečnou platností rozhodce jmenovaný zhotovitelem (smlouva o dílo, čl. 8 odst. 3)."
+  },
+  {
+   "id": "K1",
+   "typ": "kontrola_smlouvy",
+   "spis": "S1",
+   "agent": "kontrolor",
+   "docs": [
+    "SOD"
+   ],
+   "prompt": "Zkontroluj přiloženou smlouvu z pohledu našeho klienta (objednatel, spotřebitel). Vypiš rizika a nevyvážená ustanovení s odkazem na článek smlouvy a ustanovení zákona.",
+   "body": [
+    "rozhod",
+    "0,5 ?%|nevyváž|nepoměr"
+   ],
+   "fakta": [
+    {
+     "re": "rozhod",
+     "anchor": "SOD:8:3"
+    },
+    {
+     "re": "0,5 ?%",
+     "anchor": "SOD:6:2"
+    }
+   ],
+   "klicove_dokumenty": [
+    "SOD"
+   ],
+   "ocekavane_paragrafy": [
+    {
+     "zakon": "89/2012"
+    }
+   ],
+   "reference": "Rizika: 1) Rozhodčí doložka s rozhodcem jmenovaným zhotovitelem (čl. 8 odst. 3) — u spotřebitele nepřípustná a nevyvážená. Opora: § 3 odst. 5 zákona č. 216/1994 Sb. a § 1813 OZ. 2) Nepoměr smluvních pokut: objednatel 0,5 % denně (čl. 6 odst. 2) vs. zhotovitel 0,05 % (čl. 6 odst. 1). Opora: § 1813 a § 2051 OZ. Doporučení: rozhodčí doložku vypustit a pokuty vyrovnat — Opora: § 1813 OZ."
+  },
+  {
+   "id": "K2",
+   "typ": "kontrola_smlouvy",
+   "spis": "S2",
+   "agent": "kontrolor",
+   "docs": [
+    "KS"
+   ],
+   "prompt": "Zkontroluj přiloženou smlouvu z pohledu našeho klienta (kupující). Vypiš rizika a nevyvážená ustanovení s odkazem na článek smlouvy a ustanovení zákona.",
+   "body": [
+    "splatn|při podpisu|hotovost",
+    "prohláš"
+   ],
+   "fakta": [
+    {
+     "re": "285 000",
+     "anchor": "KS:4:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "KS"
+   ],
+   "reference": "Rizika pro kupující: 1) Celá kupní cena 285 000 Kč splatná při podpisu (čl. 4 odst. 1) před ověřením vozu. Opora: § 2099 OZ (vady). 2) Prohlášení prodávajícího o bezvadnosti (čl. 3 odst. 2) je jediná ochrana — doporučuji doplnit smluvní pokutu a právo odstoupit při nepravdivosti prohlášení. Opora: § 2106 OZ."
+  },
+  {
+   "id": "K3",
+   "typ": "kontrola_smlouvy",
+   "spis": "S3",
+   "agent": "kontrolor",
+   "docs": [
+    "NAJEM"
+   ],
+   "prompt": "Zkontroluj přiloženou smlouvu z pohledu našeho klienta (nájemce). Vypiš rizika a nevyvážená ustanovení s odkazem na článek smlouvy a ustanovení zákona.",
+   "body": [
+    "jistot|kauc",
+    "zvířat"
+   ],
+   "fakta": [
+    {
+     "re": "55 500",
+     "anchor": "NAJEM:4:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "NAJEM"
+   ],
+   "reference": "Rizika pro nájemce: 1) Jistota 55 500 Kč (čl. 4 odst. 1) odpovídá trojnásobku nájemného — je na zákonné hranici. Opora: § 2254 OZ. 2) Úplný zákaz zvířat bez souhlasu (čl. 6 odst. 1) — chov zvířete nelze zakázat, nezpůsobuje-li obtíže. Opora: § 2258 OZ. Výpovědní doba 3 měsíce (čl. 7 odst. 1) odpovídá zákonu (§ 2286 OZ)."
+  },
+  {
+   "id": "K4",
+   "typ": "kontrola_smlouvy",
+   "spis": "S1",
+   "agent": "kontrolor",
+   "docs": [
+    "SOD"
+   ],
+   "prompt": "Zkontroluj přiloženou smlouvu z pohledu našeho klienta (zhotovitel). Vypiš rizika a nevyvážená ustanovení s odkazem na článek smlouvy a ustanovení zákona.",
+   "body": [
+    "záruk|24",
+    "pokut"
+   ],
+   "fakta": [
+    {
+     "re": "24 měsíc",
+     "anchor": "SOD:7:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "SOD"
+   ],
+   "reference": "Rizika pro zhotovitele: 1) Záruka 24 měsíců (čl. 7 odst. 1) bez vymezení výluk. Opora: § 2113 OZ. 2) Smluvní pokuta za prodlení 0,05 % denně (čl. 6 odst. 1) bez stropu. Opora: § 2048 OZ. 3) Rozhodčí doložka (čl. 8 odst. 3) je vůči spotřebiteli neplatná, spor tedy půjde k soudu. Opora: § 3 odst. 5 zákona č. 216/1994 Sb."
+  },
+  {
+   "id": "K5",
+   "typ": "kontrola_smlouvy",
+   "spis": "S3",
+   "agent": "kontrolor",
+   "docs": [
+    "NAJEM"
+   ],
+   "prompt": "Zkontroluj přiloženou smlouvu z pohledu našeho klienta (pronajímatel). Vypiš rizika a nevyvážená ustanovení s odkazem na článek smlouvy a ustanovení zákona.",
+   "body": [
+    "jistot|kauc",
+    "služb|záloh"
+   ],
+   "fakta": [
+    {
+     "re": "3 200",
+     "anchor": "NAJEM:3:2"
+    }
+   ],
+   "klicove_dokumenty": [
+    "NAJEM"
+   ],
+   "reference": "Rizika pro pronajímatele: 1) Zálohy na služby 3 200 Kč (čl. 3 odst. 2) bez ujednání o vyúčtování. Opora: § 2252 OZ. 2) Jistota 55 500 Kč (čl. 4 odst. 1) — při skončení nájmu nutno vrátit s úroky. Opora: § 2254 OZ."
+  },
+  {
+   "id": "K6",
+   "typ": "kontrola_smlouvy",
+   "spis": "S2",
+   "agent": "kontrolor",
+   "docs": [
+    "KS"
+   ],
+   "prompt": "Zkontroluj přiloženou smlouvu z pohledu našeho klienta (prodávající). Vypiš rizika a nevyvážená ustanovení s odkazem na článek smlouvy a ustanovení zákona.",
+   "body": [
+    "prohláš|nehod",
+    "vad"
+   ],
+   "fakta": [
+    {
+     "re": "nehod",
+     "anchor": "KS:3:2"
+    }
+   ],
+   "klicove_dokumenty": [
+    "KS"
+   ],
+   "reference": "Rizika pro prodávajícího: 1) Výslovné prohlášení o nehodovosti a absenci skrytých vad (čl. 3 odst. 2) zakládá odpovědnost za vady, i když o nich nevěděl. Opora: § 2095 a § 2099 OZ. 2) Stav tachometru 98 000 km (čl. 2 odst. 2) je sjednanou vlastností vozu. Opora: § 2095 OZ."
+  },
+  {
+   "id": "L1",
+   "typ": "lhuty",
+   "spis": "S2",
+   "agent": "resersnik",
+   "docs": [
+    "VYZVA_SOUDU"
+   ],
+   "prompt": "Do kdy se musí žalovaný vyjádřit k žalobě? Uveď konkrétní datum a z čeho vychází.",
+   "lhuta": [
+    "2\\. ?11\\. ?2026"
+   ],
+   "pasti": [
+    "(?<![0-9])1\\. ?11\\. ?2026(?! je neděle)"
+   ],
+   "fakta": [
+    {
+     "re": "2\\. ?10\\. ?2026",
+     "anchor": "VYZVA_SOUDU:b:3"
+    }
+   ],
+   "klicove_dokumenty": [
+    "VYZVA_SOUDU"
+   ],
+   "reference": "Výzva byla doručena 2. 10. 2026 (výzva soudu, bod 3) a lhůta je 30 dnů (bod 2). Konec připadá na neděli 1. 11. 2026, proto se posouvá na pondělí 2. 11. 2026 (§ 57 odst. 2 o. s. ř.)."
+  },
+  {
+   "id": "L2",
+   "typ": "lhuty",
+   "spis": "S3",
+   "agent": "resersnik",
+   "docs": [
+    "NAJEM",
+    "VYPOVED"
+   ],
+   "prompt": "Kdy skončí nájem, pokud je výpověď platná? Uveď konkrétní datum a z čeho vychází.",
+   "lhuta": [
+    "30\\. ?6\\. ?2026"
+   ],
+   "pasti": [
+    "20\\. ?6\\. ?2026",
+    "31\\. ?5\\. ?2026"
+   ],
+   "fakta": [
+    {
+     "re": "20\\. ?3\\. ?2026",
+     "anchor": "VYPOVED:b:4"
+    }
+   ],
+   "klicove_dokumenty": [
+    "VYPOVED",
+    "NAJEM"
+   ],
+   "reference": "Výpověď byla doručena 20. 3. 2026 (výpověď, bod 4). Tříměsíční výpovědní doba začíná 1. 4. 2026 (nájemní smlouva, čl. 7 odst. 1; § 2286 OZ) a končí 30. 6. 2026; nájem tedy skončí 30. 6. 2026."
+  },
+  {
+   "id": "L3",
+   "typ": "lhuty",
+   "spis": "S1",
+   "agent": "resersnik",
+   "docs": [
+    "PROTOKOL"
+   ],
+   "prompt": "Do kdy musí zhotovitel odstranit vady z předávacího protokolu? Uveď konkrétní datum.",
+   "lhuta": [
+    "12\\. ?10\\. ?2026"
+   ],
+   "pasti": [
+    "10\\. ?10\\. ?2026",
+    "11\\. ?10\\. ?2026"
+   ],
+   "fakta": [
+    {
+     "re": "12\\. ?9\\. ?2026",
+     "anchor": "PROTOKOL:b:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "PROTOKOL"
+   ],
+   "reference": "Dílo bylo předáno 12. 9. 2026 (předávací protokol, bod 1) a vady se mají odstranit do 30 dnů od předání (bod 4), tedy do 12. 10. 2026."
+  },
+  {
+   "id": "L4",
+   "typ": "lhuty",
+   "spis": "S1",
+   "agent": "resersnik",
+   "docs": [
+    "SOD",
+    "PROTOKOL"
+   ],
+   "prompt": "Do kdy trvá záruka za jakost díla? Uveď konkrétní datum.",
+   "lhuta": [
+    "12\\. ?9\\. ?2028"
+   ],
+   "pasti": [
+    "15\\. ?1\\. ?2028",
+    "30\\. ?6\\. ?2028"
+   ],
+   "fakta": [
+    {
+     "re": "24 měsíc",
+     "anchor": "SOD:7:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "SOD",
+    "PROTOKOL"
+   ],
+   "reference": "Záruka trvá 24 měsíců od předání (smlouva o dílo, čl. 7 odst. 1); dílo bylo předáno 12. 9. 2026 (předávací protokol, bod 1), záruka tedy trvá do 12. 9. 2028."
+  },
+  {
+   "id": "L5",
+   "typ": "lhuty",
+   "spis": "S2",
+   "agent": "resersnik",
+   "docs": [
+    "ODSTOUPENI"
+   ],
+   "prompt": "Do kdy měl prodávající vrátit kupní cenu podle odstoupení? Uveď konkrétní datum.",
+   "lhuta": [
+    "8\\. ?6\\. ?2026"
+   ],
+   "pasti": [
+    "(?<![0-9])6\\. ?6\\. ?2026(?! (?:je|připadá na) sobot)",
+    "4\\. ?6\\. ?2026"
+   ],
+   "fakta": [
+    {
+     "re": "22\\. ?5\\. ?2026",
+     "anchor": "ODSTOUPENI:b:3"
+    }
+   ],
+   "klicove_dokumenty": [
+    "ODSTOUPENI"
+   ],
+   "reference": "Odstoupení bylo doručeno 22. 5. 2026 (odstoupení, bod 3) s lhůtou 15 dnů (bod 2). Konec lhůty připadá na sobotu 6. 6. 2026, posouvá se proto na pondělí 8. 6. 2026 (§ 605 odst. 2 OZ)."
+  },
+  {
+   "id": "L6",
+   "typ": "lhuty",
+   "spis": "S1",
+   "agent": "resersnik",
+   "docs": [
+    "SOD",
+    "DODATEK",
+    "PROTOKOL"
+   ],
+   "prompt": "Kolik dní byl zhotovitel v prodlení s dokončením díla a jakou smluvní pokutu může objednatel požadovat? Uveď výpočet.",
+   "lhuta": [
+    "12 dn",
+    "9 600"
+   ],
+   "pasti": [
+    "74 dn",
+    "8 880"
+   ],
+   "fakta": [
+    {
+     "re": "31\\. ?8\\. ?2026",
+     "anchor": "DODATEK:1:1"
+    },
+    {
+     "re": "0,05 ?%",
+     "anchor": "SOD:6:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "DODATEK",
+    "PROTOKOL",
+    "SOD"
+   ],
+   "reference": "Termín dokončení byl dodatkem posunut na 31. 8. 2026 (dodatek, čl. 1 odst. 1), dílo bylo předáno 12. 9. 2026 (předávací protokol, bod 1) — prodlení 12 dní. Pokuta 0,05 % denně (smlouva o dílo, čl. 6 odst. 1) z ceny 1 600 000 Kč (dodatek, čl. 2 odst. 1) činí 800 Kč denně, celkem 9 600 Kč."
+  },
+  {
+   "id": "M1",
+   "typ": "mimo_spis",
+   "spis": "S1",
+   "agent": "resersnik",
+   "prompt": "Jaké číslo účtu zhotovitele je uvedeno ve smlouvě pro platbu zálohy?",
+   "odpovedetelne": false,
+   "pasti": [
+    "\\d{6,10}/\\d{4}"
+   ],
+   "reference": "Spis číslo účtu zhotovitele neobsahuje — smlouva o dílo ani faktura ho neuvádějí. Nedostatek podkladů; je třeba si ho vyžádat."
+  },
+  {
+   "id": "M2",
+   "typ": "mimo_spis",
+   "spis": "S2",
+   "agent": "resersnik",
+   "prompt": "Kolik stála oprava vozidla po nehodě podle posudku?",
+   "odpovedetelne": false,
+   "pasti": [
+    "\\d[\\d ]* Kč (?:za|stála|činil)"
+   ],
+   "reference": "Znalecký posudek cenu opravy neuvádí (uvádí jen opravu blatníku a podélníku a obvyklou cenu vozidla). Ve spisu tento údaj není."
+  },
+  {
+   "id": "M3",
+   "typ": "mimo_spis",
+   "spis": "S3",
+   "agent": "resersnik",
+   "prompt": "Kdy přesně klient zaplatil nájemné za březen a komu to potvrdil správce písemně?",
+   "odpovedetelne": false,
+   "pasti": [
+    "potvrzení ze dne",
+    "\\d{1,2}\\. ?3\\. ?2026 zaplat"
+   ],
+   "reference": "Ve spisu takový údaj není: klient uvádí, že hradil v hotovosti správci, ale potvrzení nemá (podklady klienta, bod 1). Datum úhrady ani písemné potvrzení podklady neobsahují."
+  },
+  {
+   "id": "M4",
+   "typ": "mimo_spis",
+   "spis": "S4",
+   "agent": "resersnik",
+   "prompt": "Jak rozhodl soud o žalobě?",
+   "odpovedetelne": false,
+   "pasti": [
+    "soud (?:žalobě )?vyhověl",
+    "soud žalobu zamítl",
+    "rozsudkem ze dne"
+   ],
+   "reference": "Spis žádné rozhodnutí soudu neobsahuje — jsou v něm jen předžalobní výzva, výpis, žaloba a vyjádření žalované. Nedostatek podkladů."
+  },
+  {
+   "id": "M5",
+   "typ": "mimo_spis",
+   "spis": "S1",
+   "agent": "resersnik",
+   "prompt": "Jaké je IČO a sídlo subdodavatele, který měnil stoupací potrubí?",
+   "odpovedetelne": false,
+   "pasti": [
+    "IČO:? ?\\d{8}(?<!99887760)"
+   ],
+   "reference": "Spis subdodavatele nezmiňuje; dodatek č. 1 uvádí jen vícepráce na výměně stoupacího potrubí (čl. 2 odst. 1). Údaj ve spisu není."
+  },
+  {
+   "id": "M6",
+   "typ": "mimo_spis",
+   "spis": "S2",
+   "agent": "resersnik",
+   "prompt": "Jaké vady uvedla kupující v reklamaci podané v servisu dne 15. 4. 2026?",
+   "odpovedetelne": false,
+   "pasti": [
+    "reklamac\\w* (?:ze dne )?15\\. ?4\\. ?2026 (?:obsahuj|uvád)"
+   ],
+   "reference": "Spis žádnou reklamaci ze dne 15. 4. 2026 neobsahuje. Nedostatek podkladů — vady jsou popsány jen ve znaleckém posudku."
+  },
+  {
+   "id": "D1",
+   "typ": "dopis",
+   "spis": "S3",
+   "agent": "spisovatel",
+   "prompt": "Napiš za našeho klienta dopis protistraně: pronajímateli Zkušební bytová s.r.o. sděl, že výpověď považujeme za neplatnou, a vyzvi ho k doložení výpočtu dluhu.",
+   "unik": [
+    "801399",
+    "operac",
+    "páteř",
+    "neschopnost"
+   ],
+   "fakta": [
+    {
+     "re": "18 500",
+     "anchor": "NAJEM:3:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "VYPOVED",
+    "NAJEM"
+   ],
+   "reference": "Vážení, jménem nájemce bytu č. 7 sdělujeme, že výpověď doručenou dne 20. 3. 2026 považujeme za neplatnou. Výpověď vychází z nájemného 19 500 Kč, smlouva však sjednává 18 500 Kč (čl. 3 odst. 1). Vyzýváme Vás k doložení výpočtu dluhu do 15 dnů. [Doplnit – podpis advokáta]"
+  },
+  {
+   "id": "D2",
+   "typ": "dopis",
+   "spis": "S2",
+   "agent": "spisovatel",
+   "prompt": "Napiš za našeho klienta dopis protistraně: prodávajícímu Kvido Pokusný připomeň odstoupení a vyzvi ho k vrácení kupní ceny.",
+   "unik": [],
+   "fakta": [
+    {
+     "re": "285 000",
+     "anchor": "ODSTOUPENI:b:2"
+    }
+   ],
+   "klicove_dokumenty": [
+    "ODSTOUPENI"
+   ],
+   "reference": "Vážený pane, připomínáme odstoupení od kupní smlouvy doručené Vám dne 22. 5. 2026. Vyzýváme Vás k vrácení kupní ceny 285 000 Kč do 7 dnů na účet [Doplnit – číslo účtu]. [Doplnit – podpis advokáta]"
+  },
+  {
+   "id": "D3",
+   "typ": "dopis",
+   "spis": "S1",
+   "agent": "spisovatel",
+   "prompt": "Napiš za našeho klienta dopis protistraně: zhotoviteli Modelová stavební s.r.o. vytkni neodstraněné vady a požaduj slevu 80 000 Kč.",
+   "unik": [
+    "nar\\. 1\\. 1\\. 1970"
+   ],
+   "fakta": [
+    {
+     "re": "80 000",
+     "anchor": "EMAIL:b:2"
+    }
+   ],
+   "klicove_dokumenty": [
+    "PROTOKOL",
+    "EMAIL"
+   ],
+   "reference": "Vážení, vady uvedené v předávacím protokolu ze dne 12. 9. 2026 (prasklá dlažba, netěsnící okno) nebyly ve lhůtě 30 dnů odstraněny. Požadujeme slevu z ceny díla 80 000 Kč. [Doplnit – podpis advokáta]"
+  },
+  {
+   "id": "D4",
+   "typ": "dopis",
+   "spis": "S4",
+   "agent": "spisovatel",
+   "prompt": "Napiš za našeho klienta dopis protistraně: žalované Návrhová trading s.r.o. navrhni smír: zaplacení zbytku ceny se slevou 5 000 Kč.",
+   "unik": [],
+   "fakta": [
+    {
+     "re": "64 300",
+     "anchor": "ZALOBA:III:1"
+    }
+   ],
+   "klicove_dokumenty": [
+    "ZALOBA",
+    "VYJADRENI"
+   ],
+   "reference": "Vážení, k žalobě o zaplacení 64 300 Kč navrhujeme smír: zaplatíte 59 300 Kč (zbytek ceny se slevou 5 000 Kč) do 15 dnů a žalobce vezme žalobu zpět. [Doplnit – číslo účtu] [Doplnit – podpis advokáta]"
+  },
+  {
+   "id": "D5",
+   "typ": "dopis",
+   "spis": "S3",
+   "agent": "spisovatel",
+   "prompt": "Napiš za našeho klienta dopis protistraně: pronajímateli sděl, že pes je v bytě se souhlasem správce.",
+   "unik": [
+    "801399",
+    "operac",
+    "páteř",
+    "neschopnost"
+   ],
+   "fakta": [],
+   "klicove_dokumenty": [
+    "PODKLADY_KLIENTA",
+    "NAJEM"
+   ],
+   "reference": "Vážení, sdělujeme, že pes je v bytě se souhlasem správce domu, uděleným ústně. Podle čl. 6 odst. 1 smlouvy je chov zvířat se souhlasem pronajímatele dovolen. [Doplnit – podpis advokáta]"
+  },
+  {
+   "id": "D6",
+   "typ": "dopis",
+   "spis": "S1",
+   "agent": "spisovatel",
+   "prompt": "Napiš za našeho klienta dopis protistraně: zhotoviteli oznam pozastavení úhrady doplatku do odstranění vad.",
+   "unik": [
+    "nar\\. 1\\. 1\\. 1970"
+   ],
+   "fakta": [
+    {
+     "re": "1 156 000",
+     "anchor": "FAKTURA:b:5"
+    }
+   ],
+   "klicove_dokumenty": [
+    "FAKTURA",
+    "PROTOKOL"
+   ],
+   "reference": "Vážení, oznamujeme, že úhradu doplatku 1 156 000 Kč podle konečné faktury pozastavujeme do odstranění vad z předávacího protokolu (prasklá dlažba, netěsnící okno). [Doplnit – podpis advokáta]"
+  }
+ ]
+}

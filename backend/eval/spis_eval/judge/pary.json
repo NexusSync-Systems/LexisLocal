@@ -1,0 +1,537 @@
+{
+ "_komentar": "Dvojice tvrzení + citované místo pro LLM-judge (syntetické spisy S1–S6). „klic“ = správná odpověď podle konstrukce; sada vyvoj (S1–S4) = příklady pro rubriku, kontrola (S5–S6) = měření, judge je nikdy nevidí jako příklad.",
+ "verze": 1,
+ "pary": [
+  {
+   "id": "J01",
+   "sada": "vyvoj",
+   "spis": "S1",
+   "kotva": "SOD:cl:4:1",
+   "tvrzeni": "Za rekonstrukci se objednatel zavázal zaplatit 1 480 000 Kč včetně daně.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J02",
+   "sada": "vyvoj",
+   "spis": "S1",
+   "kotva": "SOD:cl:4:1",
+   "tvrzeni": "Cena díla činí 1 600 000 Kč včetně DPH.",
+   "klic": "NE",
+   "druh": "jina_hodnota"
+  },
+  {
+   "id": "J03",
+   "sada": "vyvoj",
+   "spis": "S1",
+   "kotva": "SOD:cl:6:1",
+   "tvrzeni": "Zhotovitel platí za každý den zpoždění pokutu ve výši 0,05 % z ceny díla.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J04",
+   "sada": "vyvoj",
+   "spis": "S1",
+   "kotva": "SOD:cl:6:2",
+   "tvrzeni": "Zhotovitel platí za každý den zpoždění pokutu ve výši 0,05 % z ceny díla.",
+   "klic": "NE",
+   "druh": "jine_misto"
+  },
+  {
+   "id": "J05",
+   "sada": "vyvoj",
+   "spis": "S1",
+   "kotva": "SOD:cl:8:3",
+   "tvrzeni": "Spory má podle smlouvy rozhodovat obecný soud.",
+   "klic": "NE",
+   "druh": "opak"
+  },
+  {
+   "id": "J06",
+   "sada": "vyvoj",
+   "spis": "S1",
+   "kotva": "SOD:cl:8:3",
+   "tvrzeni": "O sporech ze smlouvy rozhodne rozhodce, kterého určí zhotovitel.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J07",
+   "sada": "vyvoj",
+   "spis": "S1",
+   "kotva": "DODATEK:cl:1:1",
+   "tvrzeni": "Termín dokončení se posunul na konec srpna 2026.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J08",
+   "sada": "vyvoj",
+   "spis": "S1",
+   "kotva": "PROTOKOL:b:3",
+   "tvrzeni": "Při předání se zjistilo, že v koupelně praskla dlažba a v kuchyni netěsní okno; zhotovitel slíbil opravu do týdne.",
+   "klic": "NE",
+   "druh": "castecne"
+  },
+  {
+   "id": "J09",
+   "sada": "vyvoj",
+   "spis": "S1",
+   "kotva": "PROTOKOL:b:1",
+   "tvrzeni": "Objednatel převzal dílo 12. září 2026.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J10",
+   "sada": "vyvoj",
+   "spis": "S1",
+   "kotva": "FAKTURA:b:2",
+   "tvrzeni": "Objednatel převzal dílo 12. září 2026.",
+   "klic": "NE",
+   "druh": "jina_hodnota"
+  },
+  {
+   "id": "J11",
+   "sada": "vyvoj",
+   "spis": "S2",
+   "kotva": "KS:cl:3:2",
+   "tvrzeni": "Prodávající ve smlouvě ujistil kupující, že auto nikdy nebouralo.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J12",
+   "sada": "vyvoj",
+   "spis": "S2",
+   "kotva": "KS:cl:2:2",
+   "tvrzeni": "Při podpisu smlouvy měl vůz najeto 148 000 km.",
+   "klic": "NE",
+   "druh": "jina_hodnota"
+  },
+  {
+   "id": "J13",
+   "sada": "vyvoj",
+   "spis": "S2",
+   "kotva": "POSUDEK:b:2",
+   "tvrzeni": "Znalec potvrdil, že vozidlo nebylo havarované.",
+   "klic": "NE",
+   "druh": "opak"
+  },
+  {
+   "id": "J14",
+   "sada": "vyvoj",
+   "spis": "S2",
+   "kotva": "POSUDEK:b:4",
+   "tvrzeni": "Znalec ocenil vůz v daném stavu na 190 tisíc korun.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J15",
+   "sada": "vyvoj",
+   "spis": "S2",
+   "kotva": "ODSTOUPENI:b:3",
+   "tvrzeni": "Kupující od smlouvy odstoupila a prodávající odstoupení obdržel 22. května 2026.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J16",
+   "sada": "vyvoj",
+   "spis": "S2",
+   "kotva": "VYZVA_SOUDU:b:2",
+   "tvrzeni": "Žalovaný má na vyjádření k žalobě lhůtu 15 dnů.",
+   "klic": "NE",
+   "druh": "jina_hodnota"
+  },
+  {
+   "id": "J17",
+   "sada": "vyvoj",
+   "spis": "S3",
+   "kotva": "NAJEM:cl:7:1",
+   "tvrzeni": "Výpovědní doba trvá tři měsíce a počítá se od prvního dne měsíce po doručení výpovědi.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J18",
+   "sada": "vyvoj",
+   "spis": "S3",
+   "kotva": "NAJEM:cl:6:1",
+   "tvrzeni": "Nájemce smí mít v bytě zvíře jen se svolením pronajímatele.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J19",
+   "sada": "vyvoj",
+   "spis": "S3",
+   "kotva": "NAJEM:cl:4:1",
+   "tvrzeni": "Nájemce musí složit kauci ve výši tří měsíčních nájmů, tedy 55 500 Kč, a pronajímatel ji po skončení nájmu vrátí s úrokem.",
+   "klic": "NE",
+   "druh": "castecne"
+  },
+  {
+   "id": "J20",
+   "sada": "vyvoj",
+   "spis": "S3",
+   "kotva": "VYPOVED:b:2",
+   "tvrzeni": "Pronajímatel ve výpovědi vyčísluje dluh na 58 500 Kč.",
+   "klic": "ANO",
+   "druh": "presna"
+  },
+  {
+   "id": "J21",
+   "sada": "vyvoj",
+   "spis": "S4",
+   "kotva": "VYPIS:b:1",
+   "tvrzeni": "Žalovaná zaplatila 1. 2. 2026 část dluhu ve výši 20 000 Kč.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J22",
+   "sada": "vyvoj",
+   "spis": "S4",
+   "kotva": "ZALOBA:cl:2:3",
+   "tvrzeni": "Žalovaná zaplatila 1. 2. 2026 část dluhu ve výši 20 000 Kč.",
+   "klic": "NE",
+   "druh": "opak"
+  },
+  {
+   "id": "J23",
+   "sada": "vyvoj",
+   "spis": "S4",
+   "kotva": "VYJADRENI:b:1",
+   "tvrzeni": "Žalovaná reklamovala poškozená dvířka skříní dne 5. prosince 2025.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J24",
+   "sada": "vyvoj",
+   "spis": "S4",
+   "kotva": "VYZVA:b:3",
+   "tvrzeni": "Věřitel dal dlužníkovi na zaplacení lhůtu 14 dnů.",
+   "klic": "NE",
+   "druh": "jina_hodnota"
+  },
+  {
+   "id": "J25",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "PS:cl:4:1",
+   "tvrzeni": "Zaměstnanec má sjednánu hrubou měsíční mzdu 42 000 Kč.",
+   "klic": "ANO",
+   "druh": "presna"
+  },
+  {
+   "id": "J26",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "PS:cl:4:1",
+   "tvrzeni": "Zaměstnanec bere měsíčně 42 tisíc hrubého a dostává je vždy do poloviny dalšího měsíce.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J27",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "PS:cl:4:1",
+   "tvrzeni": "Měsíční mzda činí 43 500 Kč hrubého.",
+   "klic": "NE",
+   "druh": "jina_hodnota"
+  },
+  {
+   "id": "J28",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "MZDOVY_LIST:b:1",
+   "tvrzeni": "Pro výpočet odstupného se bere průměrný výdělek 43 500 Kč.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J29",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "PS:cl:3:2",
+   "tvrzeni": "Zkušební doba je sjednána na tři měsíce.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J30",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "PS:cl:3:2",
+   "tvrzeni": "Zkušební doba se nesjednala.",
+   "klic": "NE",
+   "druh": "opak"
+  },
+  {
+   "id": "J31",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "PS:cl:3:1",
+   "tvrzeni": "Zkušební doba je sjednána na tři měsíce.",
+   "klic": "NE",
+   "druh": "jine_misto"
+  },
+  {
+   "id": "J32",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "PS:cl:5:2",
+   "tvrzeni": "Zaměstnanec nesmí rok po odchodu konkurovat a dostane za to polovinu průměrného výdělku měsíčně.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J33",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "PS:cl:5:2",
+   "tvrzeni": "Zaměstnanec nesmí dva roky po odchodu konkurovat.",
+   "klic": "NE",
+   "druh": "jina_hodnota"
+  },
+  {
+   "id": "J34",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "PS:cl:5:1",
+   "tvrzeni": "Zaměstnanec má nárok na pět týdnů dovolené ročně.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J35",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "PS:cl:5:1",
+   "tvrzeni": "Zaměstnanec má nárok na pět týdnů dovolené ročně a dovolenou si může převést do dalšího roku bez omezení.",
+   "klic": "NE",
+   "druh": "castecne"
+  },
+  {
+   "id": "J36",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "VYPOVED_ZAM:b:1",
+   "tvrzeni": "Zaměstnavatel vypověděl pracovní poměr pro nadbytečnost zaměstnance.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J37",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "VYPOVED_ZAM:b:1",
+   "tvrzeni": "Zaměstnavatel vypověděl pracovní poměr pro porušení pracovní kázně.",
+   "klic": "NE",
+   "druh": "opak"
+  },
+  {
+   "id": "J38",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "VYPOVED_ZAM:b:3",
+   "tvrzeni": "Zaměstnanec má dostat odstupné ve výši trojnásobku průměrného výdělku.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J39",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "VYPOVED_ZAM:b:4",
+   "tvrzeni": "Výpověď převzal zaměstnanec osobně 15. září 2026.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J40",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "VYPOVED_ZAM:b:2",
+   "tvrzeni": "Výpověď převzal zaměstnanec osobně 15. září 2026.",
+   "klic": "NE",
+   "druh": "jine_misto"
+  },
+  {
+   "id": "J41",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "EMAIL_ZAM:b:1",
+   "tvrzeni": "Zaměstnanec tvrdí, že na jeho místo byl 10. 9. 2026 přijat někdo jiný.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J42",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "EMAIL_ZAM:b:1",
+   "tvrzeni": "Zaměstnavatel přiznává, že na místo zaměstnance přijal nového pracovníka.",
+   "klic": "NE",
+   "druh": "souvisejici"
+  },
+  {
+   "id": "J43",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "MZDOVY_LIST:b:3",
+   "tvrzeni": "Zaměstnanci zbývá devět dní nevyčerpané dovolené.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J44",
+   "sada": "kontrola",
+   "spis": "S5",
+   "kotva": "MZDOVY_LIST:b:2",
+   "tvrzeni": "Mzda za srpen byla vyplacena po splatnosti.",
+   "klic": "NE",
+   "druh": "souvisejici"
+  },
+  {
+   "id": "J45",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "ZAPUJCKA:cl:2:1",
+   "tvrzeni": "Vydlužitel dostal 150 000 Kč v hotovosti při podpisu smlouvy.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J46",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "ZAPUJCKA:cl:2:1",
+   "tvrzeni": "Peníze byly vydlužiteli poslány na účet.",
+   "klic": "NE",
+   "druh": "opak"
+  },
+  {
+   "id": "J47",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "ZAPUJCKA:cl:3:1",
+   "tvrzeni": "Ze zápůjčky se platí úrok 6 % za rok.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J48",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "ZAPUJCKA:cl:3:1",
+   "tvrzeni": "Ze zápůjčky se platí úrok 6 % měsíčně.",
+   "klic": "NE",
+   "druh": "jina_hodnota"
+  },
+  {
+   "id": "J49",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "ZAPUJCKA:cl:4:1",
+   "tvrzeni": "Dluh se splácí po pěti tisících měsíčně, poprvé v polovině března 2026.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J50",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "ZAPUJCKA:cl:4:2",
+   "tvrzeni": "Dluh se splácí po pěti tisících měsíčně, poprvé v polovině března 2026.",
+   "klic": "NE",
+   "druh": "jine_misto"
+  },
+  {
+   "id": "J51",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "ZAPUJCKA:cl:4:2",
+   "tvrzeni": "Když vydlužitel nezaplatí dvě splátky, může zapůjčitel žádat celý zbytek dluhu najednou.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J52",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "ZAPUJCKA:cl:4:2",
+   "tvrzeni": "Když vydlužitel nezaplatí jednu splátku, stává se splatným celý dluh.",
+   "klic": "NE",
+   "druh": "jina_hodnota"
+  },
+  {
+   "id": "J53",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "ZAPUJCKA:cl:5:1",
+   "tvrzeni": "Dluh je zajištěn zástavou automobilu.",
+   "klic": "NE",
+   "druh": "opak"
+  },
+  {
+   "id": "J54",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "UZNANI:b:1",
+   "tvrzeni": "K 10. srpnu 2026 vydlužitel uznal dluh 125 000 Kč na jistině.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J55",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "UZNANI:b:1",
+   "tvrzeni": "K 10. srpnu 2026 vydlužitel uznal dluh 125 000 Kč včetně úroků a nákladů vymáhání.",
+   "klic": "NE",
+   "druh": "castecne"
+  },
+  {
+   "id": "J56",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "UZNANI:b:2",
+   "tvrzeni": "Vydlužitel uznal dluh jen co do výše, důvod zpochybňuje.",
+   "klic": "NE",
+   "druh": "opak"
+  },
+  {
+   "id": "J57",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "UPOMINKA:b:1",
+   "tvrzeni": "Vydlužitel nezaplatil zářijovou ani říjnovou splátku.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J58",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "UPOMINKA:b:2",
+   "tvrzeni": "Zapůjčitel žádá zaplacení zbývajících 125 000 Kč do deseti dnů od doručení upomínky.",
+   "klic": "ANO",
+   "druh": "parafraze"
+  },
+  {
+   "id": "J59",
+   "sada": "kontrola",
+   "spis": "S6",
+   "kotva": "UPOMINKA:b:2",
+   "tvrzeni": "Zapůjčitel podal na vydlužitele žalobu o 125 000 Kč.",
+   "klic": "NE",
+   "druh": "souvisejici"
+  }
+ ]
+}

@@ -1,0 +1,29 @@
+{
+ "spisZn": "15 C 303/2026",
+ "nazev": "EVAL Modelový / Zkušební bytová — výpověď z nájmu",
+ "soud": "Okresní soud v Malé Vzorové",
+ "dokumenty": {
+  "NAJEM": {
+   "nazev": "Nájemní smlouva č. EV-NS-03/2026",
+   "aliasy": [
+    "nájemní\\w* smlouv\\w*",
+    "EV-NS-03",
+    "\\bsmlouv\\w*"
+   ]
+  },
+  "VYPOVED": {
+   "nazev": "Výpověď z nájmu bytu",
+   "aliasy": [
+    "výpověď(?![a-záčďéěíňóřšťúůýž])",
+    "výpovědi(?![a-záčďéěíňóřšťúůýž])"
+   ]
+  },
+  "PODKLADY_KLIENTA": {
+   "nazev": "Podklady klienta (poznámky z porady)",
+   "aliasy": [
+    "podklad\\w* klienta",
+    "poznám\\w* z porady"
+   ]
+  }
+ }
+}

@@ -1,0 +1,42 @@
+{
+ "spisZn": "12 C 101/2026",
+ "nazev": "EVAL Smyšlený / Modelová stavební — rekonstrukce",
+ "soud": "Okresní soud v Horní Zkušebné",
+ "dokumenty": {
+  "SOD": {
+   "nazev": "Smlouva o dílo č. EV-SOD-01/2026",
+   "aliasy": [
+    "smlouv\\w* o dílo",
+    "\\bSOD\\b",
+    "EV-SOD-01",
+    "\\bsmlouv\\w*"
+   ]
+  },
+  "DODATEK": {
+   "nazev": "Dodatek č. 1 ke smlouvě o dílo",
+   "aliasy": [
+    "dodat\\w*"
+   ]
+  },
+  "PROTOKOL": {
+   "nazev": "Předávací protokol",
+   "aliasy": [
+    "předávací\\w* protokol\\w*",
+    "protokol\\w*"
+   ]
+  },
+  "FAKTURA": {
+   "nazev": "Konečná faktura č. EV-2026-0915",
+   "aliasy": [
+    "faktur\\w*"
+   ]
+  },
+  "EMAIL": {
+   "nazev": "E-mail objednatele ze dne 2. 10. 2026",
+   "aliasy": [
+    "e-mail\\w*",
+    "email\\w*"
+   ]
+  }
+ }
+}
