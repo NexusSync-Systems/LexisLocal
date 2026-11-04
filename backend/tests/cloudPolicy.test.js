@@ -287,3 +287,29 @@ describe('vyhledávání jen ze spisů dotazu (cloud zapnutý)', () => {
         expect(out.message.content).toBe('CLOUD');
     });
 });
+
+describe('externí služby agenta (LawGPT, CODEXIS)', () => {
+    test('mimo požadavek neomezuje', () => {
+        expect(P.externiSluzba('LawGPT')).toMatchObject({ allowed: true, code: 'mimo_pozadavek' });
+    });
+    test('veřejný dotaz bez spisu projde', async () => {
+        await P.scope({ dataClass: 'verejne' }, async () => expect(P.externiSluzba('LawGPT')).toMatchObject({ allowed: true, code: 'bez_spisu' }));
+    });
+    test('spis A nebo B bez souhlasu → odepřeno', async () => {
+        await P.scope({}, async () => { P.noteSpis(sA.id); expect(P.externiSluzba('LawGPT')).toMatchObject({ allowed: false, code: 'stupen_a' }); });
+        await P.scope({}, async () => { P.noteSpis(sB.id); const r = P.externiSluzba('CODEXIS'); expect(r.allowed).toBe(false); expect(r.duvod).toMatch(/CODEXIS/); });
+    });
+    test('spis D projde, text neznámého původu ne', async () => {
+        await P.scope({}, async () => { P.noteSpis(sD.id); expect(P.externiSluzba('LawGPT').allowed).toBe(true); });
+        await P.scope({}, async () => { P.noteUnknown('x'); expect(P.externiSluzba('LawGPT')).toMatchObject({ allowed: false, code: 'neznamy_puvod' }); });
+    });
+    test('nástroj search_caselaw_online vrátí chybu a nevolá síť ve spisu A', async () => {
+        const tools = require('../lib/agent_tools');
+        process.env.AGENT_EXTERNAL_RESEARCH = '1';
+        global.fetch = jest.fn();
+        const out = await P.scope({}, async () => { P.noteSpis(sA.id); return tools.TOOLS.search_caselaw_online.impl({ query: 'náhrada škody' }); });
+        delete process.env.AGENT_EXTERNAL_RESEARCH;
+        expect(out.error).toMatch(/LawGPT/);
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+});

@@ -59,6 +59,15 @@ router.post('/', (req, res) => {
             data.owner = byName ? byName.id : p.userId;
         }
         delete data.access; // ACL se nedá podstrčit při založení
+        // Sp. zn. už má jiný spis: createSpis by vrátil ten existující. Ve firemním režimu ho nesmí dostat
+        // ten, kdo k němu nemá přístup (únik údajů + „založení“ cizího spisu). Bez podrobností → 409.
+        const existujici = data.spisZn ? spisy.findByCase(data.spisZn) : null;
+        if (existujici) {
+            if (access.isFirmMode() && !access.canAccess(existujici, p || principalLib.resolvePrincipal(req, { apiToken: process.env.API_TOKEN, enforceToken: true }), 'read')) {
+                return res.status(409).json({ error: 'Spis s touto spisovou značkou už v kanceláři existuje. O přístup požádejte jeho vlastníka.' });
+            }
+            return res.status(200).json({ spis: existujici, existuje: true });
+        }
         let spis = spisy.createSpis(data);
         // Kdo spis zakládá pro jiného (asistentka pro advokáta), dostane úroveň PODATELNA: vidí spis
         // a zařazuje do něj došlou poštu, ale nemění ho (simulace kanceláře 27. 10. 2026).
@@ -171,6 +180,14 @@ router.post('/:id/event', (req, res) => {
 router.post('/:id/assign-file', (req, res) => {
     if (!gate(req, res, 'file')) return; // zařadit došlý dokument smí i podatelna
     try {
+        // Přeřadit lze jen nezařazený dokument, který volající vidí, nebo dokument ze spisu, kam smí zapisovat —
+        // jinak by si kdokoli přetáhl dokument z cizího spisu do svého (review 2, skupina 2).
+        if (access.isFirmMode()) {
+            const fileId = req.body && req.body.fileId;
+            const f = (require('../lib/database').get('inbox_files') || []).find(x => x.id === fileId);
+            const p = req.principal || principalLib.resolvePrincipal(req, { apiToken: process.env.API_TOKEN, enforceToken: true });
+            if (f && !require('../lib/file_acl').canAccessFile(f, p, 'write')) return res.status(403).json({ error: 'K dokumentu nemáte přístup.' });
+        }
         const file = spisy.assignFileToSpis((req.body && req.body.fileId), req.params.id);
         logEvent('Spisová služba', 'Zařazení dokumentu do spisu', file.fileName || file.id, { spisId: req.params.id });
         res.json({ success: true, file });

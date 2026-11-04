@@ -22,6 +22,20 @@ const { processEmailTask } = require('../lib/emailTask');
 const imapIntake = require('../lib/imapIntake');
 const { deriveImapSmtp } = require('../lib/emailProviders');
 
+// Hesla schránek se do prohlížeče neposílají (revize 4. 11. 2026): GET vrátí jen příznak „uloženo“,
+// POST s prázdným heslem uložené heslo ponechá, test připojení si chybějící heslo doplní z uloženého.
+const HESLA = ['imap_pass', 'smtp_pass'];
+function _bezHesel(s) {
+    const out = Object.assign({}, s);
+    for (const k of HESLA) { out['has_' + k] = !!(s && s[k]); delete out[k]; }
+    return out;
+}
+function _sUlozenymiHesly(nove, ulozene) {
+    const out = Object.assign({}, nove);
+    for (const k of HESLA) if (!out[k] && ulozene && ulozene[k]) out[k] = ulozene[k];
+    return out;
+}
+
 // GET /api/email/settings - Načíst nastavení IMAP/SMTP a autorizovaného odesílatele
 router.get('/settings', (req, res) => {
     try {
@@ -40,7 +54,7 @@ router.get('/settings', (req, res) => {
             imap_enabled: false,
             imap_poll_minutes: 5
         };
-        res.json({ success: true, settings: currentSettings });
+        res.json({ success: true, settings: _bezHesel(currentSettings) });
     } catch (err) {
         res.status(500).json({ error: `Nelze načíst nastavení e-mailu: ${err.message}` });
     }
@@ -49,7 +63,9 @@ router.get('/settings', (req, res) => {
 // POST /api/email/settings - Uložit nastavení
 router.post('/settings', (req, res) => {
     try {
-        const newSettings = req.body;
+        const newSettings = Object.assign({}, req.body || {});
+        for (const k of HESLA) if (!newSettings[k]) delete newSettings[k];          // prázdné = ponechat uložené
+        for (const k of Object.keys(newSettings)) if (/^has_/.test(k)) delete newSettings[k];
         const settingsList = db.get('email_settings') || [];
         if (settingsList.length > 0) {
             db.update('email_settings', settingsList[0].id, newSettings);
@@ -352,7 +368,8 @@ router.post('/derive', (req, res) => {
 // Tělo: volitelně { settings }; jinak vezme uložené nastavení.
 router.post('/test', async (req, res) => {
     try {
-        const settings = (req.body && req.body.settings) || (db.get('email_settings') || [])[0] || {};
+        const ulozene = (db.get('email_settings') || [])[0] || {};
+        const settings = req.body && req.body.settings ? _sUlozenymiHesly(req.body.settings, ulozene) : ulozene;
         const [imapR, smtpR] = await Promise.all([
             imapIntake.testConnection(settings).catch(e => ({ ok: false, error: e.message })),
             mailer.verifySmtp(settings).then(() => ({ ok: true })).catch(e => ({ ok: false, error: e.message }))

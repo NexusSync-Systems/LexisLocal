@@ -99,3 +99,31 @@ test('vypnutí: všichni zase vidí vše', async () => {
     const all = (await request(app).get('/api/spisy').set(as(B.token))).body.spisy;
     expect(all.length).toBeGreaterThanOrEqual(3);
 });
+
+describe('review 2 / skupina 2: sp. zn. a přeřazení dokumentu', () => {
+    beforeAll(() => access.setFirmMode(true));
+    afterAll(() => access.setFirmMode(null));
+    test('založení spisu s cizí sp. zn. → 409 bez údajů; vlastník dostane existující spis', async () => {
+        const s = (await request(app).post('/api/spisy').set(as(A.token)).send({ spisZn: '21 C 77/2026', nazev: 'Tajný spis Anny', klient: 'Klient X' })).body.spis;
+        const r = await request(app).post('/api/spisy').set(as(B.token)).send({ spisZn: '21 C 77/2026', nazev: 'Pokus' });
+        expect(r.statusCode).toBe(409);
+        expect(JSON.stringify(r.body)).not.toMatch(/Tajný|Klient X/);
+        const r2 = await request(app).post('/api/spisy').set(as(A.token)).send({ spisZn: '21 C 77/2026' });
+        expect(r2.statusCode).toBe(200);
+        expect(r2.body.spis.id).toBe(s.id);
+    });
+    test('sp. zn. jiného spisu nelze převzít úpravou', async () => {
+        const vlastni = (await request(app).post('/api/spisy').set(as(B.token)).send({ nazev: 'Spis Bořka' })).body.spis;
+        const r = await request(app).patch(`/api/spisy/${vlastni.id}`).set(as(B.token)).send({ spisZn: '21 C 77/2026' });
+        expect(r.statusCode).toBe(400);
+        expect(r.body.error).toMatch(/jiný spis/);
+    });
+    test('dokument z cizího spisu si nikdo nepřeřadí do svého', async () => {
+        const db = require('../lib/database');
+        db.set('inbox_files', (db.get('inbox_files') || []).concat([{ id: 'fx1', fileName: 'tajne.pdf', caseNumber: '21 C 77/2026' }]));
+        const vlastni = (await request(app).post('/api/spisy').set(as(B.token)).send({ spisZn: '5 C 5/2026', nazev: 'Bořek 2' })).body.spis;
+        const r = await request(app).post(`/api/spisy/${vlastni.id}/assign-file`).set(as(B.token)).send({ fileId: 'fx1' });
+        expect(r.statusCode).toBe(403);
+        expect(db.get('inbox_files').find(f => f.id === 'fx1').caseNumber).toBe('21 C 77/2026');
+    });
+});

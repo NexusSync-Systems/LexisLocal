@@ -165,7 +165,12 @@ function updateSpis(id, patch) {
     ['nazev', 'klient', 'protistrana', 'agenda', 'odpovednyAdvokat', 'poznamka', 'soud', 'soudKod'].forEach(k => {
         if (patch[k] !== undefined) clean[k] = String(patch[k]);
     });
-    if (patch.spisZn !== undefined) clean.spisZn = _normCase(patch.spisZn);
+    if (patch.spisZn !== undefined) {
+        clean.spisZn = _normCase(patch.spisZn);
+        // Sp. zn. jiného spisu nelze převzít: podle ní se zařazují dokumenty a vyhodnocuje přístup.
+        const jiny = _isRealCase(clean.spisZn) ? findByCase(clean.spisZn) : null;
+        if (jiny && jiny.id !== spis.id) throw new Error('Tuto spisovou značku už má jiný spis.');
+    }
     if (patch.klientEmail !== undefined) clean.klientEmail = _cleanEmail(patch.klientEmail);
     if (patch.klientIco !== undefined) clean.klientIco = String(patch.klientIco).replace(/\s+/g, '');
     if (patch.insZn !== undefined) clean.insZn = _normCase(patch.insZn);

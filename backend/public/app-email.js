@@ -87,7 +87,7 @@ Object.assign(LexisLocalApp.prototype, {
             const data = await res.json();
             if (data.success) {
                 alert("✓ Nastavení e-mailu bylo úspěšně uloženo.");
-                this.emailSettings = settings;
+                await this.loadEmailSettings();   // ze serveru (bez hesel)
                 this.renderInbox();
             } else {
                 alert("❌ Chyba: " + data.error);
@@ -401,10 +401,11 @@ Object.assign(LexisLocalApp.prototype, {
         document.getElementById('em-smtp-port').value = s.smtp_port || '';
         document.getElementById('em-smtp-user').value = s.smtp_user || '';
         document.getElementById('em-smtp-ssl').checked = s.smtp_ssl !== false;
+        // Hesla server nevrací — pole zůstane prázdné; prázdné při uložení = ponechat uložené heslo.
         const smtpPassEl = document.getElementById('em-smtp-pass');
-        if (smtpPassEl) smtpPassEl.value = s.smtp_pass || '';
+        if (smtpPassEl) { smtpPassEl.value = ''; if (s.has_smtp_pass) smtpPassEl.placeholder = 'Heslo SMTP je uložené — vyplňte jen pro změnu'; }
         const imapPassEl = document.getElementById('em-imap-pass');
-        if (imapPassEl) imapPassEl.value = s.imap_pass || '';
+        if (imapPassEl) { imapPassEl.value = ''; if (s.has_imap_pass) imapPassEl.placeholder = 'Heslo IMAP je uložené — vyplňte jen pro změnu'; }
         const imapEnEl = document.getElementById('em-imap-enabled');
         if (imapEnEl) imapEnEl.checked = s.imap_enabled === true;
         const pollEl = document.getElementById('em-poll-min');

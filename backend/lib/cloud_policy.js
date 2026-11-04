@@ -385,10 +385,35 @@ function rezimOdepreni() {
     return String(process.env.LEXIS_CLOUD_ODEPRENI || 'lokalne').toLowerCase() === 'chyba' ? 'chyba' : 'lokalne';
 }
 
+/**
+ * Smí agent v rámci tohoto požadavku poslat dotaz do EXTERNÍ služby (LawGPT, CODEXIS)?
+ * Dotaz píše model ze spisu, takže v něm můžou být skutečnosti ze spisu i po odstranění osobních údajů.
+ * Pravidlo: když do požadavku přispěl spis, kterému cloud nepovoluje stupeň / souhlas (A, B bez souhlasu…),
+ * nebo text neznámého původu, externí služba se nepoužije. Mimo požadavek (testy, skripty) neomezuje.
+ * → { allowed, code, duvod }
+ */
+function externiSluzba(nazev) {
+    const c = _ctx(false);
+    if (!c) return { allowed: true, code: 'mimo_pozadavek' };
+    const S = _spisy();
+    for (const id of c.spisIds) {
+        const spis = S.getSpis(id);
+        const v = vyhodnotSpis(spis);
+        if (!v.ok) return _externiOdepreno(nazev, spis || { id }, v.code, v.duvod);
+    }
+    if (c.unknown.length) return _externiOdepreno(nazev, null, 'neznamy_puvod', 'Dotaz obsahuje text neznámého původu.');
+    return { allowed: true, code: c.spisIds.size ? 'spis' : 'bez_spisu' };
+}
+function _externiOdepreno(nazev, spis, code, duvod) {
+    const text = `Externí služba ${nazev} se v tomto dotazu nepoužije: ${duvod}`;
+    try { require('./audit').logEvent('Cloud AI', 'Externí služba odepřena', spis ? _label(spis) : '-', { sluzba: nazev, code, spisId: spis ? spis.id : null }); } catch (e) { /* best-effort */ }
+    return { allowed: false, code, duvod: text };
+}
+
 module.exports = {
     STUPNE, VYCHOZI_STUPEN, TYPY_SOUHLASU, CloudPolicyError,
     stupenSpisu, platnySouhlas, vyhodnotSpis, stavSpisu,
     setStupen, udelSouhlas, odvolejSouhlas,
     declare, noteSpis, noteCase, noteFile, noteUnknown, noteRagMatches, spisyPozadavku, omezRagNaSpisy, scope, pridejNaklady,
-    isLocalUrl, druhPoskytovatele, rozhodni, zaznamenej, shrnuti, rezimOdepreni, opravneni, stavKancelare
+    isLocalUrl, druhPoskytovatele, rozhodni, externiSluzba, zaznamenej, shrnuti, rezimOdepreni, opravneni, stavKancelare
 };

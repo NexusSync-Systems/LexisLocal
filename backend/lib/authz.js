@@ -18,6 +18,8 @@ const ADMIN_RULES = [
     ['*', '/api/system/export'],
     ['*', '/api/system/rotate-key'],
     ['*', '/api/email/settings'],
+    // Test připojení s libovolným serverem z požadavku (dosah do sítě kanceláře) = správa serveru.
+    ['POST', '/api/email/test'],
     ['POST', '/api/settings'],
     // Režim AI (co smí do cloudu) a připravenost AWS = vedení kanceláře.
     ['GET', '/api/settings/ai-rezim'],

@@ -160,6 +160,8 @@ const TOOLS = {
         impl: async (args) => {
             if (!_externalResearchEnabled()) return { error: 'Externí rešerše je vypnutá (AGENT_EXTERNAL_RESEARCH).' };
             if (_localOnly()) return { error: 'Lokální režim (mlčenlivost): externí cloudová rešerše je zakázána.' };
+            const brana = require('./cloud_policy').externiSluzba('LawGPT');
+            if (!brana.allowed) return { error: brana.duvod };
             return await _lawgptJudgments(args.query, args.limit);
         }
     },
@@ -173,7 +175,11 @@ const TOOLS = {
             properties: { query: { type: 'string', description: 'Obecná právní otázka bez osobních údajů klienta.' } },
             required: ['query']
         },
-        impl: async (args) => require('./codexis').ask(args.query, { via: 'agent' })
+        impl: async (args) => {
+            const brana = require('./cloud_policy').externiSluzba('CODEXIS');
+            if (!brana.allowed) return { error: brana.duvod };
+            return require('./codexis').ask(_stripPII(args.query), { via: 'agent' });
+        }
     }
 };
 
