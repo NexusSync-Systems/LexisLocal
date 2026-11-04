@@ -34,7 +34,8 @@ const OUTLINES = {
         '1. Celkové hodnocení jednou větou (u spotřebitele/nájemce uveď, že jde o slabší stranu).\n' +
         '2. Rizika — pro KAŽDÉ: „Čl. X — co ustanovení říká → proč je to riziko pro klienta → § zákona → co navrhnout (úprava/škrt)“.\n' +
         '   Uveď konkrétní hodnoty ze smlouvy (procenta, částky, lhůty, počty měsíců/let).\n' +
-        '3. Doporučení pro klienta (podepsat / nepodepsat bez úprav / vyjednat).\n' +
+        '3. Možnosti klienta — podepsat / vyjednat úpravy / nepodepsat: u každé Pro a Proti.\n' +
+        '4. Doporučení pro klienta — kterou možnost a proč, s oporou (§ a předpis).\n' +
         'Nikdy netvrď, že smlouva je bez rizik, pokud jsi rizika našel nebo je našel program.',
     legal_analysis:
         'OSNOVA ODPOVĚDI (dodrž):\n' +
@@ -42,8 +43,11 @@ const OUTLINES = {
         '2. Skutkový stav — jen to, co je v podkladech.\n' +
         '3. Právní úprava — konkrétní § s číslem a názvem předpisu (89/2012 Sb. = občanský zákoník).\n' +
         '4. Lhůty a data — převezmi DOSLOVA výpočty programu, sám data nepočítej.\n' +
-        '5. Doporučený postup (kroky, co připravit).\n' +
-        '6. Co ještě ověřit.',
+        '5. Varianty postupu — 2 až 3 reálné možnosti (např. výzva / žaloba / smír / nečinnost), je-li jich víc; u každé:\n' +
+        '   „Pro: …“ (výhody, šance na úspěch), „Proti: …“ (rizika, náklady, doba, procesní nebezpečí), „Opora: § a předpis“.\n' +
+        '   Když je možný jen jeden postup, napiš proč (jednou větou).\n' +
+        '6. Doporučená varianta — kterou a proč, s oporou (§ a předpis, příp. sp. zn. rozhodnutí) a hlavním rizikem.\n' +
+        '7. Co ještě ověřit.',
     proofread:
         'OSNOVA ODPOVĚDI (dodrž):\n' +
         '1. Opravený text — zachovej původní formulace, slovosled a význam; opravuj JEN chyby ' +

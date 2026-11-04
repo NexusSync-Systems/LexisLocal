@@ -102,7 +102,7 @@ router.post('/debate', async (req, res) => {
     try {
         // --- STEP 1: INVOKE AGENT 1 (CREATOR) ---
         const messages1 = [
-            { role: 'system', content: agent1.systemPrompt }
+            { role: 'system', content: require('../lib/legal_basis').systemPrompt(agent1) }
         ];
 
         if (ragContext) {
@@ -140,7 +140,7 @@ router.post('/debate', async (req, res) => {
 
         // --- STEP 2: INVOKE AGENT 2 (OPPONENT / CRITIQUE) ---
         const messages2 = [
-            { role: 'system', content: agent2.systemPrompt }
+            { role: 'system', content: require('../lib/legal_basis').systemPrompt(agent2) }
         ];
 
         if (ragContext) {

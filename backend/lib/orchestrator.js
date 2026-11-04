@@ -174,7 +174,7 @@ class ChiefOrchestrator {
                     "V takovém případě musí tvůj výstup začínat přesnou větou: 'Nedostatek podkladů ze spisů pro bezpečné vypracování.' a stručně uvést, co chybí.\n";
             }
 
-            const systemContent = `${agent.systemPrompt}\n\n` +
+            const systemContent = `${require('./legal_basis').systemPrompt(agent)}\n\n` +
                 strictInstruction +
                 `Pracuješ v hierarchickém swarmu pod dozorem Chief Orchestrátora. Tvůj úkol je: ${step.instruction}\n` +
                 (ragContext ? `\nSchválený bezpečný kontext ze spisů:\n${ragContext}\n` : "") +
@@ -280,7 +280,11 @@ class ChiefOrchestrator {
         const strictMode = ragFilters && (ragFilters.strict === true || ragFilters.strict === 'true');
         let synthesisSystem = "Jsi Chief Orchestrator lokálního právního AI swarmu Lexis.\n" +
             "Tvým úkolem je vzít dosavadní dílčí výstupy a analýzy od specializovaných agentů swarmu a sestavit z nich pro advokáta jednu finální, perfektně strukturovanou, ucelenou a vysoce profesionální odpověď v češtině.\n" +
-            "Zajisti, aby text neměl zbytečné duplicity, logicky navazoval a byl připraven k přímému použití v praxi. Pokud některý krok selhal, stručně na to upozorni.";
+            "Zajisti, aby text neměl zbytečné duplicity, logicky navazoval a byl připraven k přímému použití v praxi. Pokud některý krok selhal, stručně na to upozorni.\n" +
+            "U každého doporučení a právního závěru ZACHOVEJ jeho oporu z dílčích výstupů (§ / čl. a předpis, sp. zn. rozhodnutí) a proč z ní plyne — " +
+            "oporu nikdy nevypouštěj ani nevymýšlej; kde ji agenti neuvedli, napiš „Opora: nenalezena v podkladech — ověřit“.\n" +
+            "Má-li advokát na výběr víc postupů, uveď 2–3 varianty, u každé Pro, Proti (rizika, náklady, doba) a oporu, " +
+            "a nakonec doporučenou variantu s důvodem. Námitky Kontrolora (oponenta) zapracuj do Proti příslušné varianty.";
 
         if (strictMode) {
             synthesisSystem += "\n\n⚠️ ARCHITEKTURA PROTI HALUCINACÍM (STRICT RAG):\n" +
@@ -344,7 +348,7 @@ class ChiefOrchestrator {
                 const lf = fixLawNames(finalResponse, require('./kb_law_index').getKbLawIndex());
                 finalResponse = lf.text + require('./date_facts').dateFactsAppendix(lf.text, dateFacts) +
                     require('./procedural_facts').proceduralAppendix(lf.text, procFacts) +
-                    buildWarnings({ lawIssues: lf.issues, lawFixed: lf.fixed });
+                    buildWarnings({ lawIssues: lf.issues, lawFixed: lf.fixed, extra: [require('./legal_basis').upozorneni(require('./legal_basis').kontrolaOpory(lf.text))] });
             } catch (e) { /* doplněk nesmí shodit orchestraci */ }
         }
 
@@ -357,10 +361,14 @@ class ChiefOrchestrator {
         try {
             const { verifyCitationsWithSources } = require('./citation_verifier');
             const { getKbLawIndex } = require('./kb_law_index');
+            const caseIdx = require('./kb_case_index');
             citationCheck = await verifyCitationsWithSources(finalResponse, {
                 contextChunks: [prompt, context].filter(Boolean).map(t => ({ text: String(t), fileName: 'zadání' })),
-                kbIndex: getKbLawIndex()
+                kbIndex: getKbLawIndex(), referenceIndex: caseIdx.referenceIndex()
             });
+            // Neověřená rozhodnutí se vypustí (lib/kb_case_index.js) a advokát dostane upozornění.
+            const vj = caseIdx.vypustNeoverene(finalResponse, citationCheck && citationCheck.citations);
+            if (vj.vypusteno.length) finalResponse = vj.text + '\n' + caseIdx.upozorneni(vj.vypusteno);
         } catch (e) { citationCheck = null; }
 
         return {
@@ -433,7 +441,7 @@ class ChiefOrchestrator {
             '(chybějící náležitosti, vymyšlené/nepřesné §, rozpory, slabá místa). Pokud koncept nemá vady, ' +
             "napiš přesně 'BEZ VÝHRAD'. Nepřepisuj celý dokument, jen seznam připomínek.";
         const critique = await this._callAgent(kontrolor, kontrolor.preferredModel,
-            [{ role: 'system', content: kontrolor.systemPrompt },
+            [{ role: 'system', content: require('./legal_basis').systemPrompt(kontrolor) },
              { role: 'user', content: critiqueInstruction + '\n\nKONCEPT:\n' + draft }],
             'Kritika konceptu (Kontrolor)');
         stepsLog.push({ step: 'revize-kritika', agentId: 'kontrolor', agentName: kontrolor.name, agentEmoji: kontrolor.emoji, instruction: 'Oponentura konceptu', output: critique });
@@ -448,7 +456,7 @@ class ChiefOrchestrator {
             'dokumentu — bez komentářů, bez uvození, bez seznamu změn. Chybějící konkrétní údaje nevymýšlej, ' +
             'ponech [Doplnit...].';
         const revisedText = await this._callAgent(spisovatel, spisovatel.preferredModel,
-            [{ role: 'system', content: spisovatel.systemPrompt },
+            [{ role: 'system', content: require('./legal_basis').systemPrompt(spisovatel) },
              { role: 'user', content: reviseInstruction + '\n\nPŘIPOMÍNKY:\n' + critique + '\n\nKONCEPT:\n' + draft }],
             'Revize konceptu dle připomínek (Spisovatel)');
         stepsLog.push({ step: 'revize-oprava', agentId: 'spisovatel', agentName: spisovatel.name, agentEmoji: spisovatel.emoji, instruction: 'Revize dle připomínek Kontrolora', output: revisedText });

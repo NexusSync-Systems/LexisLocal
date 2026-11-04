@@ -76,7 +76,7 @@ function copiedFromExamples(text, examples, sourceText) {
     return exampleTokens(examples).filter(t => _hasStem(text, t) && !_hasStem(sourceText, t));
 }
 
-function checkOutput({ text, prompt, sourceText, demand, bilingual, agentId, examples } = {}) {
+function checkOutput({ text, prompt, sourceText, demand, bilingual, agentId, examples, legal } = {}) {
     const t = String(text || '');
     const issues = [];
     const src = [prompt, sourceText].filter(Boolean).join('\n');
@@ -100,11 +100,18 @@ function checkOutput({ text, prompt, sourceText, demand, bilingual, agentId, exa
             issues.push({ code: 'no_placeholders', msg: 'Údaje, které v podkladech nejsou (číslo účtu pro platbu, jméno a podpis advokáta), musí být jako [Doplnit – …], ne vynechané ani vymyšlené.' });
         }
     }
+    // Doporučení právních agentů bez právní opory (lib/legal_basis.js, 4. 11. 2026).
+    let opora = null;
+    if (legal && !demand && !insufficient) {
+        const LB = require('./legal_basis');
+        opora = LB.kontrolaOpory(t);
+        if (opora.bezOpory.length) issues.push({ code: 'bez_opory', msg: LB.vytka(opora.bezOpory) });
+    }
     const copied = copiedFromExamples(t, examples, src);
     if (copied.length) {
         issues.push({ code: 'copied_example', msg: `Převzal jsi údaje z ukázky (${copied.slice(0, 5).join(', ')}). Ukázka je jen vzor formy — použij údaje ze zadání a podkladů, chybějící jako [Doplnit – …].` });
     }
-    return { issues, copied };
+    return { issues, copied, opora };
 }
 
 /** Deterministické opravy (bez modelu). */

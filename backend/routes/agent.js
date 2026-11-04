@@ -166,7 +166,9 @@ router.post('/:agentId', async (req, res) => {
     console.log(`🤖 Volám agenta [${agent.name}] s modelem [${selectedModel}]`);
 
     // systemPromptText musí být viditelný i ve větvi catch (fallback loguje jeho hash).
-    let systemPromptText = agent.systemPrompt;
+    // Právní agenti: povinné zdůvodnění každého doporučení (§ a předpis, lib/legal_basis.js).
+    const legalBasis = require('../lib/legal_basis');
+    let systemPromptText = legalBasis.systemPrompt(agent);
     // Detekce oboru (pro UI „detekován obor…") — viditelná i ve fallbacku.
     let oborDetection = null;
 
@@ -436,8 +438,9 @@ router.post('/:agentId', async (req, res) => {
                 const checkSrc = [context, ...ragContextChunks.map(c => c.text)].filter(Boolean).join('\n');
                 const evaluate = (text, lt) => {
                     const fx = outputChecks.applyFixes(text, { addressee: lt && lt.addressee, gender: lt && lt.data && lt.data.adresat && lt.data.adresat.pohlavi });
-                    const ck = outputChecks.checkOutput({ text: fx.text, prompt, sourceText: checkSrc, demand, bilingual: profile.bilingual, agentId, examples });
-                    return { text: fx.text, fixes: fx.fixes, issues: ck.issues, copied: ck.copied, letter: lt };
+                    const ck = outputChecks.checkOutput({ text: fx.text, prompt, sourceText: checkSrc, demand, bilingual: profile.bilingual, agentId, examples,
+                        legal: legalBasis.jePravniAgent(agent) && !['proofread', 'opponent_letter'].includes(profile.kind) });
+                    return { text: fx.text, fixes: fx.fixes, issues: ck.issues, copied: ck.copied, letter: lt, opora: ck.opora };
                 };
                 const first = evaluate(response.message.content, letter);
                 let final = first, retried = false;
@@ -470,7 +473,7 @@ router.post('/:agentId', async (req, res) => {
                 response.message.content = text;
                 const remaining = final.issues.filter(i => i.code !== 'copied_example' || !(final.copied || []).length);
                 selfCheck = { found: first.issues.map(i => i.code), retried, remaining: remaining.map(i => i.code),
-                    remainingText: remaining.map(i => i.msg), fixes, structuredLetter: !!letter, missing: letter ? letter.missing : [],
+                    remainingText: remaining.filter(i => i.code !== 'bez_opory').map(i => i.msg), opora: final.opora || null, fixes, structuredLetter: !!letter, missing: letter ? letter.missing : [],
                     examplesUsed: examples.map(e => e.title) };
                 if (first.issues.length) console.log(`🔎 Agent [${agent.name}]: kontrola výstupu — nalezeno ${first.issues.map(i => i.code).join(', ')}${retried ? `; po opravě zbývá: ${selfCheck.remaining.join(', ') || 'nic'}` : ''}.`);
             } catch (scErr) { console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', scErr.message); }
@@ -514,6 +517,7 @@ router.post('/:agentId', async (req, res) => {
         // orchestrátoru). Neověřené §/sp. zn. se advokátovi označí. Best-effort —
         // chyba ověření nesmí shodit odpověď agenta.
         let citationCheck = null;
+        let judikatyVypusteno = [];
         try {
             const { verifyCitationsWithSources } = require('../lib/citation_verifier');
             // Podklady = RAG pasáže + zadání + kontext ze spisu (citace převzaté z dokumentu
@@ -521,7 +525,14 @@ router.post('/:agentId', async (req, res) => {
             const { getKbLawIndex } = require('../lib/kb_law_index');
             const verifyChunks = ragContextChunks.concat(
                 [prompt, context].filter(Boolean).map(t => ({ text: String(t), fileName: 'zadání' })));
-            const cc = await verifyCitationsWithSources(response.message.content, { contextChunks: verifyChunks, kbIndex: getKbLawIndex() });
+            const caseIdx = require('../lib/kb_case_index');
+            const cc = await verifyCitationsWithSources(response.message.content, { contextChunks: verifyChunks, kbIndex: getKbLawIndex(), referenceIndex: caseIdx.referenceIndex() });
+            // Rozhodnutí, která nejsou v bázi judikatury, v podkladech ani v externím zdroji, se z odpovědi vypustí
+            // (jako iSoud / CENDAI: judikatura jen z ověřených zdrojů) — advokát je uvidí v upozornění.
+            if (cc) {
+                const vj = caseIdx.vypustNeoverene(response.message.content, cc.citations);
+                if (vj.vypusteno.length) { response.message.content = vj.text; judikatyVypusteno = vj.vypusteno; }
+            }
             citationCheck = cc ? {
                 total: cc.total,
                 unverifiedCount: cc.unverifiedCount,
@@ -583,13 +594,15 @@ router.post('/:agentId', async (req, res) => {
                 selfCheck.structuredLetter && selfCheck.missing.length ? `• Dopis sestavil program; doplňte: ${selfCheck.missing.join(', ')}.` : '',
                 ...selfCheck.remainingText.map(t => `• Kontrola: ${t.replace(/^V dopise /, 'v dopise ').replace(/ Uveď.*$| Oprav.*$/, '')}`)
             ] : [];
-            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? citationCheck.unverifiedCount : 0, extra: [injectionGuard.warningLine(injectionHits), outsideContextLine(citationCheck), oppLine, dwLine, ...scLines, (revisionCheck && revisionCheck.newParties) ? `• V novém znění jsou strany/osoby, které v konceptu ani v připomínkách nebyly — ověřte: ${revisionCheck.newParties.join(', ')}.` : ''] });
+            const oporaLine = selfCheck && selfCheck.opora ? legalBasis.upozorneni(legalBasis.kontrolaOpory(lf.text)) : '';
+            const warn = buildWarnings({ replaced: g.replaced, lawIssues, lawFixed: lf.fixed, unverifiedCount: citationCheck ? Math.max(0, citationCheck.unverifiedCount - judikatyVypusteno.length) : 0, extra: [require('../lib/kb_case_index').upozorneni(judikatyVypusteno), oporaLine, injectionGuard.warningLine(injectionHits), outsideContextLine(citationCheck), oppLine, dwLine, ...scLines, (revisionCheck && revisionCheck.newParties) ? `• V novém znění jsou strany/osoby, které v konceptu ani v připomínkách nebyly — ověřte: ${revisionCheck.newParties.join(', ')}.` : ''] });
             response.message.content = body + warn;
             draftBody = body; draftWarn = warn;
             outputGuard = { repeatsRemoved: rep.removed, replaced: g.replaced, lawIssues, lawFixed: lf.fixed, injection: injectionHits,
                 clauses: clauseFindings.map(f => ({ id: f.id, article: f.article })), clausesAppended: clauseApx.missing, dateAppended: !!dateApx, proceduralAppended: !!procApx,
                 taskKind: profile.kind, bilingual: profile.bilingual, opponentRedacted: oppRedacted, promptLeakBlocked: lg.promptLeak, secretsRedacted: lg.redacted, deadlineWordingFixed: dw.fixed, filingCourtFixed: fc.fixed,
-                chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null, selfCheck, revisionCheck };
+                chunkedReview: chunked ? { chunks: chunked.chunks, skipped: chunked.skipped } : null, selfCheck, revisionCheck,
+                opora: selfCheck && selfCheck.opora ? legalBasis.kontrolaOpory(lf.text) : null, judikatyVypusteno };
         } catch (gErr) {
             console.warn('⚠️ Agent: kontrola výstupu selhala (nekritické):', gErr.message);
         }

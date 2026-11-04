@@ -176,10 +176,8 @@ function verifyOne(citation, contextNorm, referenceIndex) {
     const rawNorm = normalizeCitation(citation.raw);
     const inContext = contextNorm.includes(rawNorm);
 
-    const hasReference =
-        referenceIndex &&
-        ((referenceIndex.laws && Object.keys(referenceIndex.laws).length > 0) ||
-         (referenceIndex.caseNumbers && referenceIndex.caseNumbers.size > 0));
+    // Index judikatury (lib/kb_case_index.js) se zákonů netýká — zákony a § posuzuje jen index zákonů.
+    const hasLawRef = !!(referenceIndex && referenceIndex.laws && Object.keys(referenceIndex.laws).length > 0);
 
     // 1) Judikatura — nejrizikovější, nejpřísnější.
     if (citation.type === 'judikat') {
@@ -200,7 +198,7 @@ function verifyOne(citation, contextNorm, referenceIndex) {
         if (referenceIndex && referenceIndex.laws && referenceIndex.laws[citation.law]) {
             return { status: 'verified', reason: 'zákon existuje v referenčním indexu' };
         }
-        if (hasReference) {
+        if (hasLawRef) {
             return { status: 'not_in_reference', reason: `zákon č. ${citation.law} Sb. není v referenčním indexu` };
         }
         return inContext
@@ -219,7 +217,7 @@ function verifyOne(citation, contextNorm, referenceIndex) {
         }
         // Reference pro tento zákon nemáme → opíráme se o kontext.
         if (inContext) return { status: 'verified', reason: 'paragraf je doslovně v podkladech' };
-        if (hasReference && citation.law) {
+        if (hasLawRef && citation.law) {
             return { status: 'not_in_reference', reason: `zákon č. ${citation.law} Sb. není indexován` };
         }
         return { status: 'unsupported_by_context', reason: 'paragraf není v podkladech a nelze ho ověřit v referenci' };

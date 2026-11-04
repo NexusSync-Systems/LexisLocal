@@ -190,7 +190,7 @@ async function _zpracuj(input, settings, authorized, zarazeni, kdo) {
             try {
                 const r = await withTimeout(ollama.chat({
                     model: agent.preferredModel || CHAT_MODEL,
-                    messages: [{ role: 'system', content: agent.systemPrompt }, { role: 'user', content: cleanBody }],
+                    messages: [{ role: 'system', content: require('./legal_basis').systemPrompt(agent) }, { role: 'user', content: cleanBody }],
                     options: { temperature: 0.3, num_ctx: agentNumCtx() }
                 }), AI_TIMEOUT_MS);
                 output = r.message.content;
@@ -244,7 +244,10 @@ async function _zpracuj(input, settings, authorized, zarazeni, kdo) {
     // U šablony se ověření přeskakuje: její § jsou pevné a ověřené (žádná halucinace).
     if (!citationCheck && aiOk && !templateUsed && output && output.trim() && !isFallbackText(output)) {
         try {
-            const cc = await verifyCitationsWithSources(output, {});
+            const caseIdx = require('./kb_case_index');
+            const cc = await verifyCitationsWithSources(output, { kbIndex: require('./kb_law_index').getKbLawIndex(), referenceIndex: caseIdx.referenceIndex() });
+            const vj = cc ? caseIdx.vypustNeoverene(output, cc.citations) : { vypusteno: [] };
+            if (vj.vypusteno.length) output = vj.text + '\n\n' + caseIdx.upozorneni(vj.vypusteno);
             citationCheck = cc ? { total: cc.total, unverifiedCount: cc.unverifiedCount, citations: cc.citations, annotatedText: cc.annotatedText, sourcesConsulted: cc.sourcesConsulted } : null;
         } catch (e) { /* ověření je best-effort */ }
     }
@@ -318,12 +321,21 @@ async function _zpracuj(input, settings, authorized, zarazeni, kdo) {
     const citationNote = (citationCheck && citationCheck.unverifiedCount > 0)
         ? `\n\n⚠️ UPOZORNĚNÍ: ${citationCheck.unverifiedCount} citací nebylo možné ověřit — před použitím zkontrolujte ručně.`
         : '';
+    // Jednoagentní výstup právního agenta: doporučení bez právní opory (orchestrace to doplňuje sama).
+    let oporaNote = '';
+    try {
+        const LB = require('./legal_basis');
+        if (mode === 'single' && aiOk && !templateUsed && LB.jePravniAgent(agents[explicitAgentId])) {
+            const u = LB.upozorneni(LB.kontrolaOpory(output));
+            if (u) oporaNote = '\n\n⚠️ KONTROLA ZDŮVODNĚNÍ:\n' + u;
+        }
+    } catch (e) { /* best-effort */ }
     const templateNote = (templateWarnings && templateWarnings.length)
         ? `\n\n⚠️ UPOZORNĚNÍ K ŠABLONĚ: ${templateWarnings.join(' ')}`
         : '';
     const stepsBlock = stepsSummary.length ? `\nPrůběh zpracování:\n- ${stepsSummary.join('\n- ')}\n` : '';
     const odKoho = kdo.interni ? '' : `\n\n⚠️ Zadání přišlo z cizí adresy ${String(sender).trim()} (${kdo.puvod === 'cizi-schvaleno' ? 'zpracováno po Vašem schválení' : 'zpracováno automaticky podle nastavení'}${input.overeni ? ', původ ověřen ' + input.overeni.toUpperCase() : ', původ NEOVĚŘEN'}). Odesílateli nic odesláno nebylo.`;
-    const fullReply = `Vážený pane doktore,${odKoho}\n\nk ${kdo.interni ? 'Vašemu zadání' : 'zadání'} ze dne ${dateStr} („${subject.replace(/\[[^\]]+\]\s*/g, '')}") zasílám zpracovaný výstup.\n${stepsBlock}\nS úctou,\nVaše AI kancelář (LexisLocal)\n\n${'-'.repeat(80)}\nVÝSTUP:\n${'-'.repeat(80)}\n${require('./ai_disclosure').TEXT_NOTICE}\n\n${output}${citationNote}${templateNote}${scheduleNote}${draftNote}`;
+    const fullReply = `Vážený pane doktore,${odKoho}\n\nk ${kdo.interni ? 'Vašemu zadání' : 'zadání'} ze dne ${dateStr} („${subject.replace(/\[[^\]]+\]\s*/g, '')}") zasílám zpracovaný výstup.\n${stepsBlock}\nS úctou,\nVaše AI kancelář (LexisLocal)\n\n${'-'.repeat(80)}\nVÝSTUP:\n${'-'.repeat(80)}\n${require('./ai_disclosure').TEXT_NOTICE}\n\n${output}${citationNote}${oporaNote}${templateNote}${scheduleNote}${draftNote}`;
 
     const createdTask = db.insert('email_tasks', {
         sender: String(sender).trim(), subject: String(subject).trim(), body: String(body).trim(),

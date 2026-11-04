@@ -103,3 +103,35 @@ model 7–8× z 20 uvedl § 2248 OZ (zvýšení nájemného) — v zákoně exis
   „Mimo podklady: § … — paragraf existuje, ale v podkladech k dotazu nebyl. Ověřte, že se na věc opravdu vztahuje.“
 - Když podklady neobsahují žádný § (např. jen text smlouvy), neupozorňuje se — každá citace by byla „mimo“.
 
+
+## Povinné zdůvodnění doporučení (4. 11. 2026)
+
+Právní agenti (Rešeršník, Kontrolor, Spisovatel a vlastní agenti s judikaturou) musí u **každého doporučení,
+právního závěru a navrženého kroku** uvést, na základě čeho — konkrétní § / čl. s předpisem, případně rozhodnutí
+se sp. zn. z podkladů — a jednou větou proč z něj závěr plyne (`Doporučení: … — Opora: … — Proč: …`).
+V dokumentech pro soud a protistranu je právní důvod přímo v textu.
+
+1. **Pravidlo** (`backend/lib/legal_basis.js`) se přidává k systémovému promptu za běhu — platí i pro prompty,
+   které si kancelář upravila. U vlastního agenta jde vypnout polem `zduvodneni: false`.
+2. **Kontrola programem**: věty s doporučením nebo právním závěrem bez citace model dostane jako výtku a jednou je
+   opraví (`output_checks`, kód `bez_opory`). Co zůstane, je pod odpovědí v „Automatické kontrole LexisLocal“
+   („Bez uvedené právní opory …“), v e-mailové odpovědi i v orchestraci.
+3. Když agent oporu v podkladech nemá, napíše „Opora: nenalezena v podkladech — ověřit“ (nevymýšlí) — i to se
+   advokátovi ukáže.
+4. Zda citovaný § existuje a sedí s předpisem, ověřuje dál kontrola citací výše (⚠ NEOVĚŘENO).
+
+Agent v AWS (docs/EMAIL_AGENT_AWS.md) má stejné pravidlo v promptu, ale bez báze zákonů citace neověřuje.
+
+## Judikatura jen z ověřených zdrojů a varianty postupu (4. 11. 2026)
+
+Podle přístupu CENDAI / iSoud (Vrchní soud v Praze — judikatura jen z přesně vymezených důvěryhodných zdrojů,
+neověřená rozhodnutí se vynechávají, lidský dohled, transparentnost):
+
+- **Index sp. zn. z báze judikatury** (`backend/lib/kb_case_index.js`, z názvů souborů NS_/US_/NSS_, staví se na
+  pozadí po startu): rozhodnutí z báze je ověřené, i když ho vyhledávání zrovna nevrátilo.
+- **Neověřené rozhodnutí se z odpovědi vypustí** → „[rozhodnutí neověřeno — vypuštěno]“ + upozornění pod odpovědí
+  (není v bázi, v podkladech ani v externím zdroji = model ho mohl vymyslet). Jen když báze judikatury existuje
+  (≥ 100 sp. zn.). `LEXIS_NEOVERENE_JUDIKATY=oznacit` vrátí dřívější chování (jen ⚠ NEOVĚŘENO).
+- **Varianty s pro a proti**: rozbor a kontrola smlouvy mají v osnově 2–3 varianty postupu, u každé Pro, Proti
+  (rizika, náklady, doba) a oporu, a doporučenou variantu s důvodem; v orchestraci se námitky Kontrolora
+  zapracují do Proti příslušné varianty.

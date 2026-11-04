@@ -176,7 +176,7 @@ router.post('/simulate', async (req, res) => {
             const response = await vRozsahuZadani(zaradZadani({ subject, body: require('../lib/email_text').zadaniBezPodpisu(cleanBody) }), () => ollama.chat({
                 model: selectedModel,
                 messages: [
-                    { role: 'system', content: agent.systemPrompt },
+                    { role: 'system', content: require('../lib/legal_basis').systemPrompt(agent) },
                     { role: 'user', content: cleanBody }
                 ],
                 options: {
