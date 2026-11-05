@@ -476,7 +476,13 @@ if [ "$PROFILE" = "kancelar" ]; then
       echo "=== cloud: srovnání $CHAT_MODEL × $BEDROCK_MODEL_ID $(date -Is)"
       BM="$CHAT_MODEL,bedrock:$BEDROCK_MODEL_ID"; [ "${OFFICE_JEN_CLOUD:-0}" = "1" ] && BM="bedrock:$BEDROCK_MODEL_ID"
       timeout 60m node backend/scripts/model_bench.js --models "$BM" --rag --no-pull --out "$OUT/bench" > "$OUT/model_bench.log" 2>&1 || echo "!! model_bench s chybou"
-      grep -E '^( +[✅🟡❌]|   = |  [0-9]+\.)' "$OUT/model_bench.log" | tail -n 30 )
+      grep -E '^( +[✅🟡❌]|   = |  [0-9]+\.)' "$OUT/model_bench.log" | tail -n 30
+      # Spis eval (backend/eval/spis_eval, jen smyšlené spisy) přes Bedrock z role instance — celodenní generálka 5. 11. 2026.
+      if [ "${OFFICE_SPIS_EVAL:-0}" = "1" ]; then
+        echo "=== cloud: spis eval $(date -Is)"
+        timeout 90m node backend/scripts/spis_eval.js --provider bedrock --model "$BEDROCK_MODEL_ID" --label server-den --out "$OUT/spis-eval" > "$OUT/spis_eval.log" 2>&1 || echo "!! spis_eval s chybou"
+        grep -E '^\| |Náklady|přerušen' "$OUT/spis_eval.log" | tail -n 16
+      fi )
     upload
     echo "=== cloud: kontrola rozhraní (Chromium) $(date -Is)"
     ( cd /opt/LexisLocal && timeout 15m npm i --no-save --no-audit --no-fund playwright@1.60.0 >/dev/null 2>&1 \

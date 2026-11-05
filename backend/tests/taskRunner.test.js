@@ -157,6 +157,7 @@ describe('task-runner — schválené úlohy', () => {
         }
         expect(R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'kancelar-bedrock', typ: 'g4dn.xlarge' } }).args).toContain('file://scripts/aws/bootstrap-kancelar-bedrock.sh');
         expect(R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'kancelar-jen-cloud', typ: 'g4dn.xlarge' } }).args).toContain('file://scripts/aws/bootstrap-kancelar-jen-cloud.sh');
+        expect(R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'kancelar-jen-cloud-den' } }).args).toContain('file://scripts/aws/bootstrap-kancelar-jen-cloud-den.sh');
         expect(R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'judikatura-plus', typ: 'g4dn.xlarge' } }).args).toContain('file://scripts/aws/bootstrap-judikatura-plus.sh');
         expect(R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'kancelar-noc', typ: 'g4dn.xlarge' } }).args).toContain('file://scripts/aws/bootstrap-kancelar-noc.sh');
         expect(R.sestav({ uloha: 'aws_spust_test', parametry: { profil: 'pilot-hledani', typ: 'g4dn.xlarge' } }).args).toContain('file://scripts/aws/bootstrap-pilot-hledani.sh');
