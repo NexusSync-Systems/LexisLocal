@@ -55,11 +55,22 @@ jobs:
       - name: Build & publish (macOS podepsaný+notarizovaný / Windows)
         shell: bash
         run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            npx electron-builder --win --publish always -c.releaseInfo.releaseNotesFile=release-notes.txt
-          else
-            npx electron-builder --mac --publish always -c.releaseInfo.releaseNotesFile=release-notes.txt
-          fi
+          sestav() {
+            if [ "$RUNNER_OS" == "Windows" ]; then
+              npx electron-builder --win --publish always -c.releaseInfo.releaseNotesFile=release-notes.txt
+            else
+              npx electron-builder --mac --publish always -c.releaseInfo.releaseNotesFile=release-notes.txt
+            fi
+          }
+          # Apple občas utne spojení při přišití notarizačního štítku („The staple and validate action
+          # failed! Error 68“, CloudKit) — 2 z 3 běhů 6. 11. 2026. Notarizace i podpis jsou v pořádku,
+          # jen stapler nedoběhne, takže sestavení zkoušíme až třikrát.
+          for pokus in 1 2 3; do
+            if sestav; then exit 0; fi
+            echo "::warning::Sestavení selhalo (pokus $pokus/3); za 60 s zkouším znovu"
+            sleep 60
+          done
+          exit 1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.CSC_LINK || '' }}
@@ -82,13 +93,16 @@ jobs:
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || { echo "Neplatný tag: $TAG"; exit 1; }
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --title "LexisLocal $TAG" --notes-file release-notes.txt
           gh release view "$TAG" --json assets --jq '.assets[].name' > prilohy.txt
+          mkdir -p prilohy
           for f in dist/*.dmg dist/*.dmg.blockmap dist/*.exe dist/*.exe.blockmap dist/latest*.yml; do
             [ -f "$f" ] || continue
-            z=$(basename "$f")
+            # Mezery na pomlčky: stejné jméno, jaké dává electron-builder (gh sám dělá tečky → duplicita)
+            z=$(basename "$f"); z=${z// /-}
             if grep -Fxq "$z" prilohy.txt; then
               echo "už v Release: $z"
-            else
-              echo "nahrávám: $z"
-              gh release upload "$TAG" "$f"
+              continue
             fi
+            ln "$f" "prilohy/$z" 2>/dev/null || cp "$f" "prilohy/$z"
+            echo "nahrávám: $z"
+            gh release upload "$TAG" "prilohy/$z"
           done
