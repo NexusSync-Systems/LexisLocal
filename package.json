@@ -1,6 +1,6 @@
 {
   "name": "lexis-local",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Privacy-focused, local-first AI Legal Ecosystem for Modern Law Firms",
   "main": "electron/main.js",
   "scripts": {
