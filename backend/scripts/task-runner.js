@@ -21,9 +21,16 @@
  *    profilem „lexislocal-bedrock“ (~/.aws/credentials na Macu), jen se syntetickými daty; model jen
  *    z výčtu EU profilů. Stojí centy — Claude ji zařadí jen po souhlasu v chatu.
  *  • Jedna úloha najednou. Zastavení: požadavek {"uloha":"stop"} nebo Ctrl+C v terminálu.
+ *  • KÓD SE SPOUŠTÍ Z KOPIE mimo projekt (~/.lexislocal/runner/kopie, viz runner-kopie.js).
+ *    Seznam úloh hlídá jen to, jaký příkaz se složí — ne, jaký kód se tím spustí. Kdyby se
+ *    spouštěč i úlohy bral ze složky, do které vidí Claude, stačilo by přepsat
+ *    backend/scripts/*.js nebo node_modules a seznam by se obešel. Kopie se obnovuje ručně
+ *    na Macu z posledního commitu; sdílená je jen fronta, logy a výstupy (symlinky).
  *
- * Spuštění (z kořene projektu, nechte běžet v samostatném okně terminálu):
- *   node backend/scripts/task-runner.js
+ * Spuštění (z KOPIE, nechte běžet v samostatném okně terminálu):
+ *   node backend/scripts/runner-kopie.js --obnov          # v projektu, po commitu
+ *   node ~/.lexislocal/runner/kopie/backend/scripts/task-runner.js
+ *   (Spuštění přímo z projektu spouštěč odmítne; na ladění LEXIS_RUNNER_BEZ_KOPIE=1.)
  * Požadavek (soubor scratch/ukoly/fronta/<cokoli>.json):
  *   {"uloha": "kb_regression", "parametry": {"limit": 40, "sample": 0}}
  */
@@ -31,9 +38,18 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
-const ROOT = path.resolve(__dirname, '..', '..');
+// KOD = kořen, odkud se spouští kód (má to být kopie mimo projekt — viz runner-kopie.js).
+// ZIVY = živý projekt, do kterého vidí agenti: git a sdílené složky (fronta, logy, výstupy).
+// Fronta i logy leží v KOD/scratch/ukoly, což je v kopii symlink do živého projektu.
+const MANIFEST = '.lexis-runner-kopie.json'; // zakládá backend/scripts/runner-kopie.js
+const KOD = path.resolve(__dirname, '..', '..');
+const KOPIE_MANIFEST = (() => {
+    try { return JSON.parse(fs.readFileSync(path.join(KOD, MANIFEST), 'utf8')); } catch (e) { return null; }
+})();
+const ZIVY = KOPIE_MANIFEST && KOPIE_MANIFEST.zivyKoren ? KOPIE_MANIFEST.zivyKoren : KOD;
+const ROOT = KOD;
 const BASE = path.join(ROOT, 'scratch', 'ukoly');
 const DIRS = { fronta: path.join(BASE, 'fronta'), hotovo: path.join(BASE, 'hotovo'), logy: path.join(BASE, 'logy'), stav: path.join(BASE, 'stav') };
 const TOKEN_FILE = path.join(require('os').homedir(), '.lexislocal', 'api_token');
@@ -283,8 +299,9 @@ const ULOHY = {
             env,
         };
     },
-    git_stav: () => ({ cmd: 'git', args: ['status', '--short', '--branch'] }),
-    git_log: p => ({ cmd: 'git', args: ['log', '--oneline', '-n', String(int(p.n, 1, 50, 10))] }),
+    // Git čte stav ŽIVÉHO projektu (kopie z git archive .git nemá) — pevné argumenty, jen čtení.
+    git_stav: () => ({ cmd: 'git', args: ['status', '--short', '--branch'], kde: 'zivy' }),
+    git_log: p => ({ cmd: 'git', args: ['log', '--oneline', '-n', String(int(p.n, 1, 50, 10))], kde: 'zivy' }),
 };
 
 /** Požadavek → příkaz. Vyhodí chybu u neznámé úlohy nebo špatného parametru. */
@@ -314,7 +331,8 @@ function spust(id, poz) {
     const zacatek = cas();
     console.log(`▶ ${id}: ${poz.uloha} → ${[path.basename(prikaz.cmd), ...prikaz.args].join(' ')}`);
     zapisStav(id, { id, uloha: poz.uloha, stav: 'běží', prikaz: [path.basename(prikaz.cmd), ...prikaz.args.map(a => (a === TOKEN_FILE ? '~/.lexislocal/api_token' : a))], zacatek, log: path.relative(ROOT, logPath) });
-    const child = spawn(prikaz.cmd, prikaz.args, { cwd: ROOT, env: Object.assign({}, process.env, prikaz.env || {}), shell: false });
+    const cwd = prikaz.kde === 'zivy' ? ZIVY : KOD;
+    const child = spawn(prikaz.cmd, prikaz.args, { cwd, env: Object.assign({}, process.env, prikaz.env || {}), shell: false });
     bezi = { id, child };
     child.stdout.pipe(log, { end: false });
     child.stderr.pipe(log, { end: false });
@@ -347,7 +365,38 @@ function dalsi() {
     }
 }
 
+/** Spouštěč musí běžet z kopie, do které agenti nezapisují. Vrátí false = nespouštět. */
+function kontrolaKopie() {
+    if (KOPIE_MANIFEST) {
+        const zivyHead = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: ZIVY, encoding: 'utf8' });
+        const head = zivyHead.status === 0 ? String(zivyHead.stdout).trim() : null;
+        console.log(`📦 Kód z kopie: ${KOD}`);
+        console.log(`   commit ${KOPIE_MANIFEST.kratky} (${KOPIE_MANIFEST.vetev || '?'}), obnoveno ${KOPIE_MANIFEST.cas}`);
+        if (KOPIE_MANIFEST.zdroj === 'pracovní') console.log('   ⚠️  kopie je z PRACOVNÍ verze projektu (necommitnuté změny) — jen na ověření');
+        console.log(`   projekt (git, sdílené složky): ${ZIVY}`);
+        if (head && head !== KOPIE_MANIFEST.commit) {
+            console.log(`   ⚠️  projekt je na jiném commitu (${head.slice(0, 7)}) — po commitu obnovte kopii:`);
+            console.log('      node backend/scripts/runner-kopie.js --obnov');
+        }
+        return true;
+    }
+    if (process.env.LEXIS_RUNNER_BEZ_KOPIE === '1') {
+        console.log('⚠️  LEXIS_RUNNER_BEZ_KOPIE=1 — kód se spouští přímo z projektu, do kterého vidí agenti.');
+        console.log('   Jen na ladění na Macu. Pro práci s Claudem spouštějte z kopie.');
+        return true;
+    }
+    console.error('⛔ Spouštěč neběží z kopie, ale z projektu, do kterého mohou agenti zapisovat.');
+    console.error('   Seznam úloh pak nic nezaručuje (stačí přepsat backend/scripts/*.js nebo node_modules).');
+    console.error('');
+    console.error('   1) v projektu:  node backend/scripts/runner-kopie.js --obnov');
+    console.error('   2) spustit:     node ~/.lexislocal/runner/kopie/backend/scripts/task-runner.js');
+    console.error('');
+    console.error('   Jen na ladění (bez ochrany): LEXIS_RUNNER_BEZ_KOPIE=1 node backend/scripts/task-runner.js');
+    return false;
+}
+
 function main() {
+    if (!kontrolaKopie()) { process.exitCode = 1; return; }
     for (const d of Object.values(DIRS)) fs.mkdirSync(d, { recursive: true });
     console.log(`🧰 Spouštěč úloh běží. Fronta: ${path.relative(ROOT, DIRS.fronta)}  ·  úlohy: ${Object.keys(ULOHY).join(', ')}, stop`);
     console.log('   Zastavení spouštěče: Ctrl+C');
