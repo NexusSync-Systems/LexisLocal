@@ -327,6 +327,10 @@ if (require.main === module) {
     }
     if (_aiComp.localOnly) {
         console.log('🔒 Lokální režim mlčenlivosti AKTIVNÍ — AI běží jen lokálně (chat: ' + _aiComp.chat + ', embed: ' + _aiComp.embed + '). Klientská data neopouští stroj.');
+    } else if (_aiComp.chat === 'bedrock' && (_aiComp.embed === 'ollama' || _aiComp.embed === 'onnx')) {
+        // Claude přes Amazon Bedrock v EU = zamýšlený cloud pilotu; o každém dotazu rozhodují pravidla spisu
+        // (lib/cloud_policy.js). Dřív tu stálo varování „zapni LEXIS_PILOT_LOCAL_ONLY“ — mátlo (generálka 5. 11. 2026).
+        console.log('☁️  AI: Claude přes Amazon Bedrock (EU), vyhledávání lokálně (' + _aiComp.embed + '). Co smí do cloudu, rozhodují pravidla spisu' + (require('./lib/ai_provider').jenCloud() ? ' — režim jen cloud.' : '; jinak odpoví lokální model.'));
     } else if (_aiComp.chat !== 'ollama' || !(_aiComp.embed === 'ollama' || _aiComp.embed === 'onnx')) {
         console.warn('⚠️  AI běží přes CLOUD (chat: ' + _aiComp.chat + ', embed: ' + _aiComp.embed + '). Pro advokátní mlčenlivost bez smlouvy o zpracování zapni LEXIS_PILOT_LOCAL_ONLY=1 (vynutí lokální Ollamu).');
     }

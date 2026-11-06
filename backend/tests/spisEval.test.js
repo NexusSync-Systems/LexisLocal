@@ -195,3 +195,9 @@ describe('určení dokumentu citace (běh review2 4. 11. 2026)', () => {
 test('mimo spis: „posudek č. … cenu neuvádí“ je přiznání (M2, 4. 11. 2026)', () => {
     expect(typy('M2', 'Znalecký posudek č. EV-ZP-112/2026 cenu opravy vozidla po nehodě neuvádí.')).not.toContain('mimo_spis');
 });
+
+test('hodnota před „přestože / avšak / zatímco“ patří jinému dokumentu (generálka 5. 11. 2026)', () => {
+    const [c] = C.citace('Faktura uvádí cenu 1 480 000 Kč, přestože Dodatek č. 1, čl. 2 odst. 1 cenu zvýšil.', S.S1, ['FAKTURA', 'DODATEK']);
+    expect(c.doc).toBe('DODATEK');
+    expect(C.hodnotCitaci(c, S.S1).podpora).not.toBe('ne');
+});

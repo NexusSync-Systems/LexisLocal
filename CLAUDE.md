@@ -214,3 +214,25 @@ Seřazeno podle priority. Frontendové položky (LexisEditor) jsou v CLAUDE.md t
 - V testech je `NODE_ENV=test`, takže `secure_crypto.resolveKeyDir()` míří do temp. Klíč lze přebít `LEXIS_KEY_DIR`.
 - Git příkazy, které zapisují do `.git` (commit, ale i `git status`), z cloudu nespouštěj, zůstane `index.lock`. Commit a push dělá Zdeněk na Macu.
 - `.env` i `.env.*` (včetně záloh `.env.bak.*`) jsou v `.gitignore`, šablona `.env.example` zůstává trackovaná.
+
+## Předání z Cowork (stav k 5. 11. 2026)
+
+### Dohodnutá pravidla práce (platí i pro Claude Code)
+- Komunikace česky. Commit a push jen na výslovný pokyn Zdeňka; IAM, Security Groups, DNS a nákupy dělá on.
+- Nečíst `~/.aws/credentials`, `_connect.txt`, soubory s tokeny ani `.env` celé (jen jednotlivé ne-tajné řádky, např. `BEDROCK_MODEL_ID`). Nikdy nevypisovat tokeny, klíče ani presigned URL.
+- Jen syntetická / veřejná data (eval spisy S1–S6 jsou smyšlené). Žádné reálné klientské spisy.
+- Cokoli, co stojí peníze na AWS (EC2 testy, větší běhy Bedrocku), jen po výslovném „OK k nákladům“.
+- Neměnit výchozí hodnoty bez souhlasu; nikdy nevypínat ověřování TLS; klientům se nic automaticky neposílá.
+
+### Stav pilotu
+- Pilot: jeden advokát na vlastním Macu, režim jen cloud — Claude Sonnet 4.6 přes Bedrock EU (`eu.anthropic.claude-sonnet-4-6`, účet 485237569555). Sonnet 5.5 účet NEMÁ povolený (vývojový `.env` ho měl → 403).
+- Generálka 5. 11. 2026 (AWS, `kancelar-jen-cloud-den`, 7 h simulace): 61/61 kontrol, 0 chyb, pravidla cloudu K21 všechna ✓, aws-pilot-test vše ✓, model_bench Sonnet 4.6 98 %, kontrola rozhraní 5/5, spis eval na serveru 93 (43/48) po přehodnocení. Výsledky: `scratch/aws-vysledky/2026-11-05_0635_remote_kancelar/`.
+- Zbývá: kalibrace LLM-judge (Zdeněk ručně označí `backend/eval/spis_eval/judge/kalibrace_k_oznaceni.csv`, pak `spis_eval_judge.js`); tag `v1.2.3` (první release s připnutými akcemi a `npm ci`); task runner spouštět z kopie, do které agenti nezapisují (poslední bod review 2); e-mailové testy, až bude schránka asistentů; případná spolupráce s Fragmea (jen API / offline data, viz diskuse — OpenAI u nich, logování dotazů).
+- AWS Budgets `lexislocal-bedrock-mesicni` posílá alarm podle PŘEDPOVĚDI (2. 11.: 275 USD) — je to vliv testů na začátku měsíce; skutečnost ~11,5 USD Bedrock za 1.–5. 11. Activate kredity platí i na Claude v Bedrocku.
+
+### Jak spouštět
+- Spis eval (Mac, ~3 USD): `caffeinate -i node backend/scripts/spis_eval.js --provider bedrock --model eu.anthropic.claude-sonnet-4-6 --aws-profile lexislocal-bedrock --label <popis>`; přehodnocení uložených odpovědí zdarma: `--prehodnot <běh.json>`; porovnání: `spis_eval_compare.js A.json B.json`. Bez `caffeinate` Mac usne a běh skončí chybami (eval se po 3 výpadcích sám přeruší).
+- Test proti AWS (haléře): `AWS_PROFILE=lexislocal-bedrock node backend/scripts/aws-pilot-test.js --bez-ce` — musí projít A–G a R.
+- Task runner (fronta `scratch/ukoly/fronta/*.json`): `node backend/scripts/task-runner.js`; EC2 testy úlohou `aws_spust_test` (profily viz `task-runner.js`, AMI jen schválené / `LEXIS_RUNNER_AMI`). Při `InsufficientInstanceCapacity` zkusit `az` a/b/c nebo `typ` g5/g4dn (jen cloud GPU skoro nepotřebuje).
+- Výpočty dělá program, ne model: lhůty `lib/date_facts.js`, procesní lhůty `lib/procedural_facts.js`, soudní poplatek `lib/court_fees.js` (sazebník 549/1991 Sb. od 1. 1. 2026), opora doporučení `lib/legal_basis.js`.
+- Měření pilotu bez obsahu: `lib/pilot_metriky.js`, přehled + CSV v Manažerském přehledu (jen správce), 👍/👎 pod odpovědí.

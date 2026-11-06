@@ -261,6 +261,12 @@ function hodnotCitaci(c, spis) {
     c.platna = true; c.kotva = c.doc + ':' + k; c.textKotvy = text;
     // Podpora: hodnoty z tvrzení (bez čísel samotné citace) musí být v citovaném místě.
     let tvrzeni = c.tvrzeni.replace(RE_CITACE, ' ').replace(/č\.\s*[A-Z0-9-/]+/g, ' ');
+    // „Faktura uvádí 1 480 000 Kč, přestože Dodatek č. 1, čl. 2 odst. 1 …“ — hodnota PŘED odporovací spojkou patří
+    // jinému dokumentu; k citaci se vztahuje jen text za ní (generálka 5. 11. 2026: R1, L6, D2, M3).
+    const spojka = /(?:^|[\s,;(—–-])(?:přestože|avšak|zatímco|kdežto|ačkoli|naproti tomu|oproti tomu|ale)\s/gi;
+    let posl = -1, sm;
+    while ((sm = spojka.exec(tvrzeni))) posl = sm.index + sm[0].length;
+    if (posl > 0) tvrzeni = tvrzeni.slice(posl);
     // Název dokumentu není tvrzení: „Žaloba o zaplacení 64 300 Kč, čl. II odst. 3“, „E-mail objednatele ze dne 2. 10. 2026, bod 1“
     // — částka / datum z názvu se v citovaném místě hledat nemají (běh review2 4. 11. 2026).
     for (const x of Object.values(spis.docs)) {
