@@ -227,7 +227,8 @@ Seřazeno podle priority. Frontendové položky (LexisEditor) jsou v CLAUDE.md t
 ### Stav pilotu
 - Pilot: jeden advokát na vlastním Macu, režim jen cloud — Claude Sonnet 4.6 přes Bedrock EU (`eu.anthropic.claude-sonnet-4-6`, účet 485237569555). Sonnet 5.5 účet NEMÁ povolený (vývojový `.env` ho měl → 403).
 - Generálka 5. 11. 2026 (AWS, `kancelar-jen-cloud-den`, 7 h simulace): 61/61 kontrol, 0 chyb, pravidla cloudu K21 všechna ✓, aws-pilot-test vše ✓, model_bench Sonnet 4.6 98 %, kontrola rozhraní 5/5, spis eval na serveru 93 (43/48) po přehodnocení. Výsledky: `scratch/aws-vysledky/2026-11-05_0635_remote_kancelar/`.
-- Zbývá: kalibrace LLM-judge (Zdeněk ručně označí `backend/eval/spis_eval/judge/kalibrace_k_oznaceni.csv`, pak `spis_eval_judge.js`); tag `v1.2.3` (první release s připnutými akcemi a `npm ci`); task runner z kopie — hotovo na branchi `runner/spust-z-kopie` (6. 11., čeká na commit a na restart běžící instance); e-mailové testy, až bude schránka asistentů; případná spolupráce s Fragmea (jen API / offline data, viz diskuse — OpenAI u nich, logování dotazů).
+- Vydáno `v1.2.3` (6. 11. 2026) — první release s připnutými akcemi a `npm ci`; obsahuje i task runner z kopie (PR #38, v `release-prep` i `main`). Poznámky: `docs/RELEASE_NOTES_1.2.3.md`.
+- Zbývá: kalibrace LLM-judge (Zdeněk ručně označí `backend/eval/spis_eval/judge/kalibrace_k_oznaceni.csv`, pak `spis_eval_judge.js`); e-mailové testy, až bude schránka asistentů; případná spolupráce s Fragmea (jen API / offline data, viz diskuse — OpenAI u nich, logování dotazů).
 - AWS Budgets `lexislocal-bedrock-mesicni` posílá alarm podle PŘEDPOVĚDI (2. 11.: 275 USD) — je to vliv testů na začátku měsíce; skutečnost ~11,5 USD Bedrock za 1.–5. 11. Activate kredity platí i na Claude v Bedrocku.
 
 ### Jak spouštět
