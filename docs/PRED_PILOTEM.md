@@ -49,7 +49,9 @@ uživateli / složce. Ověřit, že aplikace naběhne a v Nastavení → AI je r
 
 1. Otevřít `backend/eval/spis_eval/judge/kalibrace_k_oznaceni.csv` (Numbers / Excel), do sloupce
    „hodnocení“ napsat ANO / NE podle vlastního úsudku (podporuje citované místo tvrzení?), uložit jako CSV se středníkem.
-2. Restartovat task runner (aby viděl úlohy `spis_eval` a `spis_eval_judge`).
+2. Restartovat task runner (aby viděl úlohy `spis_eval` a `spis_eval_judge`) — obnovit kopii
+   (`node backend/scripts/runner-kopie.js --obnov`) a spustit ji:
+   `node ~/.lexislocal/runner/kopie/backend/scripts/task-runner.js`.
 3. Kalibrace (~0,05–0,15 USD):
    `node backend/scripts/spis_eval_judge.js --provider bedrock --model eu.anthropic.claude-sonnet-4-6 --aws-profile lexislocal-bedrock`
 4. Judge je použitelný při shodě ≥ 90 % a nejvýš 1 falešném ANO na kontrolní sadě.
@@ -75,4 +77,7 @@ stačí mu říct adresu schránky:
   `BEDROCK_POVOLIT_PROFIL_APLIKACE=1` po ověření cílových regionů.
 - Rozpočet: model bez řádku v ceníku se počítá podle nejdražšího řádku (tvrdý strop nejde obejít).
 - Task runner: `aws_spust_test` jen se schváleným AMI; nové přidat do `.env` jako `LEXIS_RUNNER_AMI=ami-…`.
+- Task runner běží z kopie mimo projekt (`~/.lexislocal/runner/kopie`, zakládá `runner-kopie.js --obnov`);
+  ze složky projektu, do které vidí agenti, se spustit odmítne. Kopie je z posledního commitu, takže po
+  každém commitu je potřeba `--obnov`; jinak spouštěč při startu upozorní, že je kopie starší.
 - Docker: porty jen na `127.0.0.1`, kontejner backendu bez roota.
