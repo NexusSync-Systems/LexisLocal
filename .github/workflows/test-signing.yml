@@ -1,6 +1,16 @@
 # Akce připnuté na commit (SHA), instalace z lockfile (npm ci), token jen pro čtení, kde nejde o vydání
 # (review 2, skupina 3 — dodavatelský řetězec). Novou verzi akce: git ls-remote --tags <repo> → SHA.
 name: Test signing
+#
+# NEFUNKČNÍ, dokud se nedokončí nastavení Azure Trusted Signing (stav 7. 11. 2026).
+# Běh 42386250740 spadl po 14 s na kroku „Azure login“ („Not all values are present.
+# Ensure 'client-id' and 'tenant-id' are supplied“) — tři tajné hodnoty, které tenhle
+# workflow potřebuje, v repozitáři ani v organizaci NexusSync-Systems neexistují:
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+# Chybí k nim registrace aplikace v Entra ID a federované přihlašovací údaje pro
+# tenhle repozitář (subject repo:NexusSync-Systems/LexisLocal:ref:refs/heads/main)
+# a účet nexusstack-signing s profilem nexusstack-public. Nastavuje Zdeněk —
+# registrace, oprávnění a placené služby si dělá sám.
 on: workflow_dispatch
 
 permissions:

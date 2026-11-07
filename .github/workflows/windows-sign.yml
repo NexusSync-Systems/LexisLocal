@@ -8,6 +8,14 @@ name: Windows build + Azure Artifact Signing
 #
 # Spouští se ručně (Run workflow). Ostrý release pro macOS+Windows dělá
 # samostatný release.yml; tenhle workflow řeší jen podepsaný Windows artefakt.
+#
+# POZOR: tenhle workflow dosud nikdy neproběhl a zatím proběhnout nemůže —
+# nastavení Azure Trusted Signing není dokončené (stav 7. 11. 2026). Chybí tajné
+# hodnoty AZURE_CLIENT_ID, AZURE_TENANT_ID a AZURE_SUBSCRIPTION_ID; podrobnosti
+# i co k nim patří jsou v hlavičce .github/workflows/test-signing.yml, kterým se
+# to dá rychle vyzkoušet (podepíše kopii notepad.exe, nic nevydává).
+# Důsledek: Windows instalátor ve vydáních (release.yml, CSC_LINK je na Windows
+# záměrně prázdný) je nepodepsaný a Windows u něj hlásí neznámého vydavatele.
 on:
   workflow_dispatch:
 
