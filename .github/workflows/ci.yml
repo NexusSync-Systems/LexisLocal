@@ -31,6 +31,12 @@ jobs:
       NODE_ENV: test
       # Testy si zakládají vlastní dočasné složky; síť k AI poskytovatelům mockují.
       AI_PROVIDER: ollama
+      # onnxruntime-node (přes @huggingface/transformers) si na Linuxu/x64 při instalaci stahuje
+      # z GitHub Releases balík s podporou CUDA. Runner GPU nemá („nvcc not found“), takže je to
+      # zbytečné stahování, které navíc shodí celý job, když GitHub odpoví 504 — 8. 11. 2026 dvakrát
+      # v řadě na Node 20. CPU verze je součástí npm balíčku, takže lokální embeddingy i reranker
+      # běží dál. Jen pro Linux: macOS ani Windows tuhle cestu nemají.
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
