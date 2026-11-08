@@ -11,6 +11,7 @@ name: Test signing
 # tenhle repozitář (subject repo:NexusSync-Systems/LexisLocal:ref:refs/heads/main)
 # a účet nexusstack-signing s profilem nexusstack-public. Nastavuje Zdeněk —
 # registrace, oprávnění a placené služby si dělá sám.
+# Celý postup krok za krokem: docs/AZURE_PODEPISOVANI_WINDOWS.md
 on: workflow_dispatch
 
 permissions:

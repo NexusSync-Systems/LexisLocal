@@ -16,6 +16,7 @@ name: Windows build + Azure Artifact Signing
 # to dá rychle vyzkoušet (podepíše kopii notepad.exe, nic nevydává).
 # Důsledek: Windows instalátor ve vydáních (release.yml, CSC_LINK je na Windows
 # záměrně prázdný) je nepodepsaný a Windows u něj hlásí neznámého vydavatele.
+# Postup dokončení: docs/AZURE_PODEPISOVANI_WINDOWS.md
 on:
   workflow_dispatch:
 
